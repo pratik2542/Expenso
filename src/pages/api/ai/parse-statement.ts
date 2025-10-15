@@ -3,6 +3,7 @@ import formidable, { File as FormidableFile } from 'formidable'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
 import { PDFDocument, rgb } from 'pdf-lib'
+// Note: Fallback uses 'pdf-parse' which must be present in dependencies.
 // pdfjs-dist can be problematic at top-level on some serverless runtimes.
 // We'll import it dynamically inside the handler to avoid initialization crashes on GET/HEAD health checks.
 // import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -50,8 +51,22 @@ async function redactPdfVisually(file: FormidableFile): Promise<{ buffer: Buffer
     try {
       pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
     } catch (e) {
-      console.error('[Visual Redaction Error] Failed to load pdfjs-dist:', e)
-      throw new Error('PDF processing engine unavailable on this runtime')
+      // Fallback: Use pdf-parse to extract plain text when pdfjs isn't available
+      console.warn('[Visual Redaction Warning] pdfjs-dist unavailable, falling back to pdf-parse:', (e as any)?.message || e)
+      try {
+        const pdfParseMod: any = await import('pdf-parse')
+        const pdfParse = pdfParseMod?.default || pdfParseMod
+        const parsed = await pdfParse(data)
+        if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
+          if (debugEnabled()) console.log('[AI Parse Debug] pdf-parse fallback succeeded, text length:', parsed.text.length)
+          // No visual redaction in fallback; return original buffer and extracted text
+          return { buffer: data, text: String(parsed.text) }
+        }
+        throw new Error('pdf-parse returned no text')
+      } catch (fallbackErr) {
+        console.error('[PDF Fallback Error] Failed to extract text with pdf-parse:', (fallbackErr as any)?.message || fallbackErr)
+        throw new Error('PDF processing engine unavailable on this runtime')
+      }
     }
 
     const loadingTask = pdfjsLib.getDocument({ 
