@@ -214,33 +214,51 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    
+    // Reset state
     setImportError(null)
-    setImportStatus('Analyzing your statement...')
+    setParsedExpenses([])
+    setImportStatus('Uploading PDF...')
     setImportLoading(true)
+    
     try {
       const form = new FormData()
       form.append('file', file)
+      
+      setImportStatus('Analyzing your statement with AI...')
+      
       const resp = await fetch('/api/ai/parse-statement', {
         method: 'POST',
         body: form,
       })
-      if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`)
+      
+      if (!resp.ok) {
+        const errorText = await resp.text().catch(() => '')
+        throw new Error(`Upload failed (${resp.status}): ${errorText || resp.statusText}`)
+      }
+      
+      setImportStatus('Parsing transactions...')
+      
       const json = await resp.json()
       if (!json.success) throw new Error(json.error || 'Parse failed')
+      
       const rows = (json.expenses as any[])
       if (!Array.isArray(rows) || rows.length === 0) {
         setParsedExpenses([])
         setImportError('No transactions found in the uploaded PDF. Please check the file format and content.')
       } else {
         setParsedExpenses(rows.map((e) => ({ ...e, selected: true })))
+        setImportStatus(`Successfully extracted ${rows.length} transactions!`)
+        // Clear success message after 2 seconds
+        setTimeout(() => setImportStatus(''), 2000)
       }
     } catch (err: any) {
       setImportError(err?.message || 'Failed to import')
+      console.error('PDF upload error:', err)
     } finally {
       setImportLoading(false)
-      setImportStatus('')
-      // Allow selecting the same file again by clearing the input value
-      try { e.target.value = '' } catch {}
+      // Reset file input to allow re-selecting the same file
+      e.target.value = ''
     }
   }
 
@@ -251,33 +269,51 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const handleUploadSpreadsheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    
+    // Reset state
     setImportError(null)
-    setImportStatus('Analyzing your statement...')
+    setParsedExpenses([])
+    setImportStatus('Uploading Excel/CSV...')
     setImportLoading(true)
+    
     try {
       const form = new FormData()
       form.append('file', file)
+      
+      setImportStatus('Reading spreadsheet...')
+      
       const resp = await fetch('/api/import/parse-spreadsheet', {
         method: 'POST',
         body: form,
       })
-      if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`)
+      
+      if (!resp.ok) {
+        const errorText = await resp.text().catch(() => '')
+        throw new Error(`Upload failed (${resp.status}): ${errorText || resp.statusText}`)
+      }
+      
+      setImportStatus('Parsing transactions...')
+      
       const json = await resp.json()
       if (!json.success) throw new Error(json.error || 'Parse failed')
+      
       const rows = (json.expenses as any[])
       if (!Array.isArray(rows) || rows.length === 0) {
         setParsedExpenses([])
         setImportError('No transactions found in the uploaded spreadsheet. Try another sheet or adjust column headers.')
       } else {
         setParsedExpenses(rows.map((e) => ({ ...e, selected: true })))
+        setImportStatus(`Successfully extracted ${rows.length} transactions!`)
+        // Clear success message after 2 seconds
+        setTimeout(() => setImportStatus(''), 2000)
       }
     } catch (err: any) {
       setImportError(err?.message || 'Failed to import')
+      console.error('Spreadsheet upload error:', err)
     } finally {
       setImportLoading(false)
-      setImportStatus('')
-      // Allow selecting the same file again by clearing the input value
-      try { e.target.value = '' } catch {}
+      // Reset file input to allow re-selecting the same file
+      e.target.value = ''
     }
   }
 
@@ -431,18 +467,61 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               <div className="text-sm font-medium text-gray-900">Import from Statement (PDF or Excel/CSV)</div>
                               <div className="text-xs text-gray-500">Upload a bank/credit card statement. PDF uses AI extraction; Excel/CSV parses directly.</div>
                             </div>
+                            
+                            {/* Status Message */}
+                            {importStatus && (
+                              <div className="bg-blue-50 border border-blue-200 rounded-md p-2 flex items-center gap-2">
+                                <div className="flex-shrink-0">
+                                  {importLoading ? (
+                                    <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                  ) : (
+                                    <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="text-xs font-medium text-gray-700">{importStatus}</div>
+                              </div>
+                            )}
+                            
                             <div className="flex flex-col gap-2 items-stretch">
-                              <input id="uploadPdf" type="file" accept="application/pdf" className="hidden" onChange={handleUploadPDF} disabled={importLoading} />
-                              <label htmlFor="uploadPdf" className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
-                                Upload PDF
+                              <input 
+                                id="uploadPdfInput" 
+                                type="file" 
+                                accept="application/pdf" 
+                                className="hidden" 
+                                onChange={handleUploadPDF} 
+                                disabled={importLoading}
+                                aria-label="Upload PDF statement"
+                              />
+                              <label 
+                                htmlFor="uploadPdfInput" 
+                                className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}
+                              >
+                                {importLoading ? 'Uploading...' : 'Upload PDF'}
                               </label>
-                              <input id="uploadSheet" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" className="hidden" onChange={handleUploadSpreadsheet} disabled={importLoading} />
-                              <label htmlFor="uploadSheet" className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}>
-                                Upload Excel/CSV
+                              
+                              <input 
+                                id="uploadSheetInput" 
+                                type="file" 
+                                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" 
+                                className="hidden" 
+                                onChange={handleUploadSpreadsheet} 
+                                disabled={importLoading}
+                                aria-label="Upload Excel or CSV statement"
+                              />
+                              <label 
+                                htmlFor="uploadSheetInput" 
+                                className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}
+                              >
+                                {importLoading ? 'Uploading...' : 'Upload Excel/CSV'}
                               </label>
                             </div>
                           </div>
-                          {importError && <div className="mt-2 text-xs text-error-600">{importError}</div>}
+                          {importError && <div className="mt-2 text-xs text-error-600 bg-error-50 border border-error-100 rounded p-2">{importError}</div>}
                           {parsedExpenses.length > 0 && (
                             <div className="mt-3">
                               <div className="flex items-center justify-between mb-2">
