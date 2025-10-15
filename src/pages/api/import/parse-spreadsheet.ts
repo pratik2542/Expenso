@@ -4,9 +4,13 @@ import fs from 'fs'
 import * as XLSX from 'xlsx'
 import crypto from 'crypto'
 
+// Force Node.js runtime (not Edge)
+export const runtime = 'nodejs'
+
 export const config = {
   api: {
     bodyParser: false,
+    responseLimit: false,
   },
 }
 
@@ -150,11 +154,24 @@ function findHeaderRow(rows: any[][]): number {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse>) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST')
-    return res.status(405).json({ success: false, error: 'Method Not Allowed' })
+  // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+  // Handle OPTIONS preflight request
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
   }
 
+  // Only allow POST
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST')
+    console.error('[parse-spreadsheet] Method not allowed:', req.method)
+    return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` })
+  }
+
+  console.log('[parse-spreadsheet] Starting file upload processing')
   const form = formidable({ maxFileSize: 15 * 1024 * 1024, multiples: false })
   try {
     const { files } = await new Promise<{ fields: formidable.Fields; files: formidable.Files }>((resolve, reject) => {
