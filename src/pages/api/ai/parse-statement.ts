@@ -774,7 +774,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET, HEAD')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   // Handle OPTIONS preflight request
@@ -783,9 +783,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(200).end()
   }
 
-  // Only allow POST
+  // Lightweight health check and diagnostics
+  if (req.method === 'HEAD') {
+    res.setHeader('Allow', 'POST, OPTIONS, GET, HEAD')
+    return res.status(200).end()
+  }
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      success: true,
+      expenses: [],
+      usage: {
+        info: 'Use POST multipart/form-data with field name "file" to parse a PDF statement.',
+        accepts: ['POST multipart/form-data', 'OPTIONS', 'GET (health)', 'HEAD (health)'],
+        env: {
+          hasPerplexityKey: !!process.env.PERPLEXITY_API_KEY,
+          debug: process.env.DEBUG_AI_PARSE === '1',
+          aiDisabled: process.env.AI_DISABLE_EXTERNAL === '1',
+        }
+      }
+    } as any)
+  }
+
+  // Only allow POST for actual work
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST')
+    res.setHeader('Allow', 'POST, OPTIONS, GET, HEAD')
     console.error('[parse-statement] Method not allowed:', req.method)
     return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` })
   }
