@@ -3,7 +3,9 @@ import formidable, { File as FormidableFile } from 'formidable'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
 import { PDFDocument, rgb } from 'pdf-lib'
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+// pdfjs-dist can be problematic at top-level on some serverless runtimes.
+// We'll import it dynamically inside the handler to avoid initialization crashes on GET/HEAD health checks.
+// import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 export const config = {
   api: {
@@ -43,6 +45,15 @@ async function redactPdfVisually(file: FormidableFile): Promise<{ buffer: Buffer
     
     // Load with pdfjs to get text positions (more forgiving of PDF issues)
     // Configure pdfjs for Node.js environment (disable workers)
+    // Dynamically import pdfjs to avoid top-level crashes in certain runtimes
+    let pdfjsLib: any
+    try {
+      pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    } catch (e) {
+      console.error('[Visual Redaction Error] Failed to load pdfjs-dist:', e)
+      throw new Error('PDF processing engine unavailable on this runtime')
+    }
+
     const loadingTask = pdfjsLib.getDocument({ 
       data: uint8Data,
       useWorkerFetch: false,
@@ -800,6 +811,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           debug: process.env.DEBUG_AI_PARSE === '1',
           aiDisabled: process.env.AI_DISABLE_EXTERNAL === '1',
         }
+      },
+      diagnostics: {
+        pdfEngine: 'dynamic-import: pdfjs-dist/legacy/build/pdf.mjs',
+        node: process.version,
       }
     } as any)
   }
