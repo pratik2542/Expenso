@@ -157,31 +157,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   // Handle OPTIONS preflight request
-  // Set minimal CORS and allow health checks
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET, HEAD')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method === 'HEAD') {
-    res.setHeader('Allow', 'POST, OPTIONS, GET, HEAD')
+  if (req.method === 'OPTIONS') {
     return res.status(200).end()
   }
-  if (req.method === 'GET') {
-    return res.status(200).json({ success: true, expenses: [] })
-  }
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST, OPTIONS, GET, HEAD')
-    return res.status(405).json({ success: false, error: 'Method Not Allowed' })
-  }
+
   // Only allow POST
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
-    console.error('[parse-spreadsheet] Method not allowed:', req.method)
-    return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` })
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' })
   }
-
-  console.log('[parse-spreadsheet] Starting file upload processing')
   const form = formidable({ maxFileSize: 15 * 1024 * 1024, multiples: false })
   try {
     const { files } = await new Promise<{ fields: formidable.Fields; files: formidable.Files }>((resolve, reject) => {

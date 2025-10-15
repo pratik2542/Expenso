@@ -3,10 +3,6 @@ import formidable, { File as FormidableFile } from 'formidable'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
 import { PDFDocument, rgb } from 'pdf-lib'
-// Note: Fallback uses 'pdf-parse' which must be present in dependencies.
-// pdfjs-dist can be problematic at top-level on some serverless runtimes.
-// We'll import it dynamically inside the handler to avoid initialization crashes on GET/HEAD health checks.
-// import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 export const config = {
   api: {
@@ -51,20 +47,16 @@ async function redactPdfVisually(file: FormidableFile): Promise<{ buffer: Buffer
     try {
       pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
     } catch (e) {
-      // Fallback: Use pdf-parse to extract plain text when pdfjs isn't available
-      console.warn('[Visual Redaction Warning] pdfjs-dist unavailable, falling back to pdf-parse:', (e as any)?.message || e)
+      // Fallback: Use pdf-parse when pdfjs isn't available
       try {
         const pdfParseMod: any = await import('pdf-parse')
         const pdfParse = pdfParseMod?.default || pdfParseMod
         const parsed = await pdfParse(data)
         if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-          if (debugEnabled()) console.log('[AI Parse Debug] pdf-parse fallback succeeded, text length:', parsed.text.length)
-          // No visual redaction in fallback; return original buffer and extracted text
           return { buffer: data, text: String(parsed.text) }
         }
         throw new Error('pdf-parse returned no text')
       } catch (fallbackErr) {
-        console.error('[PDF Fallback Error] Failed to extract text with pdf-parse:', (fallbackErr as any)?.message || fallbackErr)
         throw new Error('PDF processing engine unavailable on this runtime')
       }
     }
@@ -788,60 +780,21 @@ function dedupeExpenses(rows: (ParsedExpense & { _srcChunk?: number })[]): (Pars
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse>) {
-  // Log every request
-  console.log('[parse-statement] Handler called:', {
-    method: req.method,
-    url: req.url,
-    headers: {
-      contentType: req.headers['content-type'],
-      origin: req.headers.origin,
-    },
-  })
-
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET, HEAD')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   // Handle OPTIONS preflight request
   if (req.method === 'OPTIONS') {
-    console.log('[parse-statement] OPTIONS request handled')
     return res.status(200).end()
   }
 
-  // Lightweight health check and diagnostics
-  if (req.method === 'HEAD') {
-    res.setHeader('Allow', 'POST, OPTIONS, GET, HEAD')
-    return res.status(200).end()
-  }
-  if (req.method === 'GET') {
-    return res.status(200).json({
-      success: true,
-      expenses: [],
-      usage: {
-        info: 'Use POST multipart/form-data with field name "file" to parse a PDF statement.',
-        accepts: ['POST multipart/form-data', 'OPTIONS', 'GET (health)', 'HEAD (health)'],
-        env: {
-          hasPerplexityKey: !!process.env.PERPLEXITY_API_KEY,
-          debug: process.env.DEBUG_AI_PARSE === '1',
-          aiDisabled: process.env.AI_DISABLE_EXTERNAL === '1',
-        }
-      },
-      diagnostics: {
-        pdfEngine: 'dynamic-import: pdfjs-dist/legacy/build/pdf.mjs',
-        node: process.version,
-      }
-    } as any)
-  }
-
-  // Only allow POST for actual work
+  // Only allow POST
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST, OPTIONS, GET, HEAD')
-    console.error('[parse-statement] Method not allowed:', req.method)
-    return res.status(405).json({ success: false, error: `Method ${req.method} Not Allowed` })
+    res.setHeader('Allow', 'POST')
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' })
   }
-
-  console.log('[parse-statement] Starting file upload processing')
   const form = formidable({ maxFileSize: 15 * 1024 * 1024, multiples: false })
   try {
     const { files } = await new Promise<{ fields: formidable.Fields; files: formidable.Files }>((resolve, reject) => {

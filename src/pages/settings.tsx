@@ -462,6 +462,56 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+
+            {/* Danger Zone */}
+            <div className="bg-white rounded-lg shadow p-6 border-2 border-red-200">
+              <h2 className="text-lg font-semibold text-red-600 mb-4">Danger Zone</h2>
+              <div className="bg-red-50 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Delete Account</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Permanently delete your account and all associated data. This action cannot be undone.
+                </p>
+                <button
+                  onClick={async () => {
+                    if (!confirm('Are you sure you want to delete your account? This will permanently delete all your data and cannot be undone.')) {
+                      return
+                    }
+                    
+                    if (!confirm('This is your last chance. Are you absolutely sure? Type DELETE in the next prompt to confirm.')) {
+                      return
+                    }
+                    
+                    const confirmation = prompt('Type DELETE to confirm account deletion:')
+                    if (confirmation !== 'DELETE') {
+                      alert('Account deletion cancelled.')
+                      return
+                    }
+                    
+                    try {
+                      const response = await fetch('/api/delete-account', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                      })
+                      
+                      if (!response.ok) {
+                        const error = await response.json()
+                        throw new Error(error.error || 'Failed to delete account')
+                      }
+                      
+                      // Sign out and redirect to auth page
+                      await supabase.auth.signOut()
+                      window.location.href = '/auth'
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : 'Failed to delete account'
+                      alert('Error: ' + msg)
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                >
+                  Delete Account
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </Layout>
