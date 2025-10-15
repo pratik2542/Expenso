@@ -101,6 +101,15 @@ export default function Sidebar() {
                   )
                 })}
               </nav>
+              <div className="mt-auto px-4 py-4 border-t border-gray-100">
+                <button
+                  onClick={async () => { await signOut(); router.replace('/auth'); setSidebarOpen(false) }}
+                  className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-md py-2"
+                >
+                  <LogOutIcon className="h-4 w-4" /> Sign out
+                </button>
+                {user && <p className="mt-2 text-xs text-gray-400 truncate">{user.email}</p>}
+              </div>
             </div>
           </div>
         </div>

@@ -494,14 +494,14 @@ export default function BudgetPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
           <div className="mb-8">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Budget</h1>
-                <p className="text-gray-600 mt-2">Set spending limits and track your progress</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Budget</h1>
+                <p className="text-gray-600 mt-1 sm:mt-2 text-sm sm:text-base">Set spending limits and track your progress</p>
               </div>
               <button
                 onClick={() => setShowAddForm(true)}
-                className="btn-primary inline-flex items-center"
+                className="btn-primary inline-flex items-center justify-center w-full sm:w-auto"
               >
                 <PlusIcon className="w-4 h-4 mr-2" />
                 Add Budget
@@ -613,18 +613,21 @@ export default function BudgetPage() {
                 
                 return (
                   <div key={budget.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-            <div>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
+            <div className="flex-1">
                         <h3 className="font-semibold text-gray-900">
                           {budget.period === 'yearly'
                             ? `Year ${budget.year}`
                             : new Date(budget.year, (budget.month || 1) - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
                         </h3>
-                        <div className="mt-1 flex items-center flex-wrap gap-2 text-sm text-gray-600">
+                        <div className="mt-1 flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-1 sm:gap-2 text-sm text-gray-600">
                           <span>Currency: {budget.currency}</span>
-                          <span>• Period: {budget.period || 'monthly'}</span>
-                          <span>• Per category: {budget.per_category ? 'Yes' : 'No'}</span>
-                          <span>• Rollover: {budget.roll_over ? 'Yes' : 'No'}</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span>Period: {budget.period || 'monthly'}</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span>Per category: {budget.per_category ? 'Yes' : 'No'}</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span>Rollover: {budget.roll_over ? 'Yes' : 'No'}</span>
                           {budget.catagory_name && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
                               {budget.catagory_name}
@@ -633,11 +636,11 @@ export default function BudgetPage() {
                         </div>
                       </div>
                       
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center justify-between sm:justify-end gap-2 sm:space-x-2">
                         {(isOverBudget || isNearLimit) && (
-                          <AlertTriangleIcon className={`w-5 h-5 ${isOverBudget ? 'text-red-500' : 'text-yellow-500'}`} />
+                          <AlertTriangleIcon className={`w-5 h-5 flex-shrink-0 ${isOverBudget ? 'text-red-500' : 'text-yellow-500'}`} />
                         )}
-                        <span className="text-lg font-semibold text-gray-900">
+                        <span className="text-base sm:text-lg font-semibold text-gray-900 flex-1 sm:flex-initial">
                           <ConvertedAmount 
                             amount={spent} 
                             fromCurrency={budget.currency} 
@@ -652,7 +655,7 @@ export default function BudgetPage() {
                             convertExistingData={convertExistingData}
                           />
                         </span>
-                        <div className="flex space-x-1">
+                        <div className="flex space-x-1 flex-shrink-0">
                           <button className="p-1 text-gray-400 hover:text-gray-600" onClick={() => openEdit(budget)}>
                             <EditIcon className="w-4 h-4" />
                           </button>
@@ -705,8 +708,8 @@ export default function BudgetPage() {
 
           {/* Add Budget Form Modal */}
           {showAddForm && (
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Add New Budget</h3>
                 
                  <form onSubmit={handleAddBudget} className="space-y-4">
@@ -715,7 +718,7 @@ export default function BudgetPage() {
                       {submitError}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Period</label>
                       <select
@@ -747,7 +750,7 @@ export default function BudgetPage() {
                   {/* (Removed duplicate placeholder category grid) */}
 
                   {newBudget.period === 'monthly' && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="label">Month</label>
                         <select
@@ -806,7 +809,7 @@ export default function BudgetPage() {
                     />
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Currency</label>
                       <select
@@ -843,14 +846,14 @@ export default function BudgetPage() {
                     <label htmlFor="roll_over" className="text-sm text-gray-700">Rollover remaining amount to next month</label>
                   </div>
                   
-                  <div className="flex space-x-3 pt-4">
-                    <button type="submit" className="btn-primary flex-1">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:space-x-3 pt-4">
+                    <button type="submit" className="btn-primary w-full sm:flex-1">
                       {submitting ? 'Adding…' : 'Add Budget'}
                     </button>
                     <button 
                       type="button"
                       onClick={() => setShowAddForm(false)}
-                      className="btn-secondary flex-1"
+                      className="btn-secondary w-full sm:flex-1"
                     >
                       Cancel
                     </button>
@@ -862,8 +865,8 @@ export default function BudgetPage() {
 
           {/* Edit Budget Form Modal */}
           {showEditForm && editBudget && (
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg p-4 sm:p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Budget</h3>
 
                 <form onSubmit={handleUpdateBudget} className="space-y-4">
@@ -872,7 +875,7 @@ export default function BudgetPage() {
                       {editError}
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Period</label>
                       <select
@@ -901,7 +904,7 @@ export default function BudgetPage() {
                   </div>
 
                   {editBudget.period === 'monthly' && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="label">Month</label>
                         <select
@@ -960,7 +963,7 @@ export default function BudgetPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Currency</label>
                       <select
@@ -997,14 +1000,14 @@ export default function BudgetPage() {
                     <label htmlFor="roll_over_edit" className="text-sm text-gray-700">Rollover remaining amount to next month</label>
                   </div>
 
-                  <div className="flex space-x-3 pt-4">
-                    <button type="submit" className="btn-primary flex-1">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:space-x-3 pt-4">
+                    <button type="submit" className="btn-primary w-full sm:flex-1">
                       {updating ? 'Updating…' : 'Update Budget'}
                     </button>
                     <button
                       type="button"
                       onClick={() => { setShowEditForm(false); setEditing(null); setEditBudget(null) }}
-                      className="btn-secondary flex-1"
+                      className="btn-secondary w-full sm:flex-1"
                     >
                       Cancel
                     </button>

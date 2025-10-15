@@ -119,14 +119,14 @@ export default function CategoriesPage() {
       </Head>
 
       <Layout>
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8">
+          <div className="mb-6 sm:mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">Categories</h1>
-                <p className="text-gray-600 mt-2">Organize your expenses with custom categories</p>
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Categories</h1>
+                <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">Organize your expenses with custom categories</p>
               </div>
-              <button onClick={() => setShowAdd(true)} className="btn-primary inline-flex items-center">
+              <button onClick={() => setShowAdd(true)} className="btn-primary inline-flex items-center justify-center w-full sm:w-auto">
                 <PlusIcon className="w-4 h-4 mr-2" />
                 Add Category
               </button>
@@ -165,10 +165,10 @@ export default function CategoriesPage() {
           )}
 
           <div className="card">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">Your Categories</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-2">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">Your Categories</h2>
               {searchTerm && (
-                <span className="text-sm text-gray-500">
+                <span className="text-xs sm:text-sm text-gray-500">
                   {filteredCategories.length} of {categories.length} categories
                 </span>
               )}
@@ -192,17 +192,17 @@ export default function CategoriesPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               {filteredCategories.map((cat) => (
-                <div key={cat.id} className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                <div key={cat.id} className="border border-gray-200 rounded-lg p-3 sm:p-4 hover:border-gray-300 transition-colors">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                      <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
                         <TagIcon className="w-4 h-4 text-gray-600" />
                       </div>
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         {editingId === cat.id ? (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 sm:gap-2">
                             <input
                               type="text"
                               value={editingName}
@@ -221,22 +221,22 @@ export default function CategoriesPage() {
                             <button
                               onClick={() => handleUpdate(cat.id)}
                               disabled={saving}
-                              className="text-green-600 hover:text-green-800 disabled:opacity-50"
+                              className="text-green-600 hover:text-green-800 disabled:opacity-50 flex-shrink-0 text-lg sm:text-base"
                               title="Save"
                             >
                               ✓
                             </button>
                             <button
                               onClick={handleCancelEdit}
-                              className="text-gray-400 hover:text-gray-600"
+                              className="text-gray-400 hover:text-gray-600 flex-shrink-0 text-lg sm:text-base"
                               title="Cancel"
                             >
                               ✕
                             </button>
                           </div>
                         ) : (
-                          <div>
-                            <h3 className="font-medium text-gray-900">{cat.name}</h3>
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-gray-900 text-sm sm:text-base truncate">{cat.name}</h3>
                             <p className="text-xs text-gray-500">
                               Created {formatDate(cat.created_at)}
                             </p>
@@ -245,17 +245,17 @@ export default function CategoriesPage() {
                       </div>
                     </div>
                     {editingId !== cat.id && (
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-shrink-0">
                         <button 
                           onClick={() => handleEdit(cat)}
-                          className="p-1 text-gray-400 hover:text-gray-600"
+                          className="p-1.5 sm:p-1 text-gray-400 hover:text-gray-600"
                           title="Edit category"
                         >
                           <EditIcon className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(cat.id)}
-                          className="p-1 text-gray-400 hover:text-red-600"
+                          className="p-1.5 sm:p-1 text-gray-400 hover:text-red-600"
                           title="Delete category"
                         >
                           <TrashIcon className="w-4 h-4" />
@@ -268,11 +268,11 @@ export default function CategoriesPage() {
             </div>
 
             {!isLoading && categories.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Default Categories Available</h3>
-                <div className="flex flex-wrap gap-2">
+              <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200">
+                <h3 className="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-3">Default Categories Available</h3>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2">
                   {defaultCategories.map((cat) => (
-                    <span key={cat} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    <span key={cat} className="inline-flex items-center px-2 sm:px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                       {cat}
                     </span>
                   ))}
@@ -283,11 +283,11 @@ export default function CategoriesPage() {
 
           {showAdd && (
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Category</h3>
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Add Category</h3>
                 <form onSubmit={handleAdd} className="space-y-4">
                   <div>
-                    <label className="label">Category Name</label>
+                    <label className="label text-sm">Category Name</label>
                     <input
                       type="text"
                       required
@@ -297,14 +297,14 @@ export default function CategoriesPage() {
                       placeholder="e.g., Groceries, Gas, etc."
                     />
                   </div>
-                  <div className="flex gap-3 pt-4">
-                    <button type="submit" disabled={saving} className="btn-primary flex-1">
+                  <div className="flex flex-col sm:flex-row gap-3 pt-4">
+                    <button type="submit" disabled={saving} className="btn-primary flex-1 w-full">
                       {saving ? 'Adding...' : 'Add Category'}
                     </button>
                     <button
                       type="button"
                       onClick={() => { setShowAdd(false); setError(null) }}
-                      className="btn-secondary flex-1"
+                      className="btn-secondary flex-1 w-full"
                     >
                       Cancel
                     </button>
