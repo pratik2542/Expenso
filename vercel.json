@@ -2,13 +2,11 @@
   "functions": {
     "src/pages/api/ai/parse-statement.ts": {
       "maxDuration": 60,
-      "memory": 1024,
-      "runtime": "nodejs18.x"
+      "memory": 1024
     },
     "src/pages/api/import/parse-spreadsheet.ts": {
       "maxDuration": 60,
-      "memory": 1024,
-      "runtime": "nodejs18.x"
+      "memory": 1024
     },
     "src/pages/api/**/*.ts": {
       "maxDuration": 30,
