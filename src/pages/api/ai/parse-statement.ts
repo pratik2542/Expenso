@@ -5,9 +5,6 @@ import * as crypto from 'crypto'
 import { PDFDocument, rgb } from 'pdf-lib'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
-// Force Node.js runtime (not Edge)
-export const runtime = 'nodejs'
-
 export const config = {
   api: {
     bodyParser: false,
@@ -765,6 +762,16 @@ function dedupeExpenses(rows: (ParsedExpense & { _srcChunk?: number })[]): (Pars
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse>) {
+  // Log every request
+  console.log('[parse-statement] Handler called:', {
+    method: req.method,
+    url: req.url,
+    headers: {
+      contentType: req.headers['content-type'],
+      origin: req.headers.origin,
+    },
+  })
+
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -772,6 +779,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
   // Handle OPTIONS preflight request
   if (req.method === 'OPTIONS') {
+    console.log('[parse-statement] OPTIONS request handled')
     return res.status(200).end()
   }
 

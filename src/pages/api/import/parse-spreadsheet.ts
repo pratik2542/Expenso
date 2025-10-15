@@ -4,9 +4,6 @@ import fs from 'fs'
 import * as XLSX from 'xlsx'
 import crypto from 'crypto'
 
-// Force Node.js runtime (not Edge)
-export const runtime = 'nodejs'
-
 export const config = {
   api: {
     bodyParser: false,
