@@ -7,10 +7,17 @@ const nextConfig = {
     // Temporarily ignore ESLint errors during builds to allow shipping/runtime verification
     ignoreDuringBuilds: true,
   },
+  // Ensure Next includes pdfjs-dist in serverless traces so it's available at runtime on Vercel
+    outputFileTracingIncludes: {
+      'src/pages/api/ai/parse-statement.ts': [
+        './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
+        './node_modules/pdfjs-dist/build/pdf.mjs',
+      ],
+    },
   
-  experimental: {
-    optimizePackageImports: ['lucide-react', '@supabase/supabase-js', '@tanstack/react-query'],
-  },
+    experimental: {
+      optimizePackageImports: ['lucide-react', '@supabase/supabase-js', '@tanstack/react-query'],
+    },
   
   images: {
     domains: [],

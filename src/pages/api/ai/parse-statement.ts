@@ -36,37 +36,20 @@ async function readFile(file: FormidableFile): Promise<Buffer> {
 
 // Try to load pdfjs in a way that works across Node/runtime variants & Next/Vercel bundling
 async function loadPdfjs(): Promise<any> {
-  // 1) Prefer requiring the legacy CJS build using eval('require') so Next doesn't transform it
-  const req = (() => {
-    try { return eval('require') as NodeRequire } catch { return null }
-  })()
-  const cjsCandidates = [
-    'pdfjs-dist/legacy/build/pdf.js',
-    'pdfjs-dist/build/pdf.js',
-  ]
-  if (req) {
-    for (const p of cjsCandidates) {
-      try {
-        const mod: any = req(p)
-        if (mod && typeof mod.getDocument === 'function') return mod
-        if (mod && mod?.default && typeof mod.default.getDocument === 'function') return mod.default
-      } catch (_) {}
-    }
-  }
-
-  // 2) Fall back to ESM builds via dynamic import
-  const esmCandidates = [
-    'pdfjs-dist/legacy/build/pdf.mjs',
+  const candidates = [
+    'pdfjs-dist',
     'pdfjs-dist/build/pdf.mjs',
+    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/build/pdf.js',
+    'pdfjs-dist/legacy/build/pdf.js',
   ]
-  for (const p of esmCandidates) {
+  for (const p of candidates) {
     try {
       const mod: any = await import(p)
-      if (mod && typeof mod.getDocument === 'function') return mod
-      if (mod && mod?.default && typeof mod.default.getDocument === 'function') return mod.default
+      if (mod && typeof (mod as any).getDocument === 'function') return mod
+      if (mod && (mod as any).default && typeof (mod as any).default.getDocument === 'function') return (mod as any).default
     } catch (_) {}
   }
-
   throw new Error('pdfjs not available in this runtime')
 }
 
@@ -82,7 +65,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       return String(parsed.text)
     }
   } catch (e) {
-    if (debugEnabled()) console.log('[AI Parse Debug] pdf-parse failed, will try pdfjs:', e instanceof Error ? e.message : e)
+    console.error('[AI Parse Error] pdf-parse failed, will try pdfjs:', e instanceof Error ? { name: e.name, message: e.message } : e)
   }
 
   // Fallback to pdfjs text extraction (no drawing/redaction)
@@ -125,7 +108,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
     }
   } catch (e) {
     // If both engines fail, surface a helpful error
-    if (debugEnabled()) console.error('[AI Parse Debug] Both pdf-parse and pdfjs failed in extractTextFast')
+    console.error('[AI Parse Error] Both pdf-parse and pdfjs failed in extractTextFast')
     throw new Error('PDF processing engine unavailable on this runtime')
   }
 }
@@ -951,7 +934,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const file = (files?.file || files?.pdf || files?.statement) as FormidableFile | FormidableFile[] | undefined
     const selected = Array.isArray(file) ? file[0] : file
-    if (!selected) return res.status(400).json({ success: false, error: 'No file uploaded. Use field name "file".' })
+    const textFieldRaw = (fields && (fields as any).text) as any
+    const textField = Array.isArray(textFieldRaw) ? textFieldRaw[0] : textFieldRaw
+    if (!selected && !(typeof textField === 'string' && textField.trim())) {
+      return res.status(400).json({ success: false, error: 'No file uploaded and no text provided. Upload a PDF using field "file" or provide a "text" field.' })
+    }
 
     // Optional password from query, form, or header (prefer query on Vercel; headers can be mutated)
     const providedPassword = (() => {
@@ -1002,19 +989,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // Build an Excel-like table from rows/columns for higher model accuracy
     // Build per-page table text for higher recall
     let pagesTables: string[] = []
-    if (redactFlag) {
-      if (debugEnabled()) console.log('[AI Parse Debug] using visual PDF redaction mode')
-      const out = await redactPdfVisually(selected, providedPassword)
-      const prepared = prepareStatementText(maskFlag ? sanitizeTextForAI(out.text) : out.text)
-      pagesTables = [prepared]
-    } else {
-      if (debugEnabled()) console.log('[AI Parse Debug] extracting per-page rows/columns grid for table text')
-      const pages = await extractPagesWithColumns(selected, providedPassword)
-      pagesTables = pages.map((grid, i) => {
-        const t = grid.map(row => row.map(c => String(c ?? '').trim()).join(' | ')).join('\n')
-        const masked = maskFlag ? sanitizeTextForAI(t) : t
-        return prepareStatementText(masked)
-      })
+    if (typeof textField === 'string' && textField.trim()) {
+      // Client-side provided text; trust it and skip PDF engines
+      if (debugEnabled()) console.log('[AI Parse Debug] using provided text field; skipping PDF engines')
+      const t = textField.trim()
+      const masked = maskFlag ? sanitizeTextForAI(t) : t
+      pagesTables = [prepareStatementText(masked)]
+    } else if (selected) {
+      if (redactFlag) {
+        if (debugEnabled()) console.log('[AI Parse Debug] using visual PDF redaction mode')
+        const out = await redactPdfVisually(selected, providedPassword)
+        const prepared = prepareStatementText(maskFlag ? sanitizeTextForAI(out.text) : out.text)
+        pagesTables = [prepared]
+      } else {
+        if (debugEnabled()) console.log('[AI Parse Debug] extracting per-page rows/columns grid for table text')
+        const pages = await extractPagesWithColumns(selected, providedPassword)
+        pagesTables = pages.map((grid, i) => {
+          const t = grid.map(row => row.map(c => String(c ?? '').trim()).join(' | ')).join('\n')
+          const masked = maskFlag ? sanitizeTextForAI(t) : t
+          return prepareStatementText(masked)
+        })
+      }
     }
     const preparedAll = pagesTables.join('\n')
     if (debugEnabled()) console.log('[AI Parse Debug] prepared text length:', preparedAll.length)
