@@ -94,6 +94,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
     } catch (e: any) {
       const msg = e?.message || ''
       if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+        if (debugEnabled()) console.log('[AI Parse Debug] Password exception in extractTextFast:', { name: e?.name, message: msg, passwordProvided: !!password })
         throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
       }
       throw e
@@ -297,6 +298,7 @@ async function extractPagesWithColumns(file: FormidableFile, password?: string):
   } catch (e: any) {
     const msg = e?.message || ''
     if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      if (debugEnabled()) console.log('[AI Parse Debug] Password exception in extractPagesWithColumns:', { name: e?.name, message: msg, passwordProvided: !!password })
       throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
     throw e
@@ -899,13 +901,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       const qpw = Array.isArray(fq.password) ? fq.password[0] : fq.password
       const fpw = (fields && (fields as any).password) as any
       const fpwVal = Array.isArray(fpw) ? fpw[0] : fpw
-      const hpwAny = (req.headers['x-pdf-password'] as any) || (req.headers['X-PDF-PASSWORD'] as any)
-      const hpw = Array.isArray(hpwAny) ? hpwAny[0] : hpwAny
+      
+      // Try multiple header variations (Vercel might lowercase them)
+      let hpw: string | undefined
+      for (const key of Object.keys(req.headers)) {
+        if (key.toLowerCase() === 'x-pdf-password') {
+          const val = req.headers[key]
+          hpw = Array.isArray(val) ? val[0] : val
+          break
+        }
+      }
+      
+      // Debug logging for Vercel environment
+      console.log('[Password Debug] Sources:', {
+        header: hpw ? `present (${String(hpw).length} chars)` : 'missing',
+        formField: fpwVal ? `present (${String(fpwVal).length} chars)` : 'missing',
+        query: qpw ? `present (${String(qpw).length} chars)` : 'missing',
+        allHeaders: Object.keys(req.headers).filter(k => /password/i.test(k))
+      })
+      
       if (typeof hpw === 'string' && hpw.trim()) return hpw.trim()
       if (typeof fpwVal === 'string' && fpwVal.trim()) return fpwVal.trim()
       if (typeof qpw === 'string' && qpw.trim()) return qpw.trim()
       return undefined
     })()
+    if (debugEnabled()) console.log('[AI Parse Debug] Password provided:', providedPassword ? `yes (${providedPassword.length} chars)` : 'no')
 
     // Flags from querystring
     const q = req.query || {}
