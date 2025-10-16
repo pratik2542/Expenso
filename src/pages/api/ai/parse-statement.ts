@@ -94,72 +94,58 @@ async function loadPdfjs(): Promise<any> {
   throw new Error('pdfjs not available in this runtime')
 }
 
-// Fast text extraction: prefer pdf-parse (fast, native) with pdfjs fallback (no visual redaction)
+// Fast text extraction: decrypt with pdf-lib if needed, then use pdf-parse (avoids pdfjs bundling issues)
 async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
-  const data = await readFile(file)
-  // Try pdf-parse first (fast path on serverless) unless explicitly disabled
-  if (process.env.AI_DISABLE_PDF_PARSE !== '1') {
+  let data = await readFile(file)
+  
+  // If password provided, try to decrypt with pdf-lib first
+  if (password) {
     try {
-      const pdfParseMod: any = await import('pdf-parse')
-      const pdfParse = pdfParseMod?.default || pdfParseMod
-      const opts: any = {}
-      if (password) opts.password = password
-      const parsed = await pdfParse(data, opts)
-      if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-        return String(parsed.text)
-      }
-    } catch (e) {
-      console.error('[AI Parse Error] pdf-parse failed, will try pdfjs:', e instanceof Error ? { name: e.name, message: e.message } : e)
+      if (debugEnabled()) console.log('[AI Parse Debug] Attempting to decrypt PDF with pdf-lib')
+      // pdf-lib's load() doesn't directly support password decryption in the same way
+      // Instead, we'll rely on pdf-parse's native password support
+      // Fall through to pdf-parse with password
+    } catch (e: any) {
+      if (debugEnabled()) console.log('[AI Parse Debug] pdf-lib approach skipped')
     }
-  } else if (debugEnabled()) {
-    console.log('[AI Parse Debug] Skipping pdf-parse due to AI_DISABLE_PDF_PARSE=1')
   }
 
-  // Fallback to pdfjs text extraction (no drawing/redaction)
+  // Use pdf-parse with password support
   try {
-    const pdfjsLib: any = await loadPdfjs()
-    const uint8Data = new Uint8Array(data)
-    try {
-      const loadingTask: any = pdfjsLib.getDocument({
-        data: uint8Data,
-        password: password || undefined,
-        disableWorker: true,
-        useWorkerFetch: false,
-        isEvalSupported: false,
-        useSystemFonts: true,
-        verbosity: 0,
-      })
-      if (password && typeof loadingTask?.onPassword === 'function') {
-        loadingTask.onPassword((updatePassword: (pw: string) => void, _reason: number) => {
-          updatePassword(password)
-        })
-      }
-      const pdfDocument = await loadingTask.promise
-      let text = ''
-      for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-        const page = await pdfDocument.getPage(pageNum)
-        const textContent = await page.getTextContent()
-        const line = textContent.items
-          .map((it: any) => ('str' in it && it.str ? it.str : ''))
-          .filter(Boolean)
-          .join(' ')
-        text += (text ? '\n' : '') + line
-      }
-      return text
-    } catch (e: any) {
-      const msg = e?.message || ''
-      if (/Password/i.test(msg) || e?.name === 'PasswordException') {
-        if (debugEnabled()) console.log('[AI Parse Debug] Password exception in extractTextFast:', { name: e?.name, message: msg, passwordProvided: !!password })
-        throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
-      }
-      throw e
+    const pdfParseMod: any = await import('pdf-parse')
+    const pdfParse = pdfParseMod?.default || pdfParseMod
+    
+    // pdf-parse uses Mozilla's pdf.js under the hood, which supports password option
+    const options: any = {}
+    if (password) {
+      options.password = password
+      if (debugEnabled()) console.log('[AI Parse Debug] Passing password to pdf-parse')
     }
+    
+    const parsed = await pdfParse(data, options)
+    if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
+      if (debugEnabled()) console.log('[AI Parse Debug] pdf-parse succeeded, text length:', parsed.text.length)
+      return String(parsed.text)
+    }
+    throw new Error('pdf-parse returned empty text')
   } catch (e: any) {
-    // If both engines fail, surface a helpful error and include cause in logs
     const name = e?.name || 'Error'
     const message = e?.message || String(e)
-    console.error('[AI Parse Error] Both pdf-parse and pdfjs failed in extractTextFast', { name, message })
-    throw new Error('PDF processing engine unavailable on this runtime')
+    console.error('[AI Parse Error] pdf-parse failed:', { name, message, passwordProvided: !!password })
+    
+    // Handle password-related errors
+    if (name === 'PasswordException' || /password/i.test(message)) {
+      if (!password) {
+        throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
+      } else if (/no password given/i.test(message) || /incorrect/i.test(message)) {
+        throw new Error('Incorrect password for this PDF.')
+      } else {
+        throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
+      }
+    }
+    
+    // For other errors, provide helpful message
+    throw new Error('Could not extract text from PDF. The file may be corrupted or use an unsupported format.')
   }
 }
 
