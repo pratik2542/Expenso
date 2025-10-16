@@ -9,9 +9,10 @@ export const config = {
     bodyParser: false,
     responseLimit: false,
   },
-  // Ensure Node.js runtime on Vercel (not Edge)
-  runtime: 'nodejs',
+  
 }
+
+export const runtime = 'nodejs'
 
 type ParsedExpense = {
   amount: number
@@ -44,6 +45,29 @@ async function loadPdfjs(): Promise<any> {
     'pdfjs-dist',
   ]
   const debug = debugEnabled()
+  // Prefer require() in server bundlers so the module gets included and resolved
+  let req: any
+  try { req = eval('require') } catch {}
+  if (req) {
+    for (const p of candidates) {
+      try {
+        if (debug) console.log('[AI Parse Debug] Trying to require pdfjs from', p)
+        const mod: any = req(p)
+        const lib = (mod && typeof (mod as any).getDocument === 'function')
+          ? mod
+          : (mod && (mod as any).default && typeof (mod as any).default.getDocument === 'function')
+            ? (mod as any).default
+            : undefined
+        if (lib) {
+          try { if ((lib as any).GlobalWorkerOptions) { (lib as any).GlobalWorkerOptions.workerSrc = undefined } } catch {}
+          return lib
+        }
+        if (debug) console.log('[AI Parse Debug] require() module has no getDocument for', p)
+      } catch (e: any) {
+        if (debug) console.log('[AI Parse Debug] require() failed for', p, '-', e?.message || e)
+      }
+    }
+  }
   for (const p of candidates) {
     try {
       if (debug) console.log('[AI Parse Debug] Trying to load pdfjs from', p)
@@ -130,9 +154,11 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       }
       throw e
     }
-  } catch (e) {
-    // If both engines fail, surface a helpful error
-    console.error('[AI Parse Error] Both pdf-parse and pdfjs failed in extractTextFast')
+  } catch (e: any) {
+    // If both engines fail, surface a helpful error and include cause in logs
+    const name = e?.name || 'Error'
+    const message = e?.message || String(e)
+    console.error('[AI Parse Error] Both pdf-parse and pdfjs failed in extractTextFast', { name, message })
     throw new Error('PDF processing engine unavailable on this runtime')
   }
 }

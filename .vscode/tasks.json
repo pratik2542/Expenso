@@ -5,6 +5,11 @@
 			"label": "Build Next.js project",
 			"type": "shell",
 			"command": "pnpm run build"
+		},
+		{
+			"label": "Build Next.js project",
+			"type": "shell",
+			"command": "pnpm run build"
 		}
 	]
 }

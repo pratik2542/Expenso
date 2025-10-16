@@ -10,6 +10,7 @@ const nextConfig = {
   // Ensure Next includes pdfjs-dist in serverless traces so it's available at runtime on Vercel
   outputFileTracingIncludes: {
     'src/pages/api/ai/parse-statement.ts': [
+      './node_modules/pdfjs-dist/**',
       './node_modules/pdfjs-dist/legacy/build/pdf.js',
       './node_modules/pdfjs-dist/build/pdf.js',
       './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
