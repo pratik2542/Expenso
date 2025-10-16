@@ -94,22 +94,27 @@ async function loadPdfjs(): Promise<any> {
   throw new Error('pdfjs not available in this runtime')
 }
 
-// Fast text extraction: Use pdf.js directly with canvas support (canvas package is installed)
+// Fast text extraction: Use dynamic import for pdf.js ESM module with password support
 async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
   const data = await readFile(file)
   
   if (debugEnabled()) console.log('[AI Parse Debug] extractTextFast, password provided:', !!password)
   
   try {
-    // Import pdf.js - it will use the installed canvas package
-    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js')
+    // Dynamically import the ESM module
+    const pdfModule: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const pdfjsLib = pdfModule.default || pdfModule
     
-    // Set worker to disabled (use main thread in serverless)
+    if (!pdfjsLib || typeof pdfjsLib.getDocument !== 'function') {
+      throw new Error('Failed to load pdf.js library')
+    }
+    
+    if (debugEnabled()) console.log('[AI Parse Debug] pdf.js loaded, configuring worker')
+    
+    // Disable worker (use main thread only)
     if (pdfjsLib.GlobalWorkerOptions) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = false
     }
-    
-    if (debugEnabled()) console.log('[AI Parse Debug] Loading PDF document')
     
     // Load the PDF document with password
     const loadingTask = pdfjsLib.getDocument({
@@ -122,14 +127,10 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       verbosity: 0,
     })
     
-    // Handle password callback
-    if (password) {
+    // Handle password callback if password provided
+    if (password && loadingTask.onPassword) {
       loadingTask.onPassword = function(updatePassword: (pw: string) => void, reason: number) {
-        if (debugEnabled()) console.log('[AI Parse Debug] Password callback triggered, reason:', reason)
-        // reason 1 = NEED_PASSWORD, reason 2 = INCORRECT_PASSWORD
-        if (reason === 2) {
-          throw new Error('Incorrect password for this PDF.')
-        }
+        if (debugEnabled()) console.log('[AI Parse Debug] Password callback, reason:', reason)
         updatePassword(password)
       }
     }
@@ -142,15 +143,18 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
     
     // Extract text from all pages
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum)
-      const textContent = await page.getTextContent()
-      
-      const pageText = textContent.items
-        .map((item: any) => item.str || '')
-        .filter(Boolean)
-        .join(' ')
-      
-      fullText += (fullText ? '\n' : '') + pageText
+      try {
+        const page = await pdfDocument.getPage(pageNum)
+        const textContent = await page.getTextContent()
+        
+        const pageText = textContent.items
+          .map((item: any) => item.str || '')
+          .join('')
+        
+        fullText += (fullText ? '\n' : '') + pageText
+      } catch (pageErr: any) {
+        console.warn(`[AI Parse Debug] Error extracting page ${pageNum}:`, pageErr?.message)
+      }
     }
     
     if (!fullText.trim()) {
@@ -170,7 +174,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
     })
     
     // Handle password-related errors
-    if (name === 'PasswordException' || /password/i.test(msg) || /incorrect password/i.test(msg.toLowerCase())) {
+    if (name === 'PasswordException' || /password/i.test(msg) || /encrypt/i.test(msg)) {
       if (password) {
         throw new Error('Incorrect password for this PDF.')
       }
