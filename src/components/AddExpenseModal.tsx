@@ -22,7 +22,7 @@ interface AddExpenseModalProps {
   } | null
 }
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabaseClient'
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -60,6 +60,7 @@ function normalizeCategory(raw?: string, definedCategories?: string[]): string {
 
 export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', expense = null }: AddExpenseModalProps) {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   // Load categories for dropdown
   const { data: categories = [] } = useQuery({
     queryKey: ['categories', user?.id],
@@ -90,7 +91,6 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string>('')
-  const [useCloudAI, setUseCloudAI] = useState(true)
   const [parsedExpenses, setParsedExpenses] = useState<Array<{
     amount: number
     currency: string
@@ -101,6 +101,18 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     category?: string
     selected?: boolean
   }>>([])
+  const [overrideCurrency, setOverrideCurrency] = useState<string>('')
+  const [overridePaymentMethod, setOverridePaymentMethod] = useState<string>('')
+  const [paymentMethodTouched, setPaymentMethodTouched] = useState<boolean>(false)
+  const defaultPaymentMethodForCurrency = (cur?: string) => {
+    if (!cur) return ''
+    if (cur === 'CAD') return 'Credit Card'
+    if (cur === 'INR') return 'Debit Card'
+    return ''
+  }
+  // Optional PDF password (for encrypted PDFs)
+  const [pdfPassword, setPdfPassword] = useState<string>('')
+  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null)
   // (removed duplicate useAuth declaration)
   
   // Track if we've already initialized the form to prevent constant resets
@@ -212,48 +224,116 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
 
   const selectedCount = useMemo(() => parsedExpenses.filter(p => p.selected !== false).length, [parsedExpenses])
 
-  const handleUploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    
+  const updateParsedRow = (idx: number, patch: Partial<{ amount: number; currency: string; merchant?: string; payment_method?: string; note?: string; occurred_on: string; category?: string; selected?: boolean }>) => {
+    setParsedExpenses(prev => prev.map((row, i) => i === idx ? { ...row, ...patch } : row))
+  }
+
+  // Add a new category for the current user, avoiding duplicates (case-insensitive)
+  const addCategory = async (nameRaw: string): Promise<{ id: string | undefined, name: string } | null> => {
+    const name = (nameRaw || '').trim()
+    if (!name) { alert('Category name cannot be empty.'); return null }
+    if (!user?.id) { alert('You must be signed in to add categories.'); return null }
+
+    const existing = (categories as any[]).find(c => String(c.name).toLowerCase() === name.toLowerCase())
+    if (existing) {
+      // Already exists, just use it
+      return { id: (existing as any).id, name: existing.name }
+    }
+
+    const { data, error } = await supabase
+      .from('categories')
+      .insert({ user_id: user.id, name })
+      .select('id, name')
+      .single()
+    if (error) {
+      // If unique constraint or similar, try to recover by finding it again
+      const fallback = (categories as any[]).find(c => String(c.name).toLowerCase() === name.toLowerCase())
+      if (fallback) return { id: (fallback as any).id, name: fallback.name }
+      alert(error.message || 'Failed to add category')
+      return null
+    }
+
+    // Optimistically update cache so dropdowns reflect new category immediately
+    queryClient.setQueryData(['categories', user.id], (prev: any) => {
+      const arr = Array.isArray(prev) ? prev.slice() : []
+      if (!arr.some((c: any) => String(c.name).toLowerCase() === name.toLowerCase())) {
+        arr.push(data)
+      }
+      return arr
+    })
+    return { id: (data as any).id, name: (data as any).name }
+  }
+
+  const handleSelectPDF = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null
+    setSelectedPdfFile(file)
+    setImportError(null)
+    setParsedExpenses([])
+    setImportStatus(file ? 'PDF selected. Enter password if protected, then click Analyze.' : '')
+  }
+
+  const analyzeSelectedPDF = async () => {
+    if (!selectedPdfFile) return
     // Reset state
     setImportError(null)
     setParsedExpenses([])
     setImportStatus('Uploading PDF...')
     setImportLoading(true)
-    
+
     try {
       const form = new FormData()
-      form.append('file', file)
-      
-      setImportStatus(useCloudAI ? 'Analyzing with Cloud AI (masked)…' : 'Analyzing locally…')
-      const params = new URLSearchParams()
-      if (useCloudAI) {
-        params.set('external', '1')
-        params.set('mask', '1')
+      form.append('file', selectedPdfFile)
+      if (pdfPassword && pdfPassword.trim()) {
+        form.append('password', pdfPassword.trim())
       }
-      const url = `/api/ai/parse-statement${params.toString() ? `?${params.toString()}` : ''}`
-      const resp = await fetch(url, {
+
+      setImportStatus('Analyzing your statement…')
+      const resp = await fetch('/api/ai/parse-statement', {
         method: 'POST',
         body: form,
       })
-      
+
       if (!resp.ok) {
         const errorText = await resp.text().catch(() => '')
+        // Gracefully handle wrong/missing password
+        if (resp.status === 400 && /password/i.test(errorText)) {
+          setImportLoading(false)
+          setImportStatus('')
+          setImportError('Wrong password. Please try again.')
+          return
+        }
         throw new Error(`Upload failed (${resp.status}): ${errorText || resp.statusText}`)
       }
-      
+
       setImportStatus('Parsing transactions...')
-      
+
       const json = await resp.json()
       if (!json.success) throw new Error(json.error || 'Parse failed')
-      
+
       const rows = (json.expenses as any[])
       if (!Array.isArray(rows) || rows.length === 0) {
         setParsedExpenses([])
         setImportError('No transactions found in the uploaded PDF. Please check the file format and content.')
       } else {
-        setParsedExpenses(rows.map((e) => ({ ...e, selected: true })))
+        // Determine a sensible default payment method based on currency (CAD→Credit, INR→Debit)
+        const currencyCounts = rows.reduce<Record<string, number>>((acc, r) => {
+          const c = (r.currency || '').toUpperCase()
+          if (!c) return acc
+          acc[c] = (acc[c] || 0) + 1
+          return acc
+        }, {})
+        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
+        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
+
+        if (defaultPM) {
+          setOverridePaymentMethod(defaultPM)
+          setPaymentMethodTouched(false)
+        } else {
+          setOverridePaymentMethod('')
+          setPaymentMethodTouched(false)
+        }
+
+        setParsedExpenses(rows.map((e) => ({ ...e, selected: true, payment_method: defaultPM || e.payment_method })))
         setImportStatus(`Successfully extracted ${rows.length} transactions!`)
         // Clear success message after 2 seconds
         setTimeout(() => setImportStatus(''), 2000)
@@ -263,8 +343,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       console.error('PDF upload error:', err)
     } finally {
       setImportLoading(false)
-      // Reset file input to allow re-selecting the same file
-      e.target.value = ''
+      // Reset file selection to allow re-selecting the same file
+      setSelectedPdfFile(null)
+      const input = document.getElementById('uploadPdfInput') as HTMLInputElement | null
+      if (input) input.value = ''
     }
   }
 
@@ -308,7 +390,25 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         setParsedExpenses([])
         setImportError('No transactions found in the uploaded spreadsheet. Try another sheet or adjust column headers.')
       } else {
-        setParsedExpenses(rows.map((e) => ({ ...e, selected: true })))
+        // Determine default payment method from dominant currency (CAD→Credit, INR→Debit)
+        const currencyCounts = rows.reduce<Record<string, number>>((acc, r) => {
+          const c = (r.currency || '').toUpperCase()
+          if (!c) return acc
+          acc[c] = (acc[c] || 0) + 1
+          return acc
+        }, {})
+        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
+        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
+
+        if (defaultPM) {
+          setOverridePaymentMethod(defaultPM)
+          setPaymentMethodTouched(false)
+        } else {
+          setOverridePaymentMethod('')
+          setPaymentMethodTouched(false)
+        }
+
+        setParsedExpenses(rows.map((e) => ({ ...e, selected: true, payment_method: defaultPM || e.payment_method })))
         setImportStatus(`Successfully extracted ${rows.length} transactions!`)
         // Clear success message after 2 seconds
         setTimeout(() => setImportStatus(''), 2000)
@@ -494,24 +594,14 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                             )}
                             
                             <div className="flex flex-col gap-2 items-stretch">
-                              {/* Cloud AI toggle */}
-                              <label className="flex items-center gap-2 text-xs text-gray-700">
-                                <input
-                                  type="checkbox"
-                                  checked={useCloudAI}
-                                  onChange={(ev) => setUseCloudAI(ev.target.checked)}
-                                  disabled={importLoading}
-                                />
-                                <span>Use Perplexity for extraction (PII masked by default)</span>
-                              </label>
-                              <p className="text-[11px] text-gray-500 ml-6 -mt-1">Server masks emails, long numbers, phone numbers, and name fields before sending.</p>
+                              {/* AI is always used with masking by default; toggle removed for simplicity */}
 
                               <input 
                                 id="uploadPdfInput" 
                                 type="file" 
                                 accept="application/pdf" 
                                 className="hidden" 
-                                onChange={handleUploadPDF} 
+                                onChange={handleSelectPDF} 
                                 disabled={importLoading}
                                 aria-label="Upload PDF statement"
                               />
@@ -521,6 +611,31 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               >
                                 {importLoading ? 'Uploading...' : 'Upload PDF'}
                               </label>
+                              {selectedPdfFile && !importLoading && (
+                                <div className="flex items-center justify-between gap-2 text-xs text-gray-600">
+                                  <span className="truncate">Selected: {selectedPdfFile.name}</span>
+                                  <button
+                                    type="button"
+                                    className="btn-primary !py-1 !px-2"
+                                    onClick={analyzeSelectedPDF}
+                                  >
+                                    Analyze PDF
+                                  </button>
+                                </div>
+                              )}
+                              {/* Optional password input for encrypted PDFs */}
+                              <div className="flex items-center gap-2">
+                                <label htmlFor="pdfPassword" className="text-xs text-gray-600 whitespace-nowrap">Password (if protected):</label>
+                                <input
+                                  id="pdfPassword"
+                                  type="password"
+                                  value={pdfPassword}
+                                  onChange={(e) => setPdfPassword(e.target.value)}
+                                  placeholder="Enter PDF password"
+                                  className="border border-gray-300 rounded px-2 py-1 text-xs w-full"
+                                  autoComplete="off"
+                                />
+                              </div>
                               
                               <input 
                                 id="uploadSheetInput" 
@@ -542,8 +657,57 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                           {importError && <div className="mt-2 text-xs text-error-600 bg-error-50 border border-error-100 rounded p-2">{importError}</div>}
                           {parsedExpenses.length > 0 && (
                             <div className="mt-3">
-                              <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                                 <div className="text-sm text-gray-700">Parsed expenses: {parsedExpenses.length} • Selected: {selectedCount}</div>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-gray-600">Currency:</label>
+                                  <select
+                                    value={overrideCurrency || ''}
+                                    onChange={(e) => {
+                                      const cur = e.target.value
+                                      setOverrideCurrency(cur)
+                                      if (cur) {
+                                        setParsedExpenses(prev => prev.map(p => ({ ...p, currency: cur })))
+                                        // If user hasn't manually set payment method, default it based on selected currency
+                                        if (!paymentMethodTouched) {
+                                          const pm = defaultPaymentMethodForCurrency(cur)
+                                          setOverridePaymentMethod(pm)
+                                          if (pm) setParsedExpenses(prev => prev.map(p => ({ ...p, payment_method: pm })))
+                                        }
+                                      }
+                                    }}
+                                    className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                                  >
+                                    <option value="">— keep detected —</option>
+                                    <option value="USD">USD</option>
+                                    <option value="EUR">EUR</option>
+                                    <option value="GBP">GBP</option>
+                                    <option value="CAD">CAD</option>
+                                    <option value="AUD">AUD</option>
+                                    <option value="INR">INR</option>
+                                  </select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs text-gray-600">Payment method:</label>
+                                  <select
+                                    value={overridePaymentMethod || ''}
+                                    onChange={(e) => {
+                                      const pm = e.target.value
+                                      setOverridePaymentMethod(pm)
+                                      setPaymentMethodTouched(true)
+                                      if (pm) setParsedExpenses(prev => prev.map(p => ({ ...p, payment_method: pm })))
+                                    }}
+                                    className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                                  >
+                                    <option value="">— keep detected —</option>
+                                    <option value="Credit Card">Credit Card</option>
+                                    <option value="Debit Card">Debit Card</option>
+                                    <option value="Bank Transfer">Bank Transfer</option>
+                                    <option value="Digital Wallet">Digital Wallet</option>
+                                    <option value="Interact">Interact</option>
+                                    <option value="Cash">Cash</option>
+                                  </select>
+                                </div>
                                 <div className="space-x-2">
                                   <button type="button" className="btn-secondary" onClick={() => setParsedExpenses(prev => prev.map(p => ({ ...p, selected: true })))}>Select all</button>
                                   <button type="button" className="btn-secondary" onClick={() => setParsedExpenses(prev => prev.map(p => ({ ...p, selected: false })))}>Clear</button>
@@ -559,6 +723,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                         <th className="px-2 py-2 text-right">Amount</th>
                                         <th className="px-2 py-2 text-left">Currency</th>
                                         <th className="px-2 py-2 text-left">Merchant</th>
+                                        <th className="px-2 py-2 text-left">Payment</th>
                                         <th className="px-2 py-2 text-left">Category</th>
                                     </tr>
                                     </thead>
@@ -570,7 +735,49 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                           <td className="px-2 py-2 text-right whitespace-nowrap">{p.amount}</td>
                                           <td className="px-2 py-2 whitespace-nowrap">{p.currency}</td>
                                           <td className="px-2 py-2">{p.merchant || '—'}</td>
-                                          <td className="px-2 py-2">{p.category || '—'}</td>
+                                          <td className="px-2 py-2">
+                                            <select
+                                              value={p.payment_method || ''}
+                                              onChange={(ev) => updateParsedRow(idx, { payment_method: ev.target.value || undefined })}
+                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                                            >
+                                              <option value="">—</option>
+                                              <option value="Credit Card">Credit Card</option>
+                                              <option value="Debit Card">Debit Card</option>
+                                              <option value="Bank Transfer">Bank Transfer</option>
+                                              <option value="Digital Wallet">Digital Wallet</option>
+                                              <option value="Interact">Interact</option>
+                                              <option value="Cash">Cash</option>
+                                            </select>
+                                          </td>
+                                          <td className="px-2 py-2">
+                                            <select
+                                              value={p.category || ''}
+                                              onChange={async (ev) => {
+                                                const val = ev.target.value
+                                                if (val === '__add__') {
+                                                  const newName = window.prompt('Enter new category name:')
+                                                  if (newName && newName.trim()) {
+                                                    const created = await addCategory(newName)
+                                                    if (created) updateParsedRow(idx, { category: created.name })
+                                                  }
+                                                  // Do not set to '__add__'
+                                                  return
+                                                }
+                                                updateParsedRow(idx, { category: val || undefined })
+                                              }}
+                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                                            >
+                                              <option value="">—</option>
+                                              {definedCategoryNames.map((name: string) => (
+                                                <option key={name} value={name}>{name}</option>
+                                              ))}
+                                              {!definedCategoryNames.includes('Other') && (
+                                                <option value="Other">Other</option>
+                                              )}
+                                              <option value="__add__">+ Add new…</option>
+                                            </select>
+                                          </td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -689,13 +896,29 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                           id="category"
                           required
                           value={formData.category}
-                          onChange={handleInputChange}
+                          onChange={async (e) => {
+                            const val = e.target.value
+                            if (val === '__add__') {
+                              const newName = window.prompt('Enter new category name:')
+                              if (newName && newName.trim()) {
+                                const created = await addCategory(newName)
+                                if (created) {
+                                  setFormData(prev => ({ ...prev, category: created.name }))
+                                  return
+                                }
+                              }
+                              // If cancelled or failed, don't change the select
+                              return
+                            }
+                            handleInputChange(e)
+                          }}
                           className="input"
                         >
                           <option value="">Select a category</option>
                           {definedCategoryNames.map((cat) => (
                             <option key={cat} value={cat}>{cat}</option>
                           ))}
+                          <option value="__add__">+ Add new…</option>
                         </select>
                       </div>
 

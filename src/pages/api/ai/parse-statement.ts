@@ -33,13 +33,13 @@ async function readFile(file: FormidableFile): Promise<Buffer> {
 }
 
 // Fast text extraction: prefer pdf-parse (fast, native) with pdfjs fallback (no visual redaction)
-async function extractTextFast(file: FormidableFile): Promise<string> {
+async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
   const data = await readFile(file)
   // Try pdf-parse first (fast path on serverless)
   try {
     const pdfParseMod: any = await import('pdf-parse')
     const pdfParse = pdfParseMod?.default || pdfParseMod
-    const parsed = await pdfParse(data)
+    const parsed = await pdfParse(data, password ? { password } : undefined)
     if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
       return String(parsed.text)
     }
@@ -51,25 +51,34 @@ async function extractTextFast(file: FormidableFile): Promise<string> {
   try {
     const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
     const uint8Data = new Uint8Array(data)
-    const loadingTask = pdfjsLib.getDocument({
-      data: uint8Data,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      useSystemFonts: true,
-      verbosity: 0,
-    })
-    const pdfDocument = await loadingTask.promise
-    let text = ''
-    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum)
-      const textContent = await page.getTextContent()
-      const line = textContent.items
-        .map((it: any) => ('str' in it && it.str ? it.str : ''))
-        .filter(Boolean)
-        .join(' ')
-      text += (text ? '\n' : '') + line
+    try {
+      const loadingTask = pdfjsLib.getDocument({
+        data: uint8Data,
+        password: password || undefined,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+        verbosity: 0,
+      })
+      const pdfDocument = await loadingTask.promise
+      let text = ''
+      for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+        const page = await pdfDocument.getPage(pageNum)
+        const textContent = await page.getTextContent()
+        const line = textContent.items
+          .map((it: any) => ('str' in it && it.str ? it.str : ''))
+          .filter(Boolean)
+          .join(' ')
+        text += (text ? '\n' : '') + line
+      }
+      return text
+    } catch (e: any) {
+      const msg = e?.message || ''
+      if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+        throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
+      }
+      throw e
     }
-    return text
   } catch (e) {
     // If both engines fail, surface a helpful error
     throw new Error('PDF processing engine unavailable on this runtime')
@@ -77,24 +86,34 @@ async function extractTextFast(file: FormidableFile): Promise<string> {
 }
 
 // Structured text extraction using pdfjs positions to preserve columns (no redaction)
-async function extractTextWithColumns(file: FormidableFile): Promise<string> {
+async function extractTextWithColumns(file: FormidableFile, password?: string): Promise<string> {
   const data = await readFile(file)
   let pdfjsLib: any
   try {
     pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
   } catch (e) {
     // Fallback to fast extractor if pdfjs not available
-    return extractTextFast(file)
+    return extractTextFast(file, password)
   }
   const uint8Data = new Uint8Array(data)
-  const loadingTask = pdfjsLib.getDocument({
-    data: uint8Data,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-    verbosity: 0,
-  })
-  const pdfDocument = await loadingTask.promise
+  let pdfDocument: any
+  try {
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Data,
+      password: password || undefined,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      verbosity: 0,
+    })
+    pdfDocument = await loadingTask.promise
+  } catch (e: any) {
+    const msg = e?.message || ''
+    if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
+    }
+    throw e
+  }
   const items: Array<{ text: string; x: number; y: number; width: number; height: number }> = []
   for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
     const page = await pdfDocument.getPage(pageNum)
@@ -141,266 +160,227 @@ async function extractTextWithColumns(file: FormidableFile): Promise<string> {
   return text
 }
 
-// Visual redaction: overlay black boxes on PII while preserving layout
-async function redactPdfVisually(file: FormidableFile): Promise<{ buffer: Buffer; text: string }> {
+// Build a row/column grid from PDF text items preserving columns
+async function extractRowsWithColumns(file: FormidableFile, password?: string): Promise<string[][]> {
+  const data = await readFile(file)
+  let pdfjsLib: any
   try {
-    const data = await readFile(file)
-    
-    // Convert Buffer to Uint8Array for pdfjs-dist
-    const uint8Data = new Uint8Array(data)
-    
-    // Load with pdfjs to get text positions (more forgiving of PDF issues)
-    // Configure pdfjs for Node.js environment (disable workers)
-    // Dynamically import pdfjs to avoid top-level crashes in certain runtimes
-    let pdfjsLib: any
-    try {
-      pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    } catch (e) {
-      // Fallback: Use pdf-parse when pdfjs isn't available
-      try {
-        const pdfParseMod: any = await import('pdf-parse')
-        const pdfParse = pdfParseMod?.default || pdfParseMod
-        const parsed = await pdfParse(data)
-        if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-          return { buffer: data, text: String(parsed.text) }
-        }
-        throw new Error('pdf-parse returned no text')
-      } catch (fallbackErr) {
-        throw new Error('PDF processing engine unavailable on this runtime')
-      }
-    }
-
-    const loadingTask = pdfjsLib.getDocument({ 
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  } catch (e) {
+    // Fallback to simple fast text => single-column rows
+    const text = await extractTextFast(file, password)
+    return text.split(/\r?\n/).map(l => [l])
+  }
+  const uint8Data = new Uint8Array(data)
+  let pdfDocument: any
+  try {
+    const loadingTask = pdfjsLib.getDocument({
       data: uint8Data,
+      password: password || undefined,
       useWorkerFetch: false,
       isEvalSupported: false,
       useSystemFonts: true,
-      verbosity: 0, // Suppress warnings
+      verbosity: 0,
     })
-    const pdfDocument = await loadingTask.promise
-    
-    if (debugEnabled()) {
-      console.log('[AI Parse Debug] PDF loaded with pdfjs:', pdfDocument.numPages, 'pages')
+    pdfDocument = await loadingTask.promise
+  } catch (e: any) {
+    const msg = e?.message || ''
+    if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
-    
-    // Try to load with pdf-lib for redaction (may fail on corrupted PDFs)
-    let pdfDoc: PDFDocument | null = null
-    try {
-      pdfDoc = await PDFDocument.load(data, { 
-        ignoreEncryption: true,
-        updateMetadata: false,
-      })
-      if (debugEnabled()) {
-        console.log('[AI Parse Debug] PDF loaded with pdf-lib for redaction')
-      }
-    } catch (pdfLibError) {
-      if (debugEnabled()) {
-        console.log('[AI Parse Debug] pdf-lib failed to load PDF (will skip visual redaction):', pdfLibError instanceof Error ? pdfLibError.message : 'Unknown error')
-      }
-      // Continue without visual redaction - just extract text
-    }
-  
-  const allTextItems: Array<{
-    text: string
-    x: number
-    y: number
-    width: number
-    height: number
-    pageIndex: number
-  }> = []
-  
-  // Extract text with positions from all pages
+    throw e
+  }
+  type Item = { text: string; x: number; y: number; w: number; h: number }
+  const items: Item[] = []
   for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
     const page = await pdfDocument.getPage(pageNum)
     const textContent = await page.getTextContent()
     const viewport = page.getViewport({ scale: 1.0 })
-    
-    for (const item of textContent.items) {
-      if ('str' in item && item.str) {
-        const tx = item.transform
+    for (const it of textContent.items) {
+      if ('str' in it && it.str) {
+        const tx = it.transform
         const x = tx[4]
-        const y = viewport.height - tx[5] // Flip Y for pdf-lib coordinate system
-        const width = item.width
-        const height = item.height
-        
-        allTextItems.push({
-          text: item.str,
-          x,
-          y: y - height, // Adjust for baseline
-          width,
-          height,
-          pageIndex: pageNum - 1
-        })
+        const y = viewport.height - tx[5]
+        items.push({ text: it.str, x, y: y - it.height, w: it.width, h: it.height })
       }
     }
   }
-  
-  // Patterns to redact
-  const piiPatterns = [
-    // Account numbers (8+ digits possibly with spaces/dashes)
-    /\b\d[\d\s\-]{7,}\d\b/,
-    // Email addresses
-    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
-    // Phone numbers
-    /\+?\d[\d\s\-()]{7,}\d/,
-    // Credit card patterns (4 groups of 4 digits)
-    /\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/,
-  ]
-  
-  // Check for custom redaction words from env
-  const customWords = (process.env.AI_EXTRA_REDACT_WORDS || '').split(',').map(s => s.trim()).filter(Boolean)
-  
-  const toRedact: typeof allTextItems = []
-  
-  for (const item of allTextItems) {
-    let shouldRedact = false
-    
-    // Check patterns
-    for (const pattern of piiPatterns) {
-      if (pattern.test(item.text)) {
-        shouldRedact = true
-        break
-      }
-    }
-    
-    // Check custom words
-    if (!shouldRedact) {
-      for (const word of customWords) {
-        if (item.text.toLowerCase().includes(word.toLowerCase())) {
-          shouldRedact = true
-          break
-        }
-      }
-    }
-    
-    // Check for potential names (heuristic: capitalized words after "Name:" or similar)
-    if (!shouldRedact && /^(name|customer|holder|owner):/i.test(item.text)) {
-      shouldRedact = true
-    }
-    
-    if (shouldRedact) {
-      toRedact.push(item)
+  // Group items into rows by y proximity
+  const sorted = items.sort((a, b) => (Math.abs(a.y - b.y) > 3 ? a.y - b.y : a.x - b.x))
+  const rows: Item[][] = []
+  for (const it of sorted) {
+    const last = rows[rows.length - 1]
+    if (!last) rows.push([it])
+    else {
+      const yDiff = Math.abs(it.y - last[0].y)
+      if (yDiff <= 3) last.push(it)
+      else rows.push([it])
     }
   }
-  
-  // Draw black rectangles over PII (only if pdf-lib loaded successfully)
-  let buffer = Buffer.from('')
-  
-  if (pdfDoc) {
-    try {
-      const pages = pdfDoc.getPages()
-      for (const item of toRedact) {
-        const page = pages[item.pageIndex]
-        if (!page) continue
-        
-        const { height: pageHeight } = page.getSize()
-        
-        // Add padding to cover text completely
-        const padding = 2
-        page.drawRectangle({
-          x: item.x - padding,
-          y: pageHeight - item.y - item.height - padding, // Convert back to PDF coordinate system
-          width: item.width + padding * 2,
-          height: item.height + padding * 2,
-          color: rgb(0, 0, 0), // Black
-        })
-      }
-      
-      // Save redacted PDF
-      const redactedBytes = await pdfDoc.save()
-      buffer = Buffer.from(redactedBytes)
-      
-      if (debugEnabled()) {
-        console.log('[AI Parse Debug] Visual redaction complete, redacted', toRedact.length, 'items')
-      }
-    } catch (redactError) {
-      // PDF structure is too corrupted for redaction - continue anyway
-      if (debugEnabled()) {
-        console.log('[AI Parse Debug] Failed to apply visual redaction (corrupted PDF structure):', redactError instanceof Error ? redactError.message : 'Unknown error')
-      }
-    }
-  } else {
-    if (debugEnabled()) {
-      console.log('[AI Parse Debug] Skipping visual redaction (pdf-lib unavailable)')
-    }
-  }
-  
-    // Extract text preserving table structure using positions
-    // Sort all items by Y position first, then X position
-    const sortedItems = [...allTextItems].sort((a, b) => {
-      const yDiff = a.y - b.y
-      if (Math.abs(yDiff) > 3) return yDiff // Different rows
-      return a.x - b.x // Same row, sort by X
-    })
-    
-    let text = ''
-    let currentY = -999
-    let lineText = ''
+  // For each row, split into columns based on x gaps
+  const result: string[][] = []
+  for (const r of rows) {
+    r.sort((a, b) => a.x - b.x)
+    const cols: string[] = []
+    let current = ''
     let lastX = 0
-    
-    for (const item of sortedItems) {
-      // Check if this is a new line (Y position changed by more than 3 pixels)
-      if (Math.abs(item.y - currentY) > 3) {
-        // Save previous line
-        if (lineText.trim()) {
-          text += lineText.trim() + '\n'
-        }
-        lineText = ''
-        lastX = 0
-        currentY = item.y
+    for (let i = 0; i < r.length; i++) {
+      const it = r[i]
+      if (i === 0) {
+        current = it.text
+        lastX = it.x + it.w
+        continue
       }
-      
-      // Check if this item was redacted
-      const wasRedacted = toRedact.some(
-        r => r.pageIndex === item.pageIndex && 
-             Math.abs(r.x - item.x) < 1 && 
-             Math.abs(r.y - item.y) < 1
-      )
-      
-      // Add spacing based on horizontal gap (preserve columns)
-      const gap = item.x - lastX
-      if (lastX > 0) {
-        if (gap > 30) {
-          // Large gap = new column
-          lineText += '  |  ' // Column separator with marker
-        } else if (gap > 10) {
-          lineText += '  ' // Medium gap = column
-        } else if (gap > 2) {
-          lineText += ' ' // Small gap = space between words
-        }
-      }
-      
-      if (wasRedacted) {
-        lineText += '[REDACTED]'
+      const gap = it.x - lastX
+      if (gap > 30) {
+        // new column
+        cols.push(current.trim())
+        current = it.text
+      } else if (gap > 10) {
+        current += '  ' + it.text
+      } else if (gap > 2) {
+        current += ' ' + it.text
       } else {
-        lineText += item.text
+        current += it.text
       }
-      
-      lastX = item.x + item.width
+      lastX = it.x + it.w
     }
-    
-    // Don't forget the last line
-    if (lineText.trim()) {
-      text += lineText.trim() + '\n'
+    if (current.trim()) cols.push(current.trim())
+    // Skip empty rows
+    if (cols.some(c => c && c.trim().length > 0)) result.push(cols)
+  }
+  return result
+}
+
+// Extract rows/columns per page
+async function extractPagesWithColumns(file: FormidableFile, password?: string): Promise<string[][][]> {
+  const data = await readFile(file)
+  let pdfjsLib: any
+  try {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  } catch (e) {
+    // Fallback: single page with fast text
+    const text = await extractTextFast(file, password)
+    return [text.split(/\r?\n/).map(l => [l])]
+  }
+  const uint8Data = new Uint8Array(data)
+  let pdfDocument: any
+  try {
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Data,
+      password: password || undefined,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      verbosity: 0,
+    })
+    pdfDocument = await loadingTask.promise
+  } catch (e: any) {
+    const msg = e?.message || ''
+    if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
-    
-    return { buffer, text }
-  } catch (error) {
-    console.error('[Visual Redaction Error]', error)
-    
-    // Provide user-friendly error messages
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    
-    if (errorMessage.includes('encrypted') || errorMessage.includes('password')) {
-      throw new Error('PDF is password-protected. Please remove the password and try again.')
-    } else if (errorMessage.includes('Invalid PDF')) {
-      throw new Error('Invalid or corrupted PDF file. Please try downloading it again from your bank.')
-    } else if (errorMessage.includes('Cannot read')) {
-      throw new Error('Unable to read PDF file. The file may be corrupted.')
+    throw e
+  }
+  const pages: string[][][] = []
+  for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+    const page = await pdfDocument.getPage(pageNum)
+    const textContent = await page.getTextContent()
+    const viewport = page.getViewport({ scale: 1.0 })
+    type Item = { text: string; x: number; y: number; w: number; h: number }
+    const items: Item[] = []
+    for (const it of textContent.items) {
+      if ('str' in it && it.str) {
+        const tx = it.transform
+        const x = tx[4]
+        const y = viewport.height - tx[5]
+        items.push({ text: it.str, x, y: y - it.height, w: it.width, h: it.height })
+      }
     }
-    
-    // Generic error for unknown issues
-    throw new Error(`Failed to process PDF: ${errorMessage}`)
+    // sort and build rows for this page
+    const sorted = items.sort((a, b) => (Math.abs(a.y - b.y) > 3 ? a.y - b.y : a.x - b.x))
+    const rowItems: Item[][] = []
+    for (const it of sorted) {
+      const last = rowItems[rowItems.length - 1]
+      if (!last) rowItems.push([it])
+      else {
+        const yDiff = Math.abs(it.y - last[0].y)
+        if (yDiff <= 3) last.push(it)
+        else rowItems.push([it])
+      }
+    }
+    const rows: string[][] = []
+    for (const r of rowItems) {
+      r.sort((a, b) => a.x - b.x)
+      const cols: string[] = []
+      let current = ''
+      let lastX = 0
+      for (let i = 0; i < r.length; i++) {
+        const it = r[i]
+        if (i === 0) {
+          current = it.text
+          lastX = it.x + it.w
+          continue
+        }
+        const gap = it.x - lastX
+        if (gap > 30) { cols.push(current.trim()); current = it.text }
+        else if (gap > 10) current += '  ' + it.text
+        else if (gap > 2) current += ' ' + it.text
+        else current += it.text
+        lastX = it.x + it.w
+      }
+      if (current.trim()) cols.push(current.trim())
+      if (cols.some(c => c && c.trim().length > 0)) rows.push(cols)
+    }
+    pages.push(rows)
+  }
+  return pages
+}
+
+// Visual redaction (simplified): extract text with password support and return original buffer
+// Note: pdf-lib cannot open encrypted PDFs reliably; we skip drawing and only return text+buffer.
+async function redactPdfVisually(file: FormidableFile, password?: string): Promise<{ buffer: Buffer; text: string }> {
+  const data = await readFile(file)
+  // Try pdf-parse with password first
+  try {
+    const pdfParseMod: any = await import('pdf-parse')
+    const pdfParse = pdfParseMod?.default || pdfParseMod
+    const parsed = await pdfParse(data, password ? { password } : undefined)
+    if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
+      return { buffer: data, text: String(parsed.text) }
+    }
+  } catch (e) {
+    // continue to pdfjs fallback
+  }
+  // Fallback to pdfjs with password
+  try {
+    const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(data),
+      password: password || undefined,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      verbosity: 0,
+    })
+    const pdfDocument = await loadingTask.promise
+    let text = ''
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const textContent = await page.getTextContent()
+      const line = textContent.items
+        .map((it: any) => ('str' in it && it.str ? it.str : ''))
+        .filter(Boolean)
+        .join(' ')
+      text += (text ? '\n' : '') + line
+    }
+    return { buffer: data, text }
+  } catch (e: any) {
+    const msg = e?.message || ''
+    if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
+    }
+    throw new Error('PDF processing engine unavailable on this runtime')
   }
 }
 
@@ -476,238 +456,15 @@ async function callPerplexity(prompt: string, opts?: { timeoutMs?: number; signa
   if (!apiKey) throw new Error('Missing PERPLEXITY_API_KEY')
 
   // Instruct the model to return strict JSON matching our schema
-  const system = `You are an expert financial data extraction AI with 99.9% accuracy. Your specialty is parsing bank statements with perfect precision. CRITICAL: Every digit matters - 29.10 is NOT 1, and 1,900.00 is NOT missing!`
-  const user = `Extract ALL transactions from this bank/credit card statement with PERFECT ACCURACY. Every digit, decimal, merchant name, and date must be EXACT.
-
-${prompt}
-
-⚠️ CRITICAL EXTRACTION RULES - UNIVERSAL FOR ALL STATEMENT FORMATS:
-
-📋 STATEMENT FORMATS YOU MIGHT SEE:
-
-**Format A - Horizontal Table:**
-Date | Description | Withdrawals | Deposits | Balance
-2 Jul | e-Transfer sent | 1,900.00 | | 3,822.53
-
-**Format B - Vertical Columns:**
-TRANSACTION DATE | POSTING DATE | ACTIVITY DESCRIPTION | AMOUNT ($)
-JUN 28 | JUN 30 | LS 1000384172 ONTARIO | $109.61
-JUL 01 | JUL 03 | PRESTO FARE/PGN87JJGN8 | $3.30
-
-**Format C - Free-form:**
-16 Apr ATMwithdrawal - TQ242986 880.00 1,103.38
-
-🎯 HOW TO IDENTIFY THE AMOUNT (WORKS FOR ALL FORMATS):
-
-✅ Amount characteristics:
-- Has a dollar sign ($) OR decimal point with exactly 2 digits (.00, .50, .99)
-- Format: X.XX or $X.XX or ($X.XX) for negatives
-- May have comma separators: 1,234.56 or $1,234.56
-- Negative amounts may use minus (-) or parentheses ()
-
-❌ NOT amounts (ignore these):
-- Long numeric codes: 74099865179000006074049 (no decimals, too many digits)
-- Reference numbers after dashes: - TQ242986, - 2184
-- Account numbers: usually 4-16 digits without decimals
-- Exchange rates: "Exchange rate - 1.410594" (has context words)
-- Phone numbers: 703-889-2611
-- Postal codes: ON, QC
-- Balance (if shown) is usually the LAST number on the line
-
-📝 AMOUNT EXTRACTION STEP-BY-STEP:
-
-Step 1: Find all numbers with decimals (X.XX format) or dollar signs ($)
-Step 2: Eliminate reference codes (long numbers, alphanumeric, no decimals)
-Step 3: Eliminate exchange rates (look for "exchange rate" text nearby)
-Step 4: The number marked "AMOUNT" or in the amount column = transaction amount
-Step 5: Copy EXACTLY as shown - preserve ALL digits
-
-🔍 CONCRETE EXAMPLES - STUDY THESE:
-
-Example 1 - Vertical format:
-"JUN 28  |  JUN 30  |  LS 1000384172 ONTARIO BRAMPTON ON 74099865179000006074049  |  $109.61"
-- "74099865179000006074049" = transaction code (20 digits, no decimals)
-- "$109.61" = AMOUNT (has $ and decimals)
-✅ CORRECT: amount = 109.61, merchant = "LS 1000384172 ONTARIO"
-
-Example 2 - Foreign currency:
-"JUL 01  |  JUL 02  |  CSRA US*EMBASSY MRV 703-889-2611 QC 74703405182100564989196 Foreign Currency - USD 185.00 Exchange rate - 1.410594  |  $260.96"
-- "185.00" = foreign amount (ignore, not the charged amount)
-- "1.410594" = exchange rate (ignore)
-- "$260.96" = ACTUAL AMOUNT CHARGED (in your currency)
-✅ CORRECT: amount = 260.96, merchant = "US*EMBASSY MRV"
-
-Example 3 - Payment/credit:
-"JUL 16  |  JUL 16  |  AUTOMATIC PAYMENT -THANK YOU  |  -$22.66"
-- "-$22.66" = negative amount (payment received/credit)
-✅ CORRECT: amount = -22.66 (negative), merchant = "AUTOMATIC PAYMENT"
-
-Example 4 - Small amounts (don't confuse with "1"):
-"JUL 01  |  JUL 03  |  PRESTO FARE/PGN87JJGN8 TORONTO ON 74064495183820144492402  |  $3.30"
-- "74064495183820144492402" = transaction code
-- "$3.30" = AMOUNT
-✅ CORRECT: amount = 3.30
-❌ WRONG: amount = 1 (where did this come from?)
-
-🚨 CRITICAL ACCURACY RULES:
-
-1. **Extract EVERY transaction** - even duplicates, even if same merchant/amount
-2. **Preserve ALL digits** - 109.61 is NOT 109.6, 3.30 is NOT 3.3
-3. **Check the format** - Look for $ symbol or "AMOUNT" column header
-4. **Ignore codes** - Long numbers without decimals are NOT amounts
-5. **Foreign currency** - Use the final charged amount (after exchange rate)
-6. **Negative amounts** - Preserve the minus sign or note it's a credit
-
-⚡ MERCHANT NAME EXTRACTION:
-
-- Remove transaction codes (numeric strings)
-- Remove location info (city names, ON, QC, postal codes)
-- Remove reference codes after slashes (PRESTO FARE/PGN87JJGN8 → "PRESTO FARE")
-- Keep the core business name: "LS 1000384172 ONTARIO" → "LS ONTARIO"
-
-📅 DATE EXTRACTION:
-
-- Use the TRANSACTION DATE (first date) if two dates shown
-- Format as YYYY-MM-DD
-- If year not shown, infer from context (use current or statement year)
-
-⚠️ CRITICAL RULES - READ CAREFULLY:
-
-1. AMOUNT EXTRACTION - ZERO TOLERANCE FOR ERRORS:
-   
-   ❌ COMMON MISTAKES TO AVOID:
-   - 800.00 extracted as 80.00 (missing a zero) - WRONG!
-   - 880.00 extracted as 88.00 or 100.00 - WRONG!
-   - Using reference numbers as amounts - WRONG!
-   - Using balance as amount - WRONG!
-   
-   ✅ HOW TO EXTRACT CORRECTLY:
-   - Copy the EXACT number with ALL digits preserved
-   - Amounts in statements ALWAYS have 2 decimal places: .00 or .XX
-   - Look in the Withdrawal/Debit column (middle section of line)
-   - Numbers after dashes are reference codes, NOT amounts
-   - The last number on a line is usually the balance, NOT the amount
-   
-   CONCRETE EXAMPLES - Study these patterns:
-   
-   Example A: "25 Feb Visa Debit purchase - 6514 AFFIRM CANADA 43.03 6,977.88"
-   Analysis: This line has multiple numbers:
-   - "6514" = reference/auth code (appears after dash, NO decimals, 4 digits)
-   - "43.03" = ACTUAL AMOUNT (has decimals, in withdrawal column)
-   - "6,977.88" = running balance (largest number, at end of line)
-   CORRECT: amount = 43.03 ✓
-   WRONG: amount = 6514 ✗ (this is just a reference number)
-   
-   Example B: "26 Feb Contactless Interac purchase - 6394 SHREE HARI FOOD 39.55"
-   Analysis:
-   - "6394" = reference code (after dash)
-   - "39.55" = ACTUAL AMOUNT
-   CORRECT: amount = 39.55 ✓
-   
-   Example C: "Online Transfer to Deposit Account-8049 5,000.00 1,938.33"
-   Analysis:
-   - "8049" = account number (after dash)
-   - "5,000.00" = ACTUAL AMOUNT
-   - "1,938.33" = balance
-   CORRECT: amount = 5000.00 ✓
-   
-   Example D: "18 Feb Investment SPECIAL DEPOSIT 50.00"
-   Analysis:
-   - "50.00" = ACTUAL AMOUNT (investment withdrawal)
-   CORRECT: amount = 50.00 ✓
-   
-   Example E: "16 Apr ATMwithdrawal - TQ242986 880.00 1,103.38"
-   Analysis:
-   - "TQ242986" or "242986" = transaction reference code (after dash, part of transaction ID)
-   - "880.00" = ACTUAL AMOUNT (has decimal, in middle)
-   - "1,103.38" = balance (last number on line)
-   CORRECT: amount = 880.00 ✓ (all three digits: 8-8-0)
-   WRONG: amount = 88.00 ✗ (missing digit)
-   WRONG: amount = 100 ✗ (wrong number)
-   WRONG: amount = 242986 ✗ (reference code)
-   WRONG: amount = 1103.38 ✗ (balance, not amount)
-   
-   Example F: "Misc Payment RBC CREDIT CARD 213.57 1,103.38"
-   Analysis:
-   - "213.57" = ACTUAL AMOUNT
-   - "1,103.38" = balance
-   CORRECT: amount = 213.57 ✓ (all digits: 2-1-3.5-7)
-   WRONG: amount = 21.57 ✗ (missing digit)
-   WRONG: amount = 1103.38 ✗ (balance)
-
-2. RULES TO IDENTIFY REFERENCE NUMBERS (NOT AMOUNTS):
-   - Appears immediately after a dash/hyphen (e.g., "- 6514", "- TQ242986", "Account-8049")
-   - Usually 4-6 digits with NO decimal places, or alphanumeric codes (TQ242986, REF123456)
-   - Labeled with keywords: "Ref", "Auth", "Conf", "ID", "Code", "#", "TQ", "TX"
-   - Last 4 digits of card numbers
-   - ATM transaction codes often start with letters like "TQ", "TX", "ATM" followed by numbers
-   
-3. RULES TO IDENTIFY BALANCES (NOT AMOUNTS):
-   - Usually the LAST number on the line
-   - Typically the LARGEST number on the line
-   - Shows cumulative total, not individual transaction
-   
-4. DOUBLE-CHECK YOUR EXTRACTION:
-   - Count the digits: 800.00 has THREE digits before decimal (8-0-0), not two!
-   - Verify: 880.00 = 8, 8, 0, ., 0, 0 (all six characters must be preserved)
-   - Verify: 213.57 = 2, 1, 3, ., 5, 7 (all six characters must be preserved)
-   - If you extract 80.00 but the original shows 800.00, you made an ERROR
-   - NEVER truncate, round, or modify the amount in any way
-   
-5. TRANSACTION AMOUNT CHARACTERISTICS:
-   - Format: Always X.XX or XX.XX or XXX.XX or X,XXX.XX with EXACTLY 2 decimal places
-   - Position: Middle section of line (after merchant/description, before balance)
-   - Pattern: Has a decimal point with exactly 2 digits after it
-   - May have thousand separators: 1,033.31 or 5,000.00
-   - Bank statements don't have amounts like "880" without decimals - it's always "880.00"
-
-6. STEP-BY-STEP EXTRACTION PROCESS:
-   Step 1: Identify all numbers on the line
-   Step 2: Eliminate reference codes (after dashes, alphanumeric, no decimals)
-   Step 3: Eliminate the balance (last number, usually largest)
-   Step 4: The remaining number with .XX format is your amount
-   Step 5: Copy it EXACTLY as written - preserve EVERY digit
-   Step 6: Verify digit count matches the original
-
-7. MERCHANT/DESCRIPTION EXTRACTION:
-   - Extract the business name EXACTLY as shown (preserve case, spelling)
-   - Examples: "AFFIRM CANADA", "SHREE HARI FOOD", "RBC CREDIT CARD"
-   - Do NOT include: dates, reference codes, transaction types
-   - "Visa Debit purchase - 6514 AFFIRM CANADA" → merchant = "AFFIRM CANADA"
-   - "ATMwithdrawal - TQ242986" → merchant = "ATM" (or "ATM Withdrawal")
-   - "Misc Payment RBC CREDIT CARD" → merchant = "RBC CREDIT CARD"
-
-8. WHAT TO EXTRACT:
-   - ALL withdrawals, purchases, fees, charges (money out)
-   - Investments, transfers to savings/investment accounts (even if labeled "deposit")
-   - Loan payments, bill payments
-   - DO NOT extract: payroll deposits, generic credits unless they're transfers/investments
-
-OTHER RULES:
-- Date format: YYYY-MM-DD (use posting date if two dates shown, or extract the date shown)
-- Currency: ISO 4217 code (CAD, USD, EUR, etc.) - if not shown, infer from context or use CAD
-- Signs: Withdrawals/purchases = positive; refunds/cashbacks = negative; investments = positive
-- Category: Only if obvious (Investment, Savings, Food & Dining, etc.)
-- Note: Short human-readable description (e.g., "ATM Withdrawal", "Credit Card Payment", "Grocery Shopping")
-- line_index: The numbered line (1, 2, 3...) containing this transaction
-- Extract transactions in order, don't skip any
-
-🎯 ACCURACY CHECKPOINT:
-Before submitting your response, verify EACH transaction:
-✓ Amount has ALL digits preserved (800.00 not 80.00)
-✓ Merchant name is accurate
-✓ Date is in YYYY-MM-DD format
-✓ No reference codes used as amounts
-✓ No balance numbers used as amounts
-
-Return JSON matching the schema.`
-
+  const system = `You are a finance assistant. Extract all expense transactions from provided bank/credit card statement text. Return structured JSON only. Do not include any personally identifiable information (PII) and do not extract account summaries.`
+  const user = `The input below is a list of NUMBERED LINES from a bank/credit card statement (from an Excel/CSV export). Extract transactions strictly from these lines.\n\n${prompt}\n\nRules:\n- Output an "expenses" array that follows the order of the numbered lines. Do not sort or group.\n- Use ISO date YYYY-MM-DD. If two dates appear (e.g., transaction date and posting date), use the LATER/POSTED date for occurred_on. Do NOT put any dates in the note.\n- Currency codes must be ISO 4217 (e.g., CAD, USD, INR).\n- If merchant is missing, omit the field.\n- If payment method is missing, omit the field.\n- Category is optional; guess only if obvious, else omit.\n- Note content: Make it a short, human-friendly purpose (e.g., "Car rental", "Dinner at hotel"). Do NOT include any dates or phrases like "Transaction date ...; Posting date ..." in the note.\n- Signs: Purchases/charges must be positive; refunds/credits/reversals/cashbacks must be negative. There can be MANY negative transactions—do not drop them. Preserve minus signs and parentheses exactly.\n- Include very small amounts.\n- Only extract transactions explicitly present in the lines. Do not infer, summarize, or aggregate.\n- IMPORTANT: If the same date/merchant/amount appears as separate numbered lines multiple times, output SEPARATE objects for each occurrence with its line_index. Do NOT deduplicate or merge counts.\n- Include "line_index" for each transaction: the NUMBER (1-based) of the line that contains the amount/transaction.\n- Output must conform to the provided JSON schema.`
+      
   // Perplexity API: we assume OpenAI-compatible endpoint for chat completions
   const url = 'https://api.perplexity.ai/chat/completions'
   const model = process.env.PERPLEXITY_MODEL || 'sonar'
   if (debugEnabled()) console.log('[AI Parse Debug] calling Perplexity', { promptHash: hashOf(prompt), chars: prompt.length })
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 25000)
+  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 45000)
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -1106,7 +863,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   }
   const form = formidable({ maxFileSize: 15 * 1024 * 1024, multiples: false })
   try {
-    const { files } = await new Promise<{ fields: formidable.Fields; files: formidable.Files }>((resolve, reject) => {
+    const { files, fields } = await new Promise<{ fields: formidable.Fields; files: formidable.Files }>((resolve, reject) => {
       form.parse(req, (err: Error | null, fields: formidable.Fields, files: formidable.Files) => {
         if (err) return reject(err)
         resolve({ fields, files })
@@ -1117,6 +874,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const selected = Array.isArray(file) ? file[0] : file
     if (!selected) return res.status(400).json({ success: false, error: 'No file uploaded. Use field name "file".' })
 
+    // Optional password from form or query
+    const providedPassword = (() => {
+      const fq = req.query || {}
+      const qpw = Array.isArray(fq.password) ? fq.password[0] : fq.password
+      const fpw = (fields && (fields as any).password) as any
+      const fpwVal = Array.isArray(fpw) ? fpw[0] : fpw
+      return (typeof fpwVal === 'string' && fpwVal.trim()) ? fpwVal.trim() : (typeof qpw === 'string' && qpw.trim() ? qpw.trim() : undefined)
+    })()
+
     // Flags from querystring
     const q = req.query || {}
     const redactEnvDefault = process.env.AI_DEFAULT_REDACT === '1'
@@ -1124,23 +890,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // Masking ON by default unless explicitly disabled
     const maskFlag = (Array.isArray(q.mask) ? q.mask[0] : q.mask) !== '0'
 
-    // Extract text (structured by default). Use visual redaction only if explicitly requested.
-    let text = ''
+    // Build an Excel-like table from rows/columns for higher model accuracy
+    // Build per-page table text for higher recall
+    let pagesTables: string[] = []
     if (redactFlag) {
       if (debugEnabled()) console.log('[AI Parse Debug] using visual PDF redaction mode')
-      const out = await redactPdfVisually(selected)
-      text = out.text
+      const out = await redactPdfVisually(selected, providedPassword)
+      const prepared = prepareStatementText(maskFlag ? sanitizeTextForAI(out.text) : out.text)
+      pagesTables = [prepared]
     } else {
-      if (debugEnabled()) console.log('[AI Parse Debug] using structured text extraction mode')
-      text = await extractTextWithColumns(selected)
+      if (debugEnabled()) console.log('[AI Parse Debug] extracting per-page rows/columns grid for table text')
+      const pages = await extractPagesWithColumns(selected, providedPassword)
+      pagesTables = pages.map((grid, i) => {
+        const t = grid.map(row => row.map(c => String(c ?? '').trim()).join(' | ')).join('\n')
+        const masked = maskFlag ? sanitizeTextForAI(t) : t
+        return prepareStatementText(masked)
+      })
     }
-    if (debugEnabled()) console.log('[AI Parse Debug] text length after extraction:', text.length)
-    // Optional masking before sending to AI (does not affect storage, only prompt)
-    const maskedOrOriginal = maskFlag ? sanitizeTextForAI(text) : text
-    
-    const prepared = prepareStatementText(maskedOrOriginal)
-    if (debugEnabled()) console.log('[AI Parse Debug] prepared text length:', prepared.length)
-    if (!prepared || !prepared.trim()) {
+    const preparedAll = pagesTables.join('\n')
+    if (debugEnabled()) console.log('[AI Parse Debug] prepared text length:', preparedAll.length)
+    if (!preparedAll || !preparedAll.trim()) {
       return res.status(400).json({ success: false, error: 'Could not extract text from PDF' })
     }
 
@@ -1153,11 +922,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         expenses: [],
         usage: {
           preview: {
-            promptHash: hashOf(prepared),
-            length: prepared.length,
+            promptHash: hashOf(preparedAll),
+            length: preparedAll.length,
             // Provide a very small head/tail sample to inspect redaction without dumping full content
-            head: prepared.slice(0, 400),
-            tail: prepared.length > 800 ? prepared.slice(-400) : undefined,
+            head: preparedAll.slice(0, 400),
+            tail: preparedAll.length > 800 ? preparedAll.slice(-400) : undefined,
           }
         }
       })
@@ -1169,44 +938,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     // Process in chunks to avoid missing later pages; merge & dedupe
     // Prefer a single full-text call to avoid double extraction across chunks when within size limits
     // External path:
-    if (prepared.length <= 20000) {
-      if (debugEnabled()) console.log('[AI Parse Debug] using single-call mode (prepared length <= 20000)')
-      const once = await callPerplexity(prepared, { timeoutMs: 25000 })
-      if (debugEnabled()) console.log('[AI Parse Debug] single-call returned', once.length)
-      return res.status(200).json({ success: true, expenses: once })
-    } else {
-      const chunks = chunkText(prepared, 8000)
-      if (debugEnabled()) console.log('[AI Parse Debug] chunks count', chunks.length, 'chunk lens', chunks.map(c => c.length))
-      const all: (ParsedExpense & { _srcChunk?: number })[] = []
-      const concurrency = 3
-      for (let start = 0; start < chunks.length; start += concurrency) {
-        const batch = chunks.slice(start, start + concurrency)
-        if (debugEnabled()) console.log(`[AI Parse Debug] processing batch ${start/concurrency + 1} with size`, batch.length)
-        const results = await Promise.all(
-          batch.map((c, idx) => {
-            const chunkIndex = start + idx
-            if (debugEnabled()) console.log(`[AI Parse Debug] chunk ${chunkIndex+1}/${chunks.length} hash`, hashOf(c))
-            return callPerplexity(c, { timeoutMs: 25000 })
-              .then(part => ({ ok: true as const, part, chunkIndex }))
-              .catch(err => ({ ok: false as const, err, chunkIndex }))
-          })
-        )
-        for (const r of results) {
-          if (r.ok) {
-            if (debugEnabled()) console.log(`[AI Parse Debug] chunk ${r.chunkIndex+1} returned`, r.part.length)
-            const withMeta = r.part.map(p => ({ ...p, _srcChunk: r.chunkIndex + 1 }))
-            all.push(...withMeta)
-          } else {
-            console.warn(`[AI Parse Warn] chunk ${r.chunkIndex+1} failed:`, r.err instanceof Error ? r.err.message : r.err)
+    // Call the model per page and merge, avoiding over-aggregation
+    const all: (ParsedExpense & { _srcChunk?: number })[] = []
+    for (let i = 0; i < pagesTables.length; i++) {
+      const prepared = pagesTables[i]
+      if (!prepared || !prepared.trim()) continue
+      if (debugEnabled()) console.log(`[AI Parse Debug] page ${i+1}/${pagesTables.length} length`, prepared.length)
+      // If page content is long, chunk within the page as last resort
+      if (prepared.length <= 20000) {
+        try {
+          const part = await callPerplexity(prepared, { timeoutMs: 35000 })
+          all.push(...part.map(p => ({ ...p, _srcChunk: i + 1 })))
+        } catch (e: any) {
+          // Fallback to intra-page chunks
+          const chunks = chunkText(prepared, 6000)
+          for (const c of chunks) {
+            try {
+              const sub = await callPerplexity(c, { timeoutMs: 25000 })
+              all.push(...sub.map(p => ({ ...p, _srcChunk: i + 1 })))
+            } catch (err) {
+              console.warn(`[AI Parse Warn] page ${i+1} sub-chunk failed:`, err instanceof Error ? err.message : err)
+            }
+          }
+        }
+      } else {
+        const chunks = chunkText(prepared, 6000)
+        for (const c of chunks) {
+          try {
+            const sub = await callPerplexity(c, { timeoutMs: 25000 })
+            all.push(...sub.map(p => ({ ...p, _srcChunk: i + 1 })))
+          } catch (err) {
+            console.warn(`[AI Parse Warn] page ${i+1} chunk failed:`, err instanceof Error ? err.message : err)
           }
         }
       }
-      const mergedWithMeta = dedupeExpenses(all)
-      const merged = mergedWithMeta.map(({ _srcChunk, ...rest }) => rest)
-      return res.status(200).json({ success: true, expenses: merged })
     }
+    // Do not dedupe across pages to avoid collapsing similar rows on different pages
+    const cleaned = all.map(({ _srcChunk, ...rest }) => rest)
+    return res.status(200).json({ success: true, expenses: cleaned })
   } catch (e: any) {
     console.error('parse-statement error', e)
-    return res.status(500).json({ success: false, error: e?.message || 'Internal Error' })
+    const msg = e?.message || ''
+    if (/password-protected/i.test(msg) || /PasswordException/i.test(String(e?.name))) {
+      return res.status(400).json({ success: false, error: 'This PDF is password-protected. Please provide the correct password and try again.' })
+    }
+    return res.status(500).json({ success: false, error: msg || 'Internal Error' })
   }
 }
