@@ -94,121 +94,91 @@ async function loadPdfjs(): Promise<any> {
   throw new Error('pdfjs not available in this runtime')
 }
 
-// Fast text extraction: Use qpdf to decrypt, then pdf2json to parse
+// Fast text extraction: Use pdf.js directly with canvas support (canvas package is installed)
 async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
-  let data = await readFile(file)
+  const data = await readFile(file)
   
   if (debugEnabled()) console.log('[AI Parse Debug] extractTextFast, password provided:', !!password)
   
-  // If password provided, use qpdf to decrypt the PDF first
-  if (password) {
-    try {
-      const { exec } = require('qpdf')
-      if (debugEnabled()) console.log('[AI Parse Debug] Attempting qpdf decryption')
-      
-      // qpdf can decrypt password-protected PDFs
-      const decryptedBuffer = await new Promise<Buffer>((resolve, reject) => {
-        exec({
-          input: data,
-          password: password,
-          outputFile: '-', // Output to stdout
-        }, (err: any, output: Buffer) => {
-          if (err) {
-            console.error('[AI Parse Debug] qpdf error:', err)
-            return reject(err)
-          }
-          resolve(output)
-        })
-      })
-      
-      if (decryptedBuffer && decryptedBuffer.length > 0) {
-        data = decryptedBuffer
-        if (debugEnabled()) console.log('[AI Parse Debug] PDF decrypted successfully')
+  try {
+    // Import pdf.js - it will use the installed canvas package
+    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js')
+    
+    // Set worker to disabled (use main thread in serverless)
+    if (pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = false
+    }
+    
+    if (debugEnabled()) console.log('[AI Parse Debug] Loading PDF document')
+    
+    // Load the PDF document with password
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(data),
+      password: password || undefined,
+      disableWorker: true,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      verbosity: 0,
+    })
+    
+    // Handle password callback
+    if (password) {
+      loadingTask.onPassword = function(updatePassword: (pw: string) => void, reason: number) {
+        if (debugEnabled()) console.log('[AI Parse Debug] Password callback triggered, reason:', reason)
+        // reason 1 = NEED_PASSWORD, reason 2 = INCORRECT_PASSWORD
+        if (reason === 2) {
+          throw new Error('Incorrect password for this PDF.')
+        }
+        updatePassword(password)
       }
-    } catch (e: any) {
-      const msg = e?.message || String(e)
-      console.error('[AI Parse Debug] qpdf decryption failed:', msg)
+    }
+    
+    const pdfDocument = await loadingTask.promise
+    
+    if (debugEnabled()) console.log('[AI Parse Debug] PDF loaded, pages:', pdfDocument.numPages)
+    
+    let fullText = ''
+    
+    // Extract text from all pages
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const textContent = await page.getTextContent()
       
-      // If password is wrong, throw friendly error
-      if (/password/i.test(msg) || /incorrect/i.test(msg) || /invalid/i.test(msg)) {
+      const pageText = textContent.items
+        .map((item: any) => item.str || '')
+        .filter(Boolean)
+        .join(' ')
+      
+      fullText += (fullText ? '\n' : '') + pageText
+    }
+    
+    if (!fullText.trim()) {
+      throw new Error('No text content extracted from PDF')
+    }
+    
+    if (debugEnabled()) console.log('[AI Parse Debug] Extracted text length:', fullText.length)
+    return fullText
+    
+  } catch (e: any) {
+    const msg = e?.message || String(e)
+    const name = e?.name || ''
+    console.error('[AI Parse Error] PDF text extraction failed:', { 
+      name, 
+      message: msg,
+      passwordProvided: !!password 
+    })
+    
+    // Handle password-related errors
+    if (name === 'PasswordException' || /password/i.test(msg) || /incorrect password/i.test(msg.toLowerCase())) {
+      if (password) {
         throw new Error('Incorrect password for this PDF.')
       }
-      // Otherwise continue with original data (might not be encrypted)
+      throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
+    
+    throw new Error('Could not extract text from PDF. The file may be corrupted or use an unsupported format.')
   }
-  
-  // Parse with pdf2json (works reliably in serverless, no worker issues)
-  return new Promise((resolve, reject) => {
-    try {
-      const PDFParser = require('pdf2json')
-      const pdfParser = new PDFParser()
-      
-      // Handle successful parse
-      pdfParser.on('pdfParser_dataReady', (pdfData: any) => {
-        try {
-          if (!pdfData || !pdfData.Pages) {
-            return reject(new Error('No text content extracted from PDF'))
-          }
-          
-          let text = ''
-          
-          // Extract text from all pages
-          pdfData.Pages.forEach((page: any) => {
-            if (page.Texts && Array.isArray(page.Texts)) {
-              page.Texts.forEach((textItem: any) => {
-                if (textItem.R && Array.isArray(textItem.R)) {
-                  textItem.R.forEach((run: any) => {
-                    if (run.T) {
-                      // Decode URI encoded text
-                      text += decodeURIComponent(run.T) + ' '
-                    }
-                  })
-                }
-              })
-              text += '\n'
-            }
-          })
-          
-          text = text.trim()
-          
-          if (!text) {
-            return reject(new Error('No text content extracted from PDF'))
-          }
-          
-          if (debugEnabled()) console.log('[AI Parse Debug] Extracted text length:', text.length)
-          resolve(text)
-        } catch (e: any) {
-          reject(new Error('Failed to parse PDF data structure'))
-        }
-      })
-      
-      // Handle parse error
-      pdfParser.on('pdfParser_dataError', (errData: any) => {
-        const msg = errData?.parserError || String(errData)
-        console.error('[AI Parse Error] PDF parsing failed:', { 
-          error: msg,
-          passwordProvided: !!password 
-        })
-        
-        // Check for password-related errors
-        if (/encrypt/i.test(msg) || /password/i.test(msg)) {
-          if (password) {
-            return reject(new Error('Incorrect password for this PDF.'))
-          }
-          return reject(new Error('This PDF is password-protected. Please provide the correct password and try again.'))
-        }
-        
-        reject(new Error('Could not extract text from PDF. The file may be corrupted or use an unsupported format.'))
-      })
-      
-      // Parse the PDF
-      pdfParser.parseBuffer(data)
-    } catch (e: any) {
-      const msg = e?.message || String(e)
-      console.error('[AI Parse Error] PDF setup failed:', msg)
-      reject(new Error('Could not initialize PDF parser.'))
-    }
-  })
 }
 
 // Structured text extraction using pdfjs positions to preserve columns (no redaction)
