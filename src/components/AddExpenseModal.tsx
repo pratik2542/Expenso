@@ -291,7 +291,14 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       setImportStatus('Analyzing your statement…')
       const headers: Record<string, string> = {}
       if (pdfPassword && pdfPassword.trim()) headers['X-PDF-Password'] = pdfPassword.trim()
-      const resp = await fetch('/api/ai/parse-statement', {
+      
+      // Also add password to URL for better Vercel compatibility
+      const url = new URL('/api/ai/parse-statement', window.location.origin)
+      if (pdfPassword && pdfPassword.trim()) {
+        url.searchParams.set('password', pdfPassword.trim())
+      }
+      
+      const resp = await fetch(url.toString(), {
         method: 'POST',
         body: form,
         headers,
