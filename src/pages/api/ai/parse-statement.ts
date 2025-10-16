@@ -94,57 +94,106 @@ async function loadPdfjs(): Promise<any> {
   throw new Error('pdfjs not available in this runtime')
 }
 
-// Fast text extraction: decrypt with pdf-lib if needed, then use pdf-parse (avoids pdfjs bundling issues)
+// Fast text extraction: Use pdf.js directly for password support (pdf-parse doesn't forward passwords correctly)
 async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
-  let data = await readFile(file)
+  const data = await readFile(file)
   
-  // If password provided, try to decrypt with pdf-lib first
-  if (password) {
-    try {
-      if (debugEnabled()) console.log('[AI Parse Debug] Attempting to decrypt PDF with pdf-lib')
-      // pdf-lib's load() doesn't directly support password decryption in the same way
-      // Instead, we'll rely on pdf-parse's native password support
-      // Fall through to pdf-parse with password
-    } catch (e: any) {
-      if (debugEnabled()) console.log('[AI Parse Debug] pdf-lib approach skipped')
-    }
-  }
-
-  // Use pdf-parse with password support
+  if (debugEnabled()) console.log('[AI Parse Debug] extractTextFast, password provided:', !!password)
+  
+  // For password-protected PDFs, we must use pdf.js directly
+  // pdf-parse doesn't properly forward the password parameter to its internal pdf.js instance
   try {
-    const pdfParseMod: any = await import('pdf-parse')
-    const pdfParse = pdfParseMod?.default || pdfParseMod
-    
-    // pdf-parse uses Mozilla's pdf.js under the hood, which supports password option
-    const options: any = {}
-    if (password) {
-      options.password = password
-      if (debugEnabled()) console.log('[AI Parse Debug] Passing password to pdf-parse')
+    // Try to load pdf.js - use require for better serverless bundling
+    let pdfjsLib: any
+    try {
+      // @ts-ignore - dynamic require path
+      pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js')
+    } catch {
+      try {
+        pdfjsLib = require('pdfjs-dist')
+      } catch {
+        // If require fails, try dynamic import
+        try {
+          // @ts-ignore - dynamic import path
+          const mod: any = await import('pdfjs-dist/legacy/build/pdf.js')
+          pdfjsLib = mod.default || mod
+        } catch {
+          const mod: any = await import('pdfjs-dist')
+          pdfjsLib = mod.default || mod
+        }
+      }
     }
     
-    const parsed = await pdfParse(data, options)
-    if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-      if (debugEnabled()) console.log('[AI Parse Debug] pdf-parse succeeded, text length:', parsed.text.length)
-      return String(parsed.text)
+    if (!pdfjsLib || typeof pdfjsLib.getDocument !== 'function') {
+      throw new Error('pdf.js not available')
     }
-    throw new Error('pdf-parse returned empty text')
+    
+    // Disable worker for serverless
+    if (pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = undefined
+    }
+    
+    if (debugEnabled()) console.log('[AI Parse Debug] pdf.js loaded successfully')
+    
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(data),
+      password: password || undefined,
+      disableWorker: true,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      verbosity: 0,
+    })
+    
+    // Set up password callback if password provided
+    if (password && typeof loadingTask.onPassword === 'function') {
+      loadingTask.onPassword((updatePassword: (pw: string) => void, reason: number) => {
+        if (debugEnabled()) console.log('[AI Parse Debug] onPassword callback triggered, reason:', reason)
+        updatePassword(password)
+      })
+    }
+    
+    const pdfDocument = await loadingTask.promise
+    let text = ''
+    
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const textContent = await page.getTextContent()
+      const pageText = textContent.items
+        .map((item: any) => item.str || '')
+        .filter(Boolean)
+        .join(' ')
+      text += (text ? '\n' : '') + pageText
+    }
+    
+    if (debugEnabled()) console.log('[AI Parse Debug] Extracted text length:', text.length)
+    
+    if (!text.trim()) {
+      throw new Error('PDF contains no extractable text')
+    }
+    
+    return text
   } catch (e: any) {
     const name = e?.name || 'Error'
     const message = e?.message || String(e)
-    console.error('[AI Parse Error] pdf-parse failed:', { name, message, passwordProvided: !!password })
+    console.error('[AI Parse Error] PDF extraction failed:', { name, message, passwordProvided: !!password })
     
     // Handle password-related errors
     if (name === 'PasswordException' || /password/i.test(message)) {
       if (!password) {
         throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
-      } else if (/no password given/i.test(message) || /incorrect/i.test(message)) {
+      } else if (/incorrect/i.test(message) || /invalid/i.test(message)) {
         throw new Error('Incorrect password for this PDF.')
       } else {
         throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
       }
     }
     
-    // For other errors, provide helpful message
+    if (/pdf\.js not available/i.test(message)) {
+      throw new Error('PDF processing is temporarily unavailable. Please try uploading a CSV or XLSX file instead.')
+    }
+    
+    // For other errors
     throw new Error('Could not extract text from PDF. The file may be corrupted or use an unsupported format.')
   }
 }
