@@ -103,23 +103,42 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
   // For password-protected PDFs, we must use pdf.js directly
   // pdf-parse doesn't properly forward the password parameter to its internal pdf.js instance
   try {
-    // Try to load pdf.js - use require for better serverless bundling
+    // Try to load pdf.js LEGACY build for Node.js (avoids DOMMatrix issues)
     let pdfjsLib: any
-    try {
-      // @ts-ignore - dynamic require path
-      pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js')
-    } catch {
+    
+    // First, try various legacy paths with require (best for serverless)
+    const legacyPaths = [
+      'pdfjs-dist/legacy/build/pdf.js',
+      'pdfjs-dist/legacy/build/pdf',
+      'pdfjs-dist/es5/build/pdf.js',
+    ]
+    
+    for (const path of legacyPaths) {
       try {
-        pdfjsLib = require('pdfjs-dist')
-      } catch {
-        // If require fails, try dynamic import
+        // @ts-ignore - dynamic require path
+        pdfjsLib = require(path)
+        if (pdfjsLib && typeof pdfjsLib.getDocument === 'function') {
+          if (debugEnabled()) console.log('[AI Parse Debug] Loaded pdf.js from', path)
+          break
+        }
+      } catch (e: any) {
+        if (debugEnabled()) console.log('[AI Parse Debug] Failed to require', path, '-', e?.message)
+      }
+    }
+    
+    // If require failed, try dynamic imports
+    if (!pdfjsLib || typeof pdfjsLib.getDocument !== 'function') {
+      for (const path of legacyPaths) {
         try {
           // @ts-ignore - dynamic import path
-          const mod: any = await import('pdfjs-dist/legacy/build/pdf.js')
+          const mod: any = await import(path)
           pdfjsLib = mod.default || mod
-        } catch {
-          const mod: any = await import('pdfjs-dist')
-          pdfjsLib = mod.default || mod
+          if (pdfjsLib && typeof pdfjsLib.getDocument === 'function') {
+            if (debugEnabled()) console.log('[AI Parse Debug] Loaded pdf.js via import from', path)
+            break
+          }
+        } catch (e: any) {
+          if (debugEnabled()) console.log('[AI Parse Debug] Failed to import', path, '-', e?.message)
         }
       }
     }
@@ -128,10 +147,22 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       throw new Error('pdf.js not available')
     }
     
-    // Disable worker for serverless
+    // Disable worker AND ensure Node.js compatibility
     if (pdfjsLib.GlobalWorkerOptions) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = undefined
     }
+    
+    // Polyfill DOMMatrix if needed (for non-legacy builds in Node)
+    if (typeof (global as any).DOMMatrix === 'undefined') {
+      ;(global as any).DOMMatrix = class DOMMatrix {
+        a: number; b: number; c: number; d: number; e: number; f: number
+        constructor() {
+          // Minimal polyfill for pdf.js compatibility
+          this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0
+        }
+      }
+    }
+
     
     if (debugEnabled()) console.log('[AI Parse Debug] pdf.js loaded successfully')
     
