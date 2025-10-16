@@ -152,10 +152,13 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       throw new Error('pdf.js not available')
     }
     
-    // Disable worker for serverless - provide a dummy path that won't be used due to disableWorker: true
-    // pdf.js validates that workerSrc is set, even when worker is disabled
+    // CRITICAL: For serverless, we must use standardFontDataUrl to avoid worker issues
+    // Set workerPort to null to completely disable worker in newer pdfjs versions
     if (pdfjsLib.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.js'
+      try {
+        // Try to disable worker completely
+        ;(pdfjsLib.GlobalWorkerOptions as any).workerPort = null
+      } catch {}
     }
 
     
@@ -169,6 +172,8 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       isEvalSupported: false,
       useSystemFonts: true,
       verbosity: 0,
+      // Provide standard font data URL to avoid worker dependency
+      standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.296/standard_fonts/',
     })
     
     // Set up password callback if password provided
