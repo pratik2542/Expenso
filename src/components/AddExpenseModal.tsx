@@ -90,7 +90,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string>('')
-  const [useCloudAI, setUseCloudAI] = useState(false)
+  const [useCloudAI, setUseCloudAI] = useState(true)
   const [parsedExpenses, setParsedExpenses] = useState<Array<{
     amount: number
     currency: string
@@ -502,9 +502,9 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                   onChange={(ev) => setUseCloudAI(ev.target.checked)}
                                   disabled={importLoading}
                                 />
-                                <span>Use Perplexity for extraction (masked on server)</span>
+                                <span>Use Perplexity for extraction (PII masked by default)</span>
                               </label>
-                              <p className="text-[11px] text-gray-500 ml-6 -mt-1">No confidential data is sent; PII is masked before calling the model.</p>
+                              <p className="text-[11px] text-gray-500 ml-6 -mt-1">Server masks emails, long numbers, phone numbers, and name fields before sending.</p>
 
                               <input 
                                 id="uploadPdfInput" 

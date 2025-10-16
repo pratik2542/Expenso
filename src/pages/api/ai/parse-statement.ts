@@ -76,6 +76,71 @@ async function extractTextFast(file: FormidableFile): Promise<string> {
   }
 }
 
+// Structured text extraction using pdfjs positions to preserve columns (no redaction)
+async function extractTextWithColumns(file: FormidableFile): Promise<string> {
+  const data = await readFile(file)
+  let pdfjsLib: any
+  try {
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  } catch (e) {
+    // Fallback to fast extractor if pdfjs not available
+    return extractTextFast(file)
+  }
+  const uint8Data = new Uint8Array(data)
+  const loadingTask = pdfjsLib.getDocument({
+    data: uint8Data,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true,
+    verbosity: 0,
+  })
+  const pdfDocument = await loadingTask.promise
+  const items: Array<{ text: string; x: number; y: number; width: number; height: number }> = []
+  for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+    const page = await pdfDocument.getPage(pageNum)
+    const textContent = await page.getTextContent()
+    const viewport = page.getViewport({ scale: 1.0 })
+    for (const it of textContent.items) {
+      if ('str' in it && it.str) {
+        const tx = it.transform
+        const x = tx[4]
+        const y = viewport.height - tx[5]
+        const width = it.width
+        const height = it.height
+        items.push({ text: it.str, x, y: y - height, width, height })
+      }
+    }
+  }
+  // Sort by rows then columns
+  const sorted = items.sort((a, b) => {
+    const dy = a.y - b.y
+    if (Math.abs(dy) > 3) return dy
+    return a.x - b.x
+  })
+  let text = ''
+  let currentY = -999
+  let line = ''
+  let lastX = 0
+  for (const it of sorted) {
+    if (Math.abs(it.y - currentY) > 3) {
+      if (line.trim()) text += line.trim() + '\n'
+      line = ''
+      lastX = 0
+      currentY = it.y
+    }
+    const gap = it.x - lastX
+    if (lastX > 0) {
+      if (gap > 30) line += '  |  '
+      else if (gap > 10) line += '  '
+      else if (gap > 2) line += ' '
+    }
+    line += it.text
+    lastX = it.x + it.width
+  }
+  if (line.trim()) text += line.trim() + '\n'
+  return text
+}
+
 // Visual redaction: overlay black boxes on PII while preserving layout
 async function redactPdfVisually(file: FormidableFile): Promise<{ buffer: Buffer; text: string }> {
   try {
@@ -1056,18 +1121,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const q = req.query || {}
     const redactEnvDefault = process.env.AI_DEFAULT_REDACT === '1'
     const redactFlag = (Array.isArray(q.redact) ? q.redact[0] : q.redact) === '1' || redactEnvDefault
-    const maskFlag = (Array.isArray(q.mask) ? q.mask[0] : q.mask) === '1' || process.env.AI_MASK_BEFORE_SEND === '1'
-    const fastFlag = (Array.isArray(q.fast) ? q.fast[0] : q.fast) !== '0' // default fast on
+    // Masking ON by default unless explicitly disabled
+    const maskFlag = (Array.isArray(q.mask) ? q.mask[0] : q.mask) !== '0'
 
-    // Extract text (fast by default). Use visual redaction only if explicitly requested.
+    // Extract text (structured by default). Use visual redaction only if explicitly requested.
     let text = ''
     if (redactFlag) {
       if (debugEnabled()) console.log('[AI Parse Debug] using visual PDF redaction mode')
       const out = await redactPdfVisually(selected)
       text = out.text
     } else {
-      if (debugEnabled()) console.log('[AI Parse Debug] using fast text extraction mode')
-      text = await extractTextFast(selected)
+      if (debugEnabled()) console.log('[AI Parse Debug] using structured text extraction mode')
+      text = await extractTextWithColumns(selected)
     }
     if (debugEnabled()) console.log('[AI Parse Debug] text length after extraction:', text.length)
     // Optional masking before sending to AI (does not affect storage, only prompt)
@@ -1098,21 +1163,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       })
     }
 
-    // External AI gating: must be explicitly enabled via env AND query flag
-    const allowExternalEnv = process.env.AI_ALLOW_EXTERNAL === '1'
-    const externalFlag = (Array.isArray(q.external) ? q.external[0] : q.external) === '1'
+  // Always use external AI (masked by default); local parser is not used unless we add a failure fallback
 
     // Optionally chunk long texts
     // Process in chunks to avoid missing later pages; merge & dedupe
     // Prefer a single full-text call to avoid double extraction across chunks when within size limits
-    // If external calls are not explicitly enabled, do local-only parsing
-    if (!(allowExternalEnv && externalFlag)) {
-      if (debugEnabled()) console.log('[AI Parse Debug] external AI disabled; using local parser')
-      const local = parseLocalExpenses(prepared)
-      return res.status(200).json({ success: true, expenses: local })
-    }
-
-    // External path (explicitly opted-in):
+    // External path:
     if (prepared.length <= 20000) {
       if (debugEnabled()) console.log('[AI Parse Debug] using single-call mode (prepared length <= 20000)')
       const once = await callPerplexity(prepared, { timeoutMs: 25000 })
