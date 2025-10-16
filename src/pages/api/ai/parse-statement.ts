@@ -32,6 +32,50 @@ async function readFile(file: FormidableFile): Promise<Buffer> {
   return fs.promises.readFile(filepath)
 }
 
+// Fast text extraction: prefer pdf-parse (fast, native) with pdfjs fallback (no visual redaction)
+async function extractTextFast(file: FormidableFile): Promise<string> {
+  const data = await readFile(file)
+  // Try pdf-parse first (fast path on serverless)
+  try {
+    const pdfParseMod: any = await import('pdf-parse')
+    const pdfParse = pdfParseMod?.default || pdfParseMod
+    const parsed = await pdfParse(data)
+    if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
+      return String(parsed.text)
+    }
+  } catch (e) {
+    if (debugEnabled()) console.log('[AI Parse Debug] pdf-parse failed, will try pdfjs:', e instanceof Error ? e.message : e)
+  }
+
+  // Fallback to pdfjs text extraction (no drawing/redaction)
+  try {
+    const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const uint8Data = new Uint8Array(data)
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Data,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      verbosity: 0,
+    })
+    const pdfDocument = await loadingTask.promise
+    let text = ''
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const textContent = await page.getTextContent()
+      const line = textContent.items
+        .map((it: any) => ('str' in it && it.str ? it.str : ''))
+        .filter(Boolean)
+        .join(' ')
+      text += (text ? '\n' : '') + line
+    }
+    return text
+  } catch (e) {
+    // If both engines fail, surface a helpful error
+    throw new Error('PDF processing engine unavailable on this runtime')
+  }
+}
+
 // Visual redaction: overlay black boxes on PII while preserving layout
 async function redactPdfVisually(file: FormidableFile): Promise<{ buffer: Buffer; text: string }> {
   try {
@@ -334,7 +378,35 @@ function parseAmountMaybeString(val: unknown): number | null {
   return num
 }
 
-async function callPerplexity(prompt: string): Promise<ParsedExpense[]> {
+// Server-side masking of common PII patterns before sending to external AI providers
+function sanitizeTextForAI(text: string): string {
+  let out = text
+  // Emails
+  out = out.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[EMAIL]')
+  // Credit card numbers (4x4) and long digit sequences (8+)
+  out = out.replace(/\b(?:\d{4}[\s\-]?){3}\d{4}\b/g, '[CARD]')
+  out = out.replace(/\b\d[\d\s\-]{7,}\b/g, '[NUM]')
+  // Phone numbers
+  out = out.replace(/\+?\d[\d\s\-()]{7,}\d/g, '[PHONE]')
+  // Heuristic: redact values following common keys
+  out = out.replace(/\b(Name|Customer|Holder|Owner)\s*:\s*[^\n]+/gi, (m) => m.replace(/:\s*[^\n]+$/, ': [REDACTED]'))
+  // Custom extra words from env
+  const extra = (process.env.AI_EXTRA_REDACT_WORDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  for (const w of extra) {
+    try {
+      const re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+      out = out.replace(re, '[REDACTED]')
+    } catch {
+      // ignore bad regex
+    }
+  }
+  return out
+}
+
+async function callPerplexity(prompt: string, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<ParsedExpense[]> {
   const apiKey = process.env.PERPLEXITY_API_KEY
   if (!apiKey) throw new Error('Missing PERPLEXITY_API_KEY')
 
@@ -569,6 +641,8 @@ Return JSON matching the schema.`
   const url = 'https://api.perplexity.ai/chat/completions'
   const model = process.env.PERPLEXITY_MODEL || 'sonar'
   if (debugEnabled()) console.log('[AI Parse Debug] calling Perplexity', { promptHash: hashOf(prompt), chars: prompt.length })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 25000)
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -615,7 +689,9 @@ Return JSON matching the schema.`
         }
       },
     }),
+    signal: opts?.signal ?? controller.signal,
   })
+  clearTimeout(timeout)
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '')
@@ -674,7 +750,7 @@ Return JSON matching the schema.`
     .filter((e) => typeof e.amount === 'number' && !Number.isNaN(e.amount) && typeof e.occurred_on === 'string')
 }
 
-function chunkText(text: string, maxLen = 9000): string[] {
+function chunkText(text: string, maxLen = 8000): string[] {
   // Chunk on line boundaries so we don't split a numbered line across chunks
   const chunks: string[] = []
   const lines = text.split(/\n/)
@@ -779,6 +855,174 @@ function dedupeExpenses(rows: (ParsedExpense & { _srcChunk?: number })[]): (Pars
   return Array.from(groups.values())
 }
 
+// --- Local-only heuristic parser: no external calls ---
+function parseLocalExpenses(preparedText: string): ParsedExpense[] {
+  const lines = preparedText.split(/\n/)
+  // Detect global currency from full text
+  const detectGlobalCurrency = (txt: string): string => {
+    const lc = txt.toLowerCase()
+    const score: Record<string, number> = { USD: 0, CAD: 0, EUR: 0, GBP: 0, INR: 0, AUD: 0 }
+    const inc = (k: keyof typeof score, n = 1) => (score[k] += n)
+    // Symbols
+    if (/\$/.test(txt)) { inc('USD', 1); inc('CAD', 1); inc('AUD', 1) }
+    if (/€/.test(txt)) inc('EUR', 3)
+    if (/£/.test(txt)) inc('GBP', 3)
+    if (/₹/.test(txt)) inc('INR', 5)
+    // Codes and symbol variants
+    const addCount = (re: RegExp, k: keyof typeof score, w = 2) => {
+      const m = lc.match(re)
+      if (m) inc(k, m.length * w)
+    }
+    addCount(/\bcad\b/g, 'CAD', 4)
+    addCount(/\busd\b/g, 'USD', 4)
+    addCount(/\beur\b/g, 'EUR', 4)
+    addCount(/\bgbp\b/g, 'GBP', 4)
+    addCount(/\binr\b/g, 'INR', 4)
+    addCount(/\baud\b/g, 'AUD', 4)
+    addCount(/\bcanadian\b/g, 'CAD', 2)
+    addCount(/\bamerican\b|\bus\b/g, 'USD', 1)
+    // Country cues
+    addCount(/toronto|ontario|canada|cad\$/g, 'CAD', 2)
+    addCount(/usa|united states|usd\$/g, 'USD', 2)
+    // Choose max
+    let best: keyof typeof score = 'USD'
+    for (const k of Object.keys(score) as (keyof typeof score)[]) {
+      if (score[k] > score[best]) best = k
+    }
+    return best
+  }
+
+  const detectLineCurrency = (s: string, fallback: string): string => {
+    const u = s.toUpperCase()
+    if (/(^|\s)CAD(\s|$)|C\$/.test(u)) return 'CAD'
+    if (/(^|\s)USD(\s|$)|US\$/.test(u)) return 'USD'
+    if (/(^|\s)EUR(\s|$)|€/.test(u)) return 'EUR'
+    if (/(^|\s)GBP(\s|$)|£/.test(u)) return 'GBP'
+    if (/(^|\s)INR(\s|$)|₹/.test(u)) return 'INR'
+    if (/(^|\s)AUD(\s|$)|A\$/.test(u)) return 'AUD'
+    return fallback
+  }
+
+  const globalCurrency = detectGlobalCurrency(preparedText)
+  const monthMap: Record<string, number> = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+  }
+  const currentYear = new Date().getFullYear()
+
+  const toISO = (y: number, m: number, d: number) => {
+    const mm = String(m).padStart(2, '0')
+    const dd = String(d).padStart(2, '0')
+    return `${y}-${mm}-${dd}`
+  }
+
+  const parseDate = (s: string): string | null => {
+    // YYYY-MM-DD
+    const iso = s.match(/\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/)
+    if (iso) {
+      const y = Number(iso[1]); const m = Number(iso[2]); const d = Number(iso[3])
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return toISO(y, m, d)
+    }
+    // DD Mon or Mon DD (optionally with year)
+    const mon1 = s.match(/\b(\d{1,2})\s+([A-Za-z]{3,9})(?:[,\s]+(20\d{2}))?\b/)
+    if (mon1) {
+      const d = Number(mon1[1]); const mon = mon1[2].slice(0,3).toLowerCase(); const y = mon1[3] ? Number(mon1[3]) : currentYear
+      const m = monthMap[mon]
+      if (m && d >= 1 && d <= 31) return toISO(y, m, d)
+    }
+    const mon2 = s.match(/\b([A-Za-z]{3,9})\s+(\d{1,2})(?:[,\s]+(20\d{2}))?\b/)
+    if (mon2) {
+      const mon = mon2[1].slice(0,3).toLowerCase(); const d = Number(mon2[2]); const y = mon2[3] ? Number(mon2[3]) : currentYear
+      const m = monthMap[mon]
+      if (m && d >= 1 && d <= 31) return toISO(y, m, d)
+    }
+    // DD/MM/YYYY or MM/DD/YYYY (ambiguous) – assume first is day if >12
+    const slash = s.match(/\b(\d{1,2})[\/](\d{1,2})[\/](20\d{2})\b/)
+    if (slash) {
+      let a = Number(slash[1]); let b = Number(slash[2]); const y = Number(slash[3])
+      let d: number, m: number
+      if (a > 12) { d = a; m = b } else if (b > 12) { d = b; m = a } else { d = a; m = b }
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) return toISO(y, m, d)
+    }
+    return null
+  }
+
+  const extractAmount = (s: string): number | null => {
+    // Ignore exchange rate contexts
+    const lower = s.toLowerCase()
+    const tokens = Array.from(s.matchAll(/\$?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})|\$?\d+\.\d{2}\)?/g)).map(m => m[0])
+    if (!tokens.length) return null
+    // Filter out values near 'exchange rate'
+    const filtered = tokens.filter(t => !/exchange rate/i.test(lower))
+    const pick = (filtered.length ? filtered : tokens)
+    // Heuristic: if multiple, prefer the one not at end of line (to avoid balances)
+    let cand = pick[0]
+    if (pick.length >= 2) {
+      // choose the token closest to middle of the string
+      const mids = pick.map(t => Math.abs(s.indexOf(t) - s.length / 2))
+      cand = pick[mids.indexOf(Math.min(...mids))]
+    }
+    // Normalize
+    const isParen = /^\(.*\)$/.test(cand)
+    cand = cand.replace(/[,$]/g, '').replace(/^\$/, '').replace(/^\(/, '').replace(/\)$/, '')
+    const n = Number(cand)
+    if (!Number.isFinite(n)) return null
+    return isParen ? -Math.abs(n) : n
+  }
+
+  const cleanupMerchant = (s: string): string => {
+    // Remove long numeric codes and extra spaces
+    let out = s
+      .replace(/\b\d{7,}\b/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+    // Remove common noise words
+    out = out.replace(/\b(TRANSACTION DATE|POSTING DATE|ACTIVITY DESCRIPTION|WITHDRAWALS?|DEPOSITS?|BALANCE|FOREIGN CURRENCY|EXCHANGE RATE|VISA DEBIT PURCHASE|INTERAC|CONTACTLESS|ATM WITHDRAWAL|AUTOMATIC PAYMENT|MISC PAYMENT)\b/ig, '').trim()
+    // Limit length
+    if (out.length > 64) out = out.slice(0, 64)
+    return out || undefined as any
+  }
+
+  const results: ParsedExpense[] = []
+  const refundLikeRe = /(refund|refunded|credit\b|cr\b|reversal|chargeback|payment received|cashback|return|deposit credit|adjustment credit|credit interest|rebate|reimbursement)/i
+  for (const line of lines) {
+    // Expect lines like: `12. JUN 28 | JUN 30 | MERCHANT | $109.61`
+    const m = line.match(/^\s*(\d+)\.\s*(.*)$/)
+    const body = m ? m[2] : line
+    const lineIndex = m ? Number(m[1]) : undefined
+
+    const date = parseDate(body)
+    const amt = extractAmount(body)
+    if (amt === null || !date) continue
+    // Determine sign
+    let signedAmt = amt
+    const hasExplicitMinus = /(^|\s)[-]?(\$)?\d[\d,]*\.\d{2}/.test(body) && /-\s*\$?\d/.test(body)
+    const refundLike = refundLikeRe.test(body)
+    if (hasExplicitMinus || refundLike) {
+      signedAmt = -Math.abs(amt)
+    }
+    // Derive merchant: remove date and amount tokens from body
+    let merchantRaw = body
+    const dateIso = date
+    // remove obvious date substrings
+    merchantRaw = merchantRaw.replace(/\b(\d{1,2}\s+[A-Za-z]{3,9}|[A-Za-z]{3,9}\s+\d{1,2}|\d{4}-\d{2}-\d{2}|\d{1,2}[\/]\d{1,2}[\/]20\d{2})\b/g, ' ')
+    // remove amount-like tokens
+    merchantRaw = merchantRaw.replace(/\$?\(?\d{1,3}(?:,\d{3})*(?:\.\d{2})|\$?\d+\.\d{2}\)?/g, ' ')
+    const merchant = cleanupMerchant(merchantRaw)
+
+    results.push({
+      amount: signedAmt,
+      currency: detectLineCurrency(body, globalCurrency),
+      merchant,
+      occurred_on: dateIso,
+      note: undefined,
+      category: undefined,
+      line_index: lineIndex,
+    })
+  }
+  return results
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse>) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -808,19 +1052,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const selected = Array.isArray(file) ? file[0] : file
     if (!selected) return res.status(400).json({ success: false, error: 'No file uploaded. Use field name "file".' })
 
-    // Use visual redaction with layout preservation
-    if (debugEnabled()) console.log('[AI Parse Debug] using visual PDF redaction')
-    const { buffer, text } = await redactPdfVisually(selected)
-    if (debugEnabled()) console.log('[AI Parse Debug] visual redaction complete, text length:', text.length)
+    // Flags from querystring
+    const q = req.query || {}
+    const redactEnvDefault = process.env.AI_DEFAULT_REDACT === '1'
+    const redactFlag = (Array.isArray(q.redact) ? q.redact[0] : q.redact) === '1' || redactEnvDefault
+    const maskFlag = (Array.isArray(q.mask) ? q.mask[0] : q.mask) === '1' || process.env.AI_MASK_BEFORE_SEND === '1'
+    const fastFlag = (Array.isArray(q.fast) ? q.fast[0] : q.fast) !== '0' // default fast on
+
+    // Extract text (fast by default). Use visual redaction only if explicitly requested.
+    let text = ''
+    if (redactFlag) {
+      if (debugEnabled()) console.log('[AI Parse Debug] using visual PDF redaction mode')
+      const out = await redactPdfVisually(selected)
+      text = out.text
+    } else {
+      if (debugEnabled()) console.log('[AI Parse Debug] using fast text extraction mode')
+      text = await extractTextFast(selected)
+    }
+    if (debugEnabled()) console.log('[AI Parse Debug] text length after extraction:', text.length)
+    // Optional masking before sending to AI (does not affect storage, only prompt)
+    const maskedOrOriginal = maskFlag ? sanitizeTextForAI(text) : text
     
-    const prepared = prepareStatementText(text)
+    const prepared = prepareStatementText(maskedOrOriginal)
     if (debugEnabled()) console.log('[AI Parse Debug] prepared text length:', prepared.length)
     if (!prepared || !prepared.trim()) {
       return res.status(400).json({ success: false, error: 'Could not extract text from PDF' })
     }
 
-    // Preview mode: return only metadata and the redacted, numbered text (no external AI call)
-    const q = req.query || {}
+    // Preview mode: return only metadata and the numbered text (no external AI call)
     const previewFlag = Array.isArray(q.preview) ? q.preview[0] : q.preview
     if (previewFlag === '1') {
       if (debugEnabled()) console.log('[AI Parse Debug] preview requested.')
@@ -839,36 +1098,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       })
     }
 
-    // Allow disabling external AI calls entirely via env
-    if (process.env.AI_DISABLE_EXTERNAL === '1') {
-      return res.status(503).json({ success: false, error: 'External AI calls are disabled by server policy (AI_DISABLE_EXTERNAL=1).' })
-    }
+    // External AI gating: must be explicitly enabled via env AND query flag
+    const allowExternalEnv = process.env.AI_ALLOW_EXTERNAL === '1'
+    const externalFlag = (Array.isArray(q.external) ? q.external[0] : q.external) === '1'
 
     // Optionally chunk long texts
     // Process in chunks to avoid missing later pages; merge & dedupe
     // Prefer a single full-text call to avoid double extraction across chunks when within size limits
+    // If external calls are not explicitly enabled, do local-only parsing
+    if (!(allowExternalEnv && externalFlag)) {
+      if (debugEnabled()) console.log('[AI Parse Debug] external AI disabled; using local parser')
+      const local = parseLocalExpenses(prepared)
+      return res.status(200).json({ success: true, expenses: local })
+    }
+
+    // External path (explicitly opted-in):
     if (prepared.length <= 20000) {
       if (debugEnabled()) console.log('[AI Parse Debug] using single-call mode (prepared length <= 20000)')
-      const once = await callPerplexity(prepared)
+      const once = await callPerplexity(prepared, { timeoutMs: 25000 })
       if (debugEnabled()) console.log('[AI Parse Debug] single-call returned', once.length)
-      // Do NOT dedupe in single-call mode; we rely on the model to keep distinct occurrences separate
       return res.status(200).json({ success: true, expenses: once })
     } else {
-      const chunks = chunkText(prepared, 9000)
+      const chunks = chunkText(prepared, 8000)
       if (debugEnabled()) console.log('[AI Parse Debug] chunks count', chunks.length, 'chunk lens', chunks.map(c => c.length))
       const all: (ParsedExpense & { _srcChunk?: number })[] = []
-      for (let i = 0; i < chunks.length; i++) {
-        const c = chunks[i]
-        if (debugEnabled()) console.log(`[AI Parse Debug] chunk ${i+1}/${chunks.length} hash`, hashOf(c))
-        const part = await callPerplexity(c)
-        if (debugEnabled()) console.log(`[AI Parse Debug] chunk ${i+1} returned`, part.length)
-        const withMeta = part.map(p => ({ ...p, _srcChunk: i + 1 }))
-        all.push(...withMeta)
+      const concurrency = 3
+      for (let start = 0; start < chunks.length; start += concurrency) {
+        const batch = chunks.slice(start, start + concurrency)
+        if (debugEnabled()) console.log(`[AI Parse Debug] processing batch ${start/concurrency + 1} with size`, batch.length)
+        const results = await Promise.all(
+          batch.map((c, idx) => {
+            const chunkIndex = start + idx
+            if (debugEnabled()) console.log(`[AI Parse Debug] chunk ${chunkIndex+1}/${chunks.length} hash`, hashOf(c))
+            return callPerplexity(c, { timeoutMs: 25000 })
+              .then(part => ({ ok: true as const, part, chunkIndex }))
+              .catch(err => ({ ok: false as const, err, chunkIndex }))
+          })
+        )
+        for (const r of results) {
+          if (r.ok) {
+            if (debugEnabled()) console.log(`[AI Parse Debug] chunk ${r.chunkIndex+1} returned`, r.part.length)
+            const withMeta = r.part.map(p => ({ ...p, _srcChunk: r.chunkIndex + 1 }))
+            all.push(...withMeta)
+          } else {
+            console.warn(`[AI Parse Warn] chunk ${r.chunkIndex+1} failed:`, r.err instanceof Error ? r.err.message : r.err)
+          }
+        }
       }
-      if (debugEnabled()) console.log('[AI Parse Debug] total before dedupe', all.length)
       const mergedWithMeta = dedupeExpenses(all)
       const merged = mergedWithMeta.map(({ _srcChunk, ...rest }) => rest)
-      if (debugEnabled()) console.log('[AI Parse Debug] total after dedupe', merged.length)
       return res.status(200).json({ success: true, expenses: merged })
     }
   } catch (e: any) {

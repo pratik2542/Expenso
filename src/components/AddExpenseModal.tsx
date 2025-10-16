@@ -90,6 +90,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const [importLoading, setImportLoading] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importStatus, setImportStatus] = useState<string>('')
+  const [useCloudAI, setUseCloudAI] = useState(false)
   const [parsedExpenses, setParsedExpenses] = useState<Array<{
     amount: number
     currency: string
@@ -225,9 +226,14 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       const form = new FormData()
       form.append('file', file)
       
-      setImportStatus('Analyzing your statement with AI...')
-      
-      const resp = await fetch('/api/ai/parse-statement', {
+      setImportStatus(useCloudAI ? 'Analyzing with Cloud AI (masked)…' : 'Analyzing locally…')
+      const params = new URLSearchParams()
+      if (useCloudAI) {
+        params.set('external', '1')
+        params.set('mask', '1')
+      }
+      const url = `/api/ai/parse-statement${params.toString() ? `?${params.toString()}` : ''}`
+      const resp = await fetch(url, {
         method: 'POST',
         body: form,
       })
@@ -488,6 +494,18 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                             )}
                             
                             <div className="flex flex-col gap-2 items-stretch">
+                              {/* Cloud AI toggle */}
+                              <label className="flex items-center gap-2 text-xs text-gray-700">
+                                <input
+                                  type="checkbox"
+                                  checked={useCloudAI}
+                                  onChange={(ev) => setUseCloudAI(ev.target.checked)}
+                                  disabled={importLoading}
+                                />
+                                <span>Use Perplexity for extraction (masked on server)</span>
+                              </label>
+                              <p className="text-[11px] text-gray-500 ml-6 -mt-1">No confidential data is sent; PII is masked before calling the model.</p>
+
                               <input 
                                 id="uploadPdfInput" 
                                 type="file" 
