@@ -152,9 +152,9 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       throw new Error('pdf.js not available')
     }
     
-    // Disable worker for serverless
+    // Disable worker for serverless - must be false or empty string, not undefined
     if (pdfjsLib.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = undefined
+      pdfjsLib.GlobalWorkerOptions.workerSrc = false
     }
 
     
