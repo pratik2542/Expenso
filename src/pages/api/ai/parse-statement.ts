@@ -103,43 +103,48 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
   // For password-protected PDFs, we must use pdf.js directly
   // pdf-parse doesn't properly forward the password parameter to its internal pdf.js instance
   try {
-    // Try to load pdf.js LEGACY build for Node.js (avoids DOMMatrix issues)
-    let pdfjsLib: any
-    
-    // First, try various legacy paths with require (best for serverless)
-    const legacyPaths = [
-      'pdfjs-dist/legacy/build/pdf.js',
-      'pdfjs-dist/legacy/build/pdf',
-      'pdfjs-dist/es5/build/pdf.js',
-    ]
-    
-    for (const path of legacyPaths) {
-      try {
-        // @ts-ignore - dynamic require path
-        pdfjsLib = require(path)
-        if (pdfjsLib && typeof pdfjsLib.getDocument === 'function') {
-          if (debugEnabled()) console.log('[AI Parse Debug] Loaded pdf.js from', path)
-          break
-        }
-      } catch (e: any) {
-        if (debugEnabled()) console.log('[AI Parse Debug] Failed to require', path, '-', e?.message)
+    // Polyfill browser globals that pdf.js needs in Node.js environment
+    if (typeof (global as any).DOMMatrix === 'undefined') {
+      ;(global as any).DOMMatrix = class DOMMatrix {
+        a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+        m11 = 1; m12 = 0; m13 = 0; m14 = 0;
+        m21 = 0; m22 = 1; m23 = 0; m24 = 0;
+        m31 = 0; m32 = 0; m33 = 1; m34 = 0;
+        m41 = 0; m42 = 0; m43 = 0; m44 = 1;
+        constructor() {}
       }
     }
     
-    // If require failed, try dynamic imports
-    if (!pdfjsLib || typeof pdfjsLib.getDocument !== 'function') {
-      for (const path of legacyPaths) {
-        try {
-          // @ts-ignore - dynamic import path
-          const mod: any = await import(path)
-          pdfjsLib = mod.default || mod
-          if (pdfjsLib && typeof pdfjsLib.getDocument === 'function') {
-            if (debugEnabled()) console.log('[AI Parse Debug] Loaded pdf.js via import from', path)
-            break
-          }
-        } catch (e: any) {
-          if (debugEnabled()) console.log('[AI Parse Debug] Failed to import', path, '-', e?.message)
+    // Try to load pdf.js - prefer legacy build .mjs files for Node.js
+    let pdfjsLib: any
+    const attempts = [
+      // Try dynamic import of legacy mjs (should work on Vercel)
+      async () => {
+        const mod: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
+        return mod.default || mod
+      },
+      // Try main package (may use modern build but we polyfilled DOMMatrix)
+      async () => {
+        const mod: any = await import('pdfjs-dist')
+        return mod.default || mod
+      },
+      // Try require as last resort
+      () => {
+        try { return require('pdfjs-dist') } catch { return null }
+      },
+    ]
+    
+    for (const attempt of attempts) {
+      try {
+        if (debugEnabled()) console.log('[AI Parse Debug] Trying pdf.js load attempt')
+        const lib = await attempt()
+        if (lib && typeof lib.getDocument === 'function') {
+          pdfjsLib = lib
+          if (debugEnabled()) console.log('[AI Parse Debug] pdf.js loaded successfully')
+          break
         }
+      } catch (e: any) {
+        if (debugEnabled()) console.log('[AI Parse Debug] Load attempt failed:', e?.message)
       }
     }
     
@@ -147,20 +152,9 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       throw new Error('pdf.js not available')
     }
     
-    // Disable worker AND ensure Node.js compatibility
+    // Disable worker for serverless
     if (pdfjsLib.GlobalWorkerOptions) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = undefined
-    }
-    
-    // Polyfill DOMMatrix if needed (for non-legacy builds in Node)
-    if (typeof (global as any).DOMMatrix === 'undefined') {
-      ;(global as any).DOMMatrix = class DOMMatrix {
-        a: number; b: number; c: number; d: number; e: number; f: number
-        constructor() {
-          // Minimal polyfill for pdf.js compatibility
-          this.a = 1; this.b = 0; this.c = 0; this.d = 1; this.e = 0; this.f = 0
-        }
-      }
     }
 
     
