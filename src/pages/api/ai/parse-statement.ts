@@ -34,22 +34,39 @@ async function readFile(file: FormidableFile): Promise<Buffer> {
   return fs.promises.readFile(filepath)
 }
 
-// Try to load pdfjs in a way that works across Node/runtime variants
+// Try to load pdfjs in a way that works across Node/runtime variants & Next/Vercel bundling
 async function loadPdfjs(): Promise<any> {
-  const candidates = [
-    'pdfjs-dist/legacy/build/pdf.mjs',
+  // 1) Prefer requiring the legacy CJS build using eval('require') so Next doesn't transform it
+  const req = (() => {
+    try { return eval('require') as NodeRequire } catch { return null }
+  })()
+  const cjsCandidates = [
     'pdfjs-dist/legacy/build/pdf.js',
-    'pdfjs-dist/build/pdf.mjs',
     'pdfjs-dist/build/pdf.js',
   ]
-  for (const path of candidates) {
+  if (req) {
+    for (const p of cjsCandidates) {
+      try {
+        const mod: any = req(p)
+        if (mod && typeof mod.getDocument === 'function') return mod
+        if (mod && mod?.default && typeof mod.default.getDocument === 'function') return mod.default
+      } catch (_) {}
+    }
+  }
+
+  // 2) Fall back to ESM builds via dynamic import
+  const esmCandidates = [
+    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/build/pdf.mjs',
+  ]
+  for (const p of esmCandidates) {
     try {
-      const mod: any = await import(path)
+      const mod: any = await import(p)
       if (mod && typeof mod.getDocument === 'function') return mod
       if (mod && mod?.default && typeof mod.default.getDocument === 'function') return mod.default
-      return mod
     } catch (_) {}
   }
+
   throw new Error('pdfjs not available in this runtime')
 }
 
@@ -108,6 +125,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
     }
   } catch (e) {
     // If both engines fail, surface a helpful error
+    if (debugEnabled()) console.error('[AI Parse Debug] Both pdf-parse and pdfjs failed in extractTextFast')
     throw new Error('PDF processing engine unavailable on this runtime')
   }
 }
@@ -440,6 +458,7 @@ async function redactPdfVisually(file: FormidableFile, password?: string): Promi
       }
       throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
+    if (debugEnabled()) console.error('[AI Parse Debug] pdfjs fallback failed in redactPdfVisually:', msg)
     throw new Error('PDF processing engine unavailable on this runtime')
   }
 }
