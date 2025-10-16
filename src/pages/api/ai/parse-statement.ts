@@ -9,6 +9,8 @@ export const config = {
     bodyParser: false,
     responseLimit: false,
   },
+  // Ensure Node.js runtime on Vercel (not Edge)
+  runtime: 'nodejs' as const,
 }
 
 type ParsedExpense = {
@@ -71,7 +73,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
     const pdfjsLib: any = await loadPdfjs()
     const uint8Data = new Uint8Array(data)
     try {
-      const loadingTask = pdfjsLib.getDocument({
+      const loadingTask: any = pdfjsLib.getDocument({
         data: uint8Data,
         password: password || undefined,
         useWorkerFetch: false,
@@ -79,6 +81,11 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
         useSystemFonts: true,
         verbosity: 0,
       })
+      if (password && typeof loadingTask?.onPassword === 'function') {
+        loadingTask.onPassword((updatePassword: (pw: string) => void, _reason: number) => {
+          updatePassword(password)
+        })
+      }
       const pdfDocument = await loadingTask.promise
       let text = ''
       for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
@@ -118,7 +125,7 @@ async function extractTextWithColumns(file: FormidableFile, password?: string): 
   const uint8Data = new Uint8Array(data)
   let pdfDocument: any
   try {
-    const loadingTask = pdfjsLib.getDocument({
+    const loadingTask: any = pdfjsLib.getDocument({
       data: uint8Data,
       password: password || undefined,
       useWorkerFetch: false,
@@ -126,10 +133,18 @@ async function extractTextWithColumns(file: FormidableFile, password?: string): 
       useSystemFonts: true,
       verbosity: 0,
     })
+    if (password && typeof (loadingTask as any)?.onPassword === 'function') {
+      loadingTask.onPassword((updatePassword: (pw: string) => void, _reason: number) => {
+        updatePassword(password)
+      })
+    }
     pdfDocument = await loadingTask.promise
   } catch (e: any) {
     const msg = e?.message || ''
     if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      if (/Incorrect/i.test(msg) || e?.code === 2) {
+        throw new Error('Incorrect password for this PDF.')
+      }
       throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
     throw e
@@ -194,7 +209,7 @@ async function extractRowsWithColumns(file: FormidableFile, password?: string): 
   const uint8Data = new Uint8Array(data)
   let pdfDocument: any
   try {
-    const loadingTask = pdfjsLib.getDocument({
+    const loadingTask: any = pdfjsLib.getDocument({
       data: uint8Data,
       password: password || undefined,
       useWorkerFetch: false,
@@ -202,10 +217,18 @@ async function extractRowsWithColumns(file: FormidableFile, password?: string): 
       useSystemFonts: true,
       verbosity: 0,
     })
+    if (password && typeof loadingTask?.onPassword === 'function') {
+      loadingTask.onPassword((updatePassword: (pw: string) => void, _reason: number) => {
+        updatePassword(password)
+      })
+    }
     pdfDocument = await loadingTask.promise
   } catch (e: any) {
     const msg = e?.message || ''
     if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      if (/Incorrect/i.test(msg) || e?.code === 2) {
+        throw new Error('Incorrect password for this PDF.')
+      }
       throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
     throw e
@@ -286,7 +309,7 @@ async function extractPagesWithColumns(file: FormidableFile, password?: string):
   const uint8Data = new Uint8Array(data)
   let pdfDocument: any
   try {
-    const loadingTask = pdfjsLib.getDocument({
+    const loadingTask: any = pdfjsLib.getDocument({
       data: uint8Data,
       password: password || undefined,
       useWorkerFetch: false,
@@ -294,11 +317,19 @@ async function extractPagesWithColumns(file: FormidableFile, password?: string):
       useSystemFonts: true,
       verbosity: 0,
     })
+    if (password && typeof loadingTask?.onPassword === 'function') {
+      loadingTask.onPassword((updatePassword: (pw: string) => void, _reason: number) => {
+        updatePassword(password)
+      })
+    }
     pdfDocument = await loadingTask.promise
   } catch (e: any) {
     const msg = e?.message || ''
     if (/Password/i.test(msg) || e?.name === 'PasswordException') {
       if (debugEnabled()) console.log('[AI Parse Debug] Password exception in extractPagesWithColumns:', { name: e?.name, message: msg, passwordProvided: !!password })
+      if (/Incorrect/i.test(msg) || e?.code === 2) {
+        throw new Error('Incorrect password for this PDF.')
+      }
       throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
     throw e
@@ -376,7 +407,7 @@ async function redactPdfVisually(file: FormidableFile, password?: string): Promi
   // Fallback to pdfjs with password
   try {
     const pdfjsLib: any = await loadPdfjs()
-    const loadingTask = pdfjsLib.getDocument({
+    const loadingTask: any = pdfjsLib.getDocument({
       data: new Uint8Array(data),
       password: password || undefined,
       useWorkerFetch: false,
@@ -384,6 +415,11 @@ async function redactPdfVisually(file: FormidableFile, password?: string): Promi
       useSystemFonts: true,
       verbosity: 0,
     })
+    if (password && typeof loadingTask?.onPassword === 'function') {
+      loadingTask.onPassword((updatePassword: (pw: string) => void, _reason: number) => {
+        updatePassword(password)
+      })
+    }
     const pdfDocument = await loadingTask.promise
     let text = ''
     for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
@@ -399,6 +435,9 @@ async function redactPdfVisually(file: FormidableFile, password?: string): Promi
   } catch (e: any) {
     const msg = e?.message || ''
     if (/Password/i.test(msg) || e?.name === 'PasswordException') {
+      if (/Incorrect/i.test(msg) || e?.code === 2) {
+        throw new Error('Incorrect password for this PDF.')
+      }
       throw new Error('This PDF is password-protected. Please provide the correct password and try again.')
     }
     throw new Error('PDF processing engine unavailable on this runtime')
@@ -870,7 +909,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-PDF-Password')
 
   // Handle OPTIONS preflight request
   if (req.method === 'OPTIONS') {
@@ -895,7 +934,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const selected = Array.isArray(file) ? file[0] : file
     if (!selected) return res.status(400).json({ success: false, error: 'No file uploaded. Use field name "file".' })
 
-    // Optional password from header, form, or query
+    // Optional password from query, form, or header (prefer query on Vercel; headers can be mutated)
     const providedPassword = (() => {
       const fq = req.query || {}
       const qpw = Array.isArray(fq.password) ? fq.password[0] : fq.password
@@ -914,15 +953,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       
       // Debug logging for Vercel environment
       console.log('[Password Debug] Sources:', {
-        header: hpw ? `present (${String(hpw).length} chars)` : 'missing',
-        formField: fpwVal ? `present (${String(fpwVal).length} chars)` : 'missing',
         query: qpw ? `present (${String(qpw).length} chars)` : 'missing',
+        formField: fpwVal ? `present (${String(fpwVal).length} chars)` : 'missing',
+        header: hpw ? `present (${String(hpw).length} chars)` : 'missing',
+        chosen: ((): string => {
+          if (typeof qpw === 'string' && qpw.trim()) return 'query'
+          if (typeof fpwVal === 'string' && fpwVal.trim()) return 'form'
+          if (typeof hpw === 'string' && hpw.trim()) return 'header'
+          return 'none'
+        })(),
         allHeaders: Object.keys(req.headers).filter(k => /password/i.test(k))
       })
       
-      if (typeof hpw === 'string' && hpw.trim()) return hpw.trim()
-      if (typeof fpwVal === 'string' && fpwVal.trim()) return fpwVal.trim()
+      // Prefer query string first, then form field, then header (custom headers may be altered by proxies)
       if (typeof qpw === 'string' && qpw.trim()) return qpw.trim()
+      if (typeof fpwVal === 'string' && fpwVal.trim()) return fpwVal.trim()
+      if (typeof hpw === 'string' && hpw.trim()) return hpw.trim()
       return undefined
     })()
     if (debugEnabled()) console.log('[AI Parse Debug] Password provided:', providedPassword ? `yes (${providedPassword.length} chars)` : 'no')
