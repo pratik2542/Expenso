@@ -1,4 +1,4 @@
-import React, { Fragment, useMemo, useState } from 'react'
+import React, { Fragment, useMemo, useRef, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { X } from 'lucide-react'
 // import { supabase } from '@/lib/supabaseClient' (already imported above)
@@ -112,6 +112,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   }
   // Optional PDF password (for encrypted PDFs)
   const [pdfPassword, setPdfPassword] = useState<string>('')
+  const pdfPasswordRef = useRef<HTMLInputElement | null>(null)
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null)
   // (removed duplicate useAuth declaration)
   
@@ -300,6 +301,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           setImportLoading(false)
           setImportStatus('')
           setImportError('Wrong password. Please try again.')
+          // Keep the selected file so user can retry with a new password
+          ;(analyzeSelectedPDF as any)._keepFile = true
+          // Focus the password field for quick retry
+          setTimeout(() => pdfPasswordRef.current?.focus(), 0)
           return
         }
         throw new Error(`Upload failed (${resp.status}): ${errorText || resp.statusText}`)
@@ -343,10 +348,15 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       console.error('PDF upload error:', err)
     } finally {
       setImportLoading(false)
-      // Reset file selection to allow re-selecting the same file
-      setSelectedPdfFile(null)
-      const input = document.getElementById('uploadPdfInput') as HTMLInputElement | null
-      if (input) input.value = ''
+      // If a password error occurred, do not clear the selected file; allow retry
+      const keep = (analyzeSelectedPDF as any)._keepFile === true
+      ;(analyzeSelectedPDF as any)._keepFile = false
+      if (!keep) {
+        // Reset file selection to allow re-selecting the same file
+        setSelectedPdfFile(null)
+        const input = document.getElementById('uploadPdfInput') as HTMLInputElement | null
+        if (input) input.value = ''
+      }
     }
   }
 
@@ -634,6 +644,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                   placeholder="Enter PDF password"
                                   className="border border-gray-300 rounded px-2 py-1 text-xs w-full"
                                   autoComplete="off"
+                                  ref={pdfPasswordRef}
                                 />
                               </div>
                               

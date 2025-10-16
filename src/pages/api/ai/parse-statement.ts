@@ -32,6 +32,25 @@ async function readFile(file: FormidableFile): Promise<Buffer> {
   return fs.promises.readFile(filepath)
 }
 
+// Try to load pdfjs in a way that works across Node/runtime variants
+async function loadPdfjs(): Promise<any> {
+  const candidates = [
+    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/legacy/build/pdf.js',
+    'pdfjs-dist/build/pdf.mjs',
+    'pdfjs-dist/build/pdf.js',
+  ]
+  for (const path of candidates) {
+    try {
+      const mod: any = await import(path)
+      if (mod && typeof mod.getDocument === 'function') return mod
+      if (mod && mod?.default && typeof mod.default.getDocument === 'function') return mod.default
+      return mod
+    } catch (_) {}
+  }
+  throw new Error('pdfjs not available in this runtime')
+}
+
 // Fast text extraction: prefer pdf-parse (fast, native) with pdfjs fallback (no visual redaction)
 async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
   const data = await readFile(file)
@@ -49,7 +68,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
 
   // Fallback to pdfjs text extraction (no drawing/redaction)
   try {
-    const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const pdfjsLib: any = await loadPdfjs()
     const uint8Data = new Uint8Array(data)
     try {
       const loadingTask = pdfjsLib.getDocument({
@@ -90,7 +109,7 @@ async function extractTextWithColumns(file: FormidableFile, password?: string): 
   const data = await readFile(file)
   let pdfjsLib: any
   try {
-    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    pdfjsLib = await loadPdfjs()
   } catch (e) {
     // Fallback to fast extractor if pdfjs not available
     return extractTextFast(file, password)
@@ -165,7 +184,7 @@ async function extractRowsWithColumns(file: FormidableFile, password?: string): 
   const data = await readFile(file)
   let pdfjsLib: any
   try {
-    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    pdfjsLib = await loadPdfjs()
   } catch (e) {
     // Fallback to simple fast text => single-column rows
     const text = await extractTextFast(file, password)
@@ -257,7 +276,7 @@ async function extractPagesWithColumns(file: FormidableFile, password?: string):
   const data = await readFile(file)
   let pdfjsLib: any
   try {
-    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    pdfjsLib = await loadPdfjs()
   } catch (e) {
     // Fallback: single page with fast text
     const text = await extractTextFast(file, password)
@@ -354,7 +373,7 @@ async function redactPdfVisually(file: FormidableFile, password?: string): Promi
   }
   // Fallback to pdfjs with password
   try {
-    const pdfjsLib: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const pdfjsLib: any = await loadPdfjs()
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(data),
       password: password || undefined,
@@ -979,8 +998,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   } catch (e: any) {
     console.error('parse-statement error', e)
     const msg = e?.message || ''
-    if (/password-protected/i.test(msg) || /PasswordException/i.test(String(e?.name))) {
+    if (/password-protected/i.test(msg) || /PasswordException/i.test(String(e?.name)) || /password/i.test(msg)) {
       return res.status(400).json({ success: false, error: 'This PDF is password-protected. Please provide the correct password and try again.' })
+    }
+    if (/pdf processing engine unavailable/i.test(msg) || /pdfjs not available/i.test(msg)) {
+      // Surface a friendlier message rather than 500
+      return res.status(400).json({ success: false, error: 'We could not read this PDF on the current server environment. Please try uploading a non-password-protected copy or export a CSV/XLSX instead.' })
     }
     return res.status(500).json({ success: false, error: msg || 'Internal Error' })
   }
