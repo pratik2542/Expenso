@@ -289,15 +289,26 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       }
 
       setImportStatus('Analyzing your statement…')
+      const headers: Record<string, string> = {}
+      if (pdfPassword && pdfPassword.trim()) headers['X-PDF-Password'] = pdfPassword.trim()
       const resp = await fetch('/api/ai/parse-statement', {
         method: 'POST',
         body: form,
+        headers,
       })
 
       if (!resp.ok) {
-        const errorText = await resp.text().catch(() => '')
+        const ct = resp.headers.get('content-type') || ''
+        const bodyText = await resp.text().catch(() => '')
+        let bodyError = bodyText
+        try {
+          if (ct.includes('application/json')) {
+            const j = JSON.parse(bodyText)
+            bodyError = j?.error || bodyText
+          }
+        } catch (_) {}
         // Gracefully handle wrong/missing password
-        if (resp.status === 400 && /password/i.test(errorText)) {
+        if (resp.status === 400 && /password/i.test(bodyError)) {
           setImportLoading(false)
           setImportStatus('')
           setImportError('Wrong password. Please try again.')
@@ -307,7 +318,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           setTimeout(() => pdfPasswordRef.current?.focus(), 0)
           return
         }
-        throw new Error(`Upload failed (${resp.status}): ${errorText || resp.statusText}`)
+        throw new Error(`Upload failed (${resp.status}): ${bodyError || resp.statusText}`)
       }
 
       setImportStatus('Parsing transactions...')

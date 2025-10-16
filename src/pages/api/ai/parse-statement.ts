@@ -893,13 +893,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const selected = Array.isArray(file) ? file[0] : file
     if (!selected) return res.status(400).json({ success: false, error: 'No file uploaded. Use field name "file".' })
 
-    // Optional password from form or query
+    // Optional password from header, form, or query
     const providedPassword = (() => {
       const fq = req.query || {}
       const qpw = Array.isArray(fq.password) ? fq.password[0] : fq.password
       const fpw = (fields && (fields as any).password) as any
       const fpwVal = Array.isArray(fpw) ? fpw[0] : fpw
-      return (typeof fpwVal === 'string' && fpwVal.trim()) ? fpwVal.trim() : (typeof qpw === 'string' && qpw.trim() ? qpw.trim() : undefined)
+      const hpwAny = (req.headers['x-pdf-password'] as any) || (req.headers['X-PDF-PASSWORD'] as any)
+      const hpw = Array.isArray(hpwAny) ? hpwAny[0] : hpwAny
+      if (typeof hpw === 'string' && hpw.trim()) return hpw.trim()
+      if (typeof fpwVal === 'string' && fpwVal.trim()) return fpwVal.trim()
+      if (typeof qpw === 'string' && qpw.trim()) return qpw.trim()
+      return undefined
     })()
 
     // Flags from querystring
