@@ -10,7 +10,7 @@ export const config = {
     responseLimit: false,
   },
   // Ensure Node.js runtime on Vercel (not Edge)
-  runtime: 'nodejs' as const,
+  runtime: 'nodejs',
 }
 
 type ParsedExpense = {
