@@ -37,18 +37,35 @@ async function readFile(file: FormidableFile): Promise<Buffer> {
 // Try to load pdfjs in a way that works across Node/runtime variants & Next/Vercel bundling
 async function loadPdfjs(): Promise<any> {
   const candidates = [
-    'pdfjs-dist',
-    'pdfjs-dist/build/pdf.mjs',
-    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/legacy/build/pdf.js', // Prefer legacy CJS in Node serverless
     'pdfjs-dist/build/pdf.js',
-    'pdfjs-dist/legacy/build/pdf.js',
+    'pdfjs-dist/legacy/build/pdf.mjs',
+    'pdfjs-dist/build/pdf.mjs',
+    'pdfjs-dist',
   ]
+  const debug = debugEnabled()
   for (const p of candidates) {
     try {
+      if (debug) console.log('[AI Parse Debug] Trying to load pdfjs from', p)
       const mod: any = await import(p)
-      if (mod && typeof (mod as any).getDocument === 'function') return mod
-      if (mod && (mod as any).default && typeof (mod as any).default.getDocument === 'function') return (mod as any).default
-    } catch (_) {}
+      const lib = (mod && typeof (mod as any).getDocument === 'function')
+        ? mod
+        : (mod && (mod as any).default && typeof (mod as any).default.getDocument === 'function')
+          ? (mod as any).default
+          : undefined
+      if (lib) {
+        try {
+          // Force no worker in serverless/Node
+          if ((lib as any).GlobalWorkerOptions) {
+            ;(lib as any).GlobalWorkerOptions.workerSrc = undefined
+          }
+        } catch {}
+        return lib
+      }
+      if (debug) console.log('[AI Parse Debug] Module loaded but no getDocument exported for', p)
+    } catch (e: any) {
+      if (debug) console.log('[AI Parse Debug] pdfjs load failed for', p, '-', e?.message || e)
+    }
   }
   throw new Error('pdfjs not available in this runtime')
 }
@@ -56,16 +73,22 @@ async function loadPdfjs(): Promise<any> {
 // Fast text extraction: prefer pdf-parse (fast, native) with pdfjs fallback (no visual redaction)
 async function extractTextFast(file: FormidableFile, password?: string): Promise<string> {
   const data = await readFile(file)
-  // Try pdf-parse first (fast path on serverless)
-  try {
-    const pdfParseMod: any = await import('pdf-parse')
-    const pdfParse = pdfParseMod?.default || pdfParseMod
-    const parsed = await pdfParse(data, password ? { password } : undefined)
-    if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
-      return String(parsed.text)
+  // Try pdf-parse first (fast path on serverless) unless explicitly disabled
+  if (process.env.AI_DISABLE_PDF_PARSE !== '1') {
+    try {
+      const pdfParseMod: any = await import('pdf-parse')
+      const pdfParse = pdfParseMod?.default || pdfParseMod
+      const opts: any = {}
+      if (password) opts.password = password
+      const parsed = await pdfParse(data, opts)
+      if (parsed && typeof parsed.text === 'string' && parsed.text.trim().length > 0) {
+        return String(parsed.text)
+      }
+    } catch (e) {
+      console.error('[AI Parse Error] pdf-parse failed, will try pdfjs:', e instanceof Error ? { name: e.name, message: e.message } : e)
     }
-  } catch (e) {
-    console.error('[AI Parse Error] pdf-parse failed, will try pdfjs:', e instanceof Error ? { name: e.name, message: e.message } : e)
+  } else if (debugEnabled()) {
+    console.log('[AI Parse Debug] Skipping pdf-parse due to AI_DISABLE_PDF_PARSE=1')
   }
 
   // Fallback to pdfjs text extraction (no drawing/redaction)
@@ -76,6 +99,7 @@ async function extractTextFast(file: FormidableFile, password?: string): Promise
       const loadingTask: any = pdfjsLib.getDocument({
         data: uint8Data,
         password: password || undefined,
+        disableWorker: true,
         useWorkerFetch: false,
         isEvalSupported: false,
         useSystemFonts: true,
@@ -129,6 +153,7 @@ async function extractTextWithColumns(file: FormidableFile, password?: string): 
     const loadingTask: any = pdfjsLib.getDocument({
       data: uint8Data,
       password: password || undefined,
+      disableWorker: true,
       useWorkerFetch: false,
       isEvalSupported: false,
       useSystemFonts: true,
@@ -213,6 +238,7 @@ async function extractRowsWithColumns(file: FormidableFile, password?: string): 
     const loadingTask: any = pdfjsLib.getDocument({
       data: uint8Data,
       password: password || undefined,
+      disableWorker: true,
       useWorkerFetch: false,
       isEvalSupported: false,
       useSystemFonts: true,
@@ -411,6 +437,7 @@ async function redactPdfVisually(file: FormidableFile, password?: string): Promi
     const loadingTask: any = pdfjsLib.getDocument({
       data: new Uint8Array(data),
       password: password || undefined,
+      disableWorker: true,
       useWorkerFetch: false,
       isEvalSupported: false,
       useSystemFonts: true,

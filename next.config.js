@@ -8,12 +8,16 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   // Ensure Next includes pdfjs-dist in serverless traces so it's available at runtime on Vercel
-    outputFileTracingIncludes: {
-      'src/pages/api/ai/parse-statement.ts': [
-        './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
-        './node_modules/pdfjs-dist/build/pdf.mjs',
-      ],
-    },
+  outputFileTracingIncludes: {
+    'src/pages/api/ai/parse-statement.ts': [
+      './node_modules/pdfjs-dist/legacy/build/pdf.js',
+      './node_modules/pdfjs-dist/build/pdf.js',
+      './node_modules/pdfjs-dist/legacy/build/pdf.mjs',
+      './node_modules/pdfjs-dist/build/pdf.mjs',
+      './node_modules/pdfjs-dist/build/pdf.worker.js',
+      './node_modules/pdfjs-dist/legacy/build/pdf.worker.js',
+    ],
+  },
   
     experimental: {
       optimizePackageImports: ['lucide-react', '@supabase/supabase-js', '@tanstack/react-query'],
