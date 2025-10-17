@@ -110,10 +110,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     if (cur === 'INR') return 'Debit Card'
     return ''
   }
-  // Optional PDF password (for encrypted PDFs)
-  const [pdfPassword, setPdfPassword] = useState<string>('')
-  const pdfPasswordRef = useRef<HTMLInputElement | null>(null)
-  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null)
+  // PDF Converter Modal state
+  const [showPdfConverterModal, setShowPdfConverterModal] = useState<boolean>(false)
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  
   // (removed duplicate useAuth declaration)
   
   // Track if we've already initialized the form to prevent constant resets
@@ -265,81 +265,56 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     return { id: (data as any).id, name: (data as any).name }
   }
 
+  const [converterUrl, setConverterUrl] = useState<string>('')
+  const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null)
+
   const handleSelectPDF = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null
-    setSelectedPdfFile(file)
+    // Just open the converter modal immediately
+    setShowPdfConverterModal(true)
     setImportError(null)
     setParsedExpenses([])
-    setImportStatus(file ? 'PDF selected. Enter password if protected, then click Analyze.' : '')
+    setImportStatus('')
   }
 
-  const analyzeSelectedPDF = async () => {
-    if (!selectedPdfFile) return
-    // Reset state
+  const closeConverterModal = () => {
+    setShowPdfConverterModal(false)
+    // Cleanup any pending message listeners
+    if (messageHandlerRef.current) {
+      window.removeEventListener('message', messageHandlerRef.current)
+      messageHandlerRef.current = null
+    }
+  }
+
+  const analyzeSelectedPDF = () => {
+    // Open the PDF converter in a modal
+    setShowPdfConverterModal(true)
+    setImportStatus('')
+    setImportLoading(false)
     setImportError(null)
-    setParsedExpenses([])
-    setImportStatus('Uploading PDF...')
-    setImportLoading(true)
-
-    try {
-      const form = new FormData()
-      form.append('file', selectedPdfFile)
-      if (pdfPassword && pdfPassword.trim()) {
-        form.append('password', pdfPassword.trim())
-      }
-
-      setImportStatus('Analyzing your statement…')
-      const headers: Record<string, string> = {}
-      if (pdfPassword && pdfPassword.trim()) headers['X-PDF-Password'] = pdfPassword.trim()
+    // Build converter URL with embed hints and target origin
+    if (typeof window !== 'undefined') {
+      const origin = window.location.origin
+      const url = `https://expenso-pdfexcel.vercel.app/?embed=1&targetOrigin=${encodeURIComponent(origin)}`
+      setConverterUrl(url)
+    } else {
+      setConverterUrl('https://expenso-pdfexcel.vercel.app/?embed=1')
+    }
+    
+    // Listen for message from iframe
+    const handleMessage = (event: MessageEvent) => {
+      // Verify the message is from our trusted domain
+      if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
       
-      // Also add password to URL for better Vercel compatibility
-      const url = new URL('/api/ai/parse-statement', window.location.origin)
-      if (pdfPassword && pdfPassword.trim()) {
-        url.searchParams.set('password', pdfPassword.trim())
-      }
-      
-      const resp = await fetch(url.toString(), {
-        method: 'POST',
-        body: form,
-        headers,
-      })
-
-      if (!resp.ok) {
-        const ct = resp.headers.get('content-type') || ''
-        const bodyText = await resp.text().catch(() => '')
-        let bodyError = bodyText
-        try {
-          if (ct.includes('application/json')) {
-            const j = JSON.parse(bodyText)
-            bodyError = j?.error || bodyText
-          }
-        } catch (_) {}
-        // Gracefully handle wrong/missing password
-        if (resp.status === 400 && /password/i.test(bodyError)) {
-          setImportLoading(false)
-          setImportStatus('')
-          setImportError('Wrong password. Please try again.')
-          // Keep the selected file so user can retry with a new password
-          ;(analyzeSelectedPDF as any)._keepFile = true
-          // Focus the password field for quick retry
-          setTimeout(() => pdfPasswordRef.current?.focus(), 0)
+      if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
+        const transactions = event.data.transactions || []
+        
+        if (!Array.isArray(transactions) || transactions.length === 0) {
+          setImportError('No transactions found or processing cancelled.')
           return
         }
-        throw new Error(`Upload failed (${resp.status}): ${bodyError || resp.statusText}`)
-      }
-
-      setImportStatus('Parsing transactions...')
-
-      const json = await resp.json()
-      if (!json.success) throw new Error(json.error || 'Parse failed')
-
-      const rows = (json.expenses as any[])
-      if (!Array.isArray(rows) || rows.length === 0) {
-        setParsedExpenses([])
-        setImportError('No transactions found in the uploaded PDF. Please check the file format and content.')
-      } else {
-        // Determine a sensible default payment method based on currency (CAD→Credit, INR→Debit)
-        const currencyCounts = rows.reduce<Record<string, number>>((acc, r) => {
+        
+        // Determine a sensible default payment method based on currency
+        const currencyCounts = transactions.reduce<Record<string, number>>((acc, r) => {
           const c = (r.currency || '').toUpperCase()
           if (!c) return acc
           acc[c] = (acc[c] || 0) + 1
@@ -347,35 +322,93 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         }, {})
         const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
         const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
-
-        if (defaultPM) {
-          setOverridePaymentMethod(defaultPM)
-          setPaymentMethodTouched(false)
-        } else {
-          setOverridePaymentMethod('')
-          setPaymentMethodTouched(false)
-        }
-
-        setParsedExpenses(rows.map((e) => ({ ...e, selected: true, payment_method: defaultPM || e.payment_method })))
-        setImportStatus(`Successfully extracted ${rows.length} transactions!`)
-        // Clear success message after 2 seconds
-        setTimeout(() => setImportStatus(''), 2000)
-      }
-    } catch (err: any) {
-      setImportError(err?.message || 'Failed to import')
-      console.error('PDF upload error:', err)
-    } finally {
-      setImportLoading(false)
-      // If a password error occurred, do not clear the selected file; allow retry
-      const keep = (analyzeSelectedPDF as any)._keepFile === true
-      ;(analyzeSelectedPDF as any)._keepFile = false
-      if (!keep) {
-        // Reset file selection to allow re-selecting the same file
-        setSelectedPdfFile(null)
-        const input = document.getElementById('uploadPdfInput') as HTMLInputElement | null
-        if (input) input.value = ''
+        
+        // Map transactions
+        const mapped = transactions.map((t: any) => ({
+          amount: Math.abs(t.debit || t.credit || 0),
+          currency: t.currency || 'USD',
+          merchant: t.description || '',
+          payment_method: defaultPM || 'Credit Card',
+          note: '',
+          occurred_on: t.date || new Date().toISOString().split('T')[0],
+          category: normalizeCategory(t.description, definedCategoryNames) || 'Other',
+        }))
+        
+        setParsedExpenses(mapped)
+        setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
+        setImportError(null)
+        // Close modal and cleanup listener
+        closeConverterModal()
       }
     }
+    
+    window.addEventListener('message', handleMessage)
+    messageHandlerRef.current = handleMessage
+    
+    // Timeout after 10 minutes
+    const timeoutId = setTimeout(() => {
+      if (messageHandlerRef.current) {
+        window.removeEventListener('message', messageHandlerRef.current)
+        messageHandlerRef.current = null
+      }
+      setImportError('PDF processing took too long. Please try again.')
+      closeConverterModal()
+    }, 10 * 60 * 1000)
+    // Attach to ref so we can clear if needed
+    if (iframeRef.current) (iframeRef.current as any).__timeoutId = timeoutId
+  }
+
+  // Optional fallback: open converter in a popup if iframe cannot communicate
+  const openPopupConverter = () => {
+    // Build URL with same params
+    let url = converterUrl
+    if (!url) {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      url = `https://expenso-pdfexcel.vercel.app/?embed=1&targetOrigin=${encodeURIComponent(origin)}`
+    }
+    const popup = window.open(url, 'PDFConverter', 'width=1100,height=800,resizable=yes,scrollbars=yes')
+    if (!popup) {
+      setImportError('Popup blocked. Please allow popups and try again.')
+      return
+    }
+    // Reuse the same message handler
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
+      if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
+        const transactions = event.data.transactions || []
+        if (!Array.isArray(transactions) || transactions.length === 0) {
+          setImportError('No transactions found or processing cancelled.')
+          return
+        }
+        const currencyCounts = transactions.reduce<Record<string, number>>((acc, r) => {
+          const c = (r.currency || '').toUpperCase()
+          if (!c) return acc
+          acc[c] = (acc[c] || 0) + 1
+          return acc
+        }, {})
+        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
+        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
+        const mapped = transactions.map((t: any) => ({
+          amount: Math.abs(t.debit || t.credit || 0),
+          currency: t.currency || 'USD',
+          merchant: t.description || '',
+          payment_method: defaultPM || 'Credit Card',
+          note: '',
+          occurred_on: t.date || new Date().toISOString().split('T')[0],
+          category: normalizeCategory(t.description, definedCategoryNames) || 'Other',
+        }))
+        setParsedExpenses(mapped)
+        setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
+        setImportError(null)
+        // Close any modal and popup
+        setShowPdfConverterModal(false)
+        try { popup.close() } catch {}
+        window.removeEventListener('message', handleMessage)
+        messageHandlerRef.current = null
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    messageHandlerRef.current = handleMessage
   }
 
   const toggleSelect = (idx: number) => {
@@ -633,38 +666,18 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                 disabled={importLoading}
                                 aria-label="Upload PDF statement"
                               />
-                              <label 
-                                htmlFor="uploadPdfInput" 
+                              <button 
+                                type="button"
                                 className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  analyzeSelectedPDF()
+                                }}
+                                disabled={importLoading}
                               >
-                                {importLoading ? 'Uploading...' : 'Upload PDF'}
-                              </label>
-                              {selectedPdfFile && !importLoading && (
-                                <div className="flex items-center justify-between gap-2 text-xs text-gray-600">
-                                  <span className="truncate">Selected: {selectedPdfFile.name}</span>
-                                  <button
-                                    type="button"
-                                    className="btn-primary !py-1 !px-2"
-                                    onClick={analyzeSelectedPDF}
-                                  >
-                                    Analyze PDF
-                                  </button>
-                                </div>
-                              )}
-                              {/* Optional password input for encrypted PDFs */}
-                              <div className="flex items-center gap-2">
-                                <label htmlFor="pdfPassword" className="text-xs text-gray-600 whitespace-nowrap">Password (if protected):</label>
-                                <input
-                                  id="pdfPassword"
-                                  type="password"
-                                  value={pdfPassword}
-                                  onChange={(e) => setPdfPassword(e.target.value)}
-                                  placeholder="Enter PDF password"
-                                  className="border border-gray-300 rounded px-2 py-1 text-xs w-full"
-                                  autoComplete="off"
-                                  ref={pdfPasswordRef}
-                                />
-                              </div>
+                                {importLoading ? 'Processing...' : 'Upload PDF'}
+                              </button>
                               
                               <input 
                                 id="uploadSheetInput" 
@@ -989,6 +1002,82 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               </Dialog.Panel>
             </Transition.Child>
           </div>
+        </div>
+      </Dialog>
+    </Transition.Root>
+
+    {/* PDF Converter Modal */}
+    <Transition.Root show={showPdfConverterModal} as={Fragment}>
+  <Dialog as="div" className="relative z-50" onClose={closeConverterModal}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 z-10 flex items-center justify-center p-2 sm:p-4">
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            enterTo="opacity-100 translate-y-0 sm:scale-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+            leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+          >
+            <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all w-full h-full sm:w-11/12 sm:h-[85vh] lg:w-5/6 lg:h-[90vh] flex flex-col">
+              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block z-10">
+                <button
+                  type="button"
+                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                  onClick={closeConverterModal}
+                >
+                  <span className="sr-only">Close</span>
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+              
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+                <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900">
+                  PDF Converter - Upload and Convert PDF to Transactions
+                </Dialog.Title>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openPopupConverter}
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                    title="Open in popup if iframe is blocked"
+                  >
+                    Open in popup
+                  </button>
+                </div>
+              </div>
+              
+              {/* Iframe container - takes up remaining space */}
+              <div className="flex-1 overflow-hidden">
+                <iframe
+                  ref={iframeRef}
+                  src={converterUrl || 'https://expenso-pdfexcel.vercel.app/?embed=1'}
+                  className="w-full h-full border-0"
+                  title="PDF Converter"
+                  allow="clipboard-write"
+                  onLoad={() => {
+                    // Send handshake to child so it knows we're an iframe parent
+                    try {
+                      const origin = window.location.origin
+                      iframeRef.current?.contentWindow?.postMessage({ type: 'EXPENSO_PARENT_HANDSHAKE', origin }, 'https://expenso-pdfexcel.vercel.app')
+                    } catch {}
+                  }}
+                />
+              </div>
+            </Dialog.Panel>
+          </Transition.Child>
         </div>
       </Dialog>
     </Transition.Root>
