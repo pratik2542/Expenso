@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
 import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState as useReactState } from 'react';
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { RequireAuth } from '@/components/RequireAuth'
@@ -200,6 +201,12 @@ export default function Expenses() {
   })
 
   const [searchTerm, setSearchTerm] = useState('')
+  // State for AI duplicate detection
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false)
+  const [detectedDuplicates, setDetectedDuplicates] = useState<string[]>([])
+  const [duplicatesError, setDuplicatesError] = useState<string|null>(null)
+  const [selectedDuplicateIds, setSelectedDuplicateIds] = useState<Set<string>>(new Set())
   const [sortBy, setSortBy] = useState('occurred_on')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -409,6 +416,34 @@ export default function Expenses() {
                       Delete Selected ({selectedIds.size})
                     </button>
                   )}
+                  <button
+                    className="btn-secondary border-blue-200 text-blue-700 hover:bg-blue-50 w-full sm:w-auto"
+                    onClick={async () => {
+                      setShowDuplicatesModal(true)
+                      setDuplicatesLoading(true)
+                      setDuplicatesError(null)
+                      setDetectedDuplicates([])
+                      setSelectedDuplicateIds(new Set())
+                      try {
+                        const resp = await fetch('/api/ai/detect-duplicates', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ expenses })
+                        })
+                        if (!resp.ok) throw new Error('Failed to detect duplicates')
+                        const json = await resp.json()
+                        if (!json.duplicateIds) throw new Error('No duplicates found')
+                        setDetectedDuplicates(json.duplicateIds)
+                        setSelectedDuplicateIds(new Set(json.duplicateIds))
+                      } catch (e: any) {
+                        setDuplicatesError(e.message || 'Error detecting duplicates')
+                      } finally {
+                        setDuplicatesLoading(false)
+                      }
+                    }}
+                  >
+                    AI Remove Duplicates
+                  </button>
                   <button onClick={() => setShowAdd(true)} className="btn-primary inline-flex items-center justify-center w-full sm:w-auto">
                     <PlusIcon className="w-4 h-4 mr-2" />
                     Add Expense
@@ -767,6 +802,110 @@ export default function Expenses() {
         mode={editingExpense ? 'edit' : 'add'}
         expense={editingExpense}
       />
+
+      {/* AI Duplicates Modal */}
+      {showDuplicatesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 relative">
+            <h2 className="text-xl font-bold mb-2">AI Detected Duplicate Expenses</h2>
+            <p className="mb-4 text-gray-600 text-sm">Review the detected duplicates below. Uncheck any you do not want to delete. Click Confirm to remove selected duplicates.</p>
+            {duplicatesLoading ? (
+              <div className="py-8 text-center text-blue-600">Detecting duplicates…</div>
+            ) : duplicatesError ? (
+              <div className="py-4 text-red-600">{duplicatesError}</div>
+            ) : detectedDuplicates.length === 0 ? (
+              <div className="py-8 text-center text-gray-500">No duplicates detected.</div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto border rounded mb-4">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-2 py-1"><input type="checkbox"
+                        checked={selectedDuplicateIds.size === detectedDuplicates.length}
+                        onChange={e => {
+                          if (e.target.checked) setSelectedDuplicateIds(new Set(detectedDuplicates))
+                          else setSelectedDuplicateIds(new Set())
+                        }}
+                      /></th>
+                      <th className="px-2 py-1 text-left">Description</th>
+                      <th className="px-2 py-1 text-left">Amount</th>
+                      <th className="px-2 py-1 text-left">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detectedDuplicates.map(id => {
+                      const exp = expenses.find(e => e.id === id)
+                      if (!exp) return null
+                      return (
+                        <tr key={id} className="border-t">
+                          <td className="px-2 py-1">
+                            <input type="checkbox"
+                              checked={selectedDuplicateIds.has(id)}
+                              onChange={e => {
+                                setSelectedDuplicateIds(prev => {
+                                  const next = new Set(prev)
+                                  if (e.target.checked) next.add(id)
+                                  else next.delete(id)
+                                  return next
+                                })
+                              }}
+                            />
+                          </td>
+                          <td className="px-2 py-1">{exp.note || exp.merchant || exp.category || 'No description'}</td>
+                          <td className="px-2 py-1">{exp.amount} {exp.currency}</td>
+                          <td className="px-2 py-1">{formatDate(exp.occurred_on)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                className="btn-secondary"
+                onClick={() => setShowDuplicatesModal(false)}
+                disabled={duplicatesLoading}
+              >Cancel</button>
+              <button
+                className="btn-primary"
+                disabled={duplicatesLoading || selectedDuplicateIds.size === 0}
+                onClick={async () => {
+                  if (!user) return
+                  if (!window.confirm(`Delete ${selectedDuplicateIds.size} duplicate expense(s)? This cannot be undone.`)) return
+                  setDuplicatesLoading(true)
+                  setDuplicatesError(null)
+                  try {
+                    const ids = Array.from(selectedDuplicateIds)
+                    const { error } = await supabase
+                      .from('expenses')
+                      .delete()
+                      .in('id', ids)
+                      .eq('user_id', user.id)
+                    if (error) throw new Error(error.message)
+                    setShowDuplicatesModal(false)
+                    setDetectedDuplicates([])
+                    setSelectedDuplicateIds(new Set())
+                    queryClient.invalidateQueries({ queryKey: ['expenses', user.id] })
+                  } catch (e: any) {
+                    setDuplicatesError(e.message || 'Error deleting duplicates')
+                  } finally {
+                    setDuplicatesLoading(false)
+                  }
+                }}
+              >Confirm & Delete</button>
+            </div>
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+              onClick={() => setShowDuplicatesModal(false)}
+              aria-label="Close"
+              disabled={duplicatesLoading}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        </div>
+      )}
       {/* Global actions menu overlay and popup to avoid clipping/scroll issues */}
       {actionOpenId && actionExpense && menuPos && (
         <>

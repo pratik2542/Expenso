@@ -331,7 +331,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           payment_method: defaultPM || 'Credit Card',
           note: '',
           occurred_on: t.date || new Date().toISOString().split('T')[0],
-          category: normalizeCategory(t.description, definedCategoryNames) || 'Other',
+          category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
         }))
         
         setParsedExpenses(mapped)
@@ -395,7 +395,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           payment_method: defaultPM || 'Credit Card',
           note: '',
           occurred_on: t.date || new Date().toISOString().split('T')[0],
-          category: normalizeCategory(t.description, definedCategoryNames) || 'Other',
+          category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
         }))
         setParsedExpenses(mapped)
         setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
@@ -758,17 +758,18 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               <div className="max-h-60 overflow-auto border rounded">
                                 <div className="overflow-x-auto">
                                   <table className="min-w-[720px] w-full text-xs">
-                                    <thead className="bg-gray-50 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="px-2 py-2 text-left sticky left-0 bg-gray-50">Pick</th>
-                                        <th className="px-2 py-2 text-left">Date</th>
-                                        <th className="px-2 py-2 text-right">Amount</th>
-                                        <th className="px-2 py-2 text-left">Currency</th>
-                                        <th className="px-2 py-2 text-left">Merchant</th>
-                                        <th className="px-2 py-2 text-left">Payment</th>
-                                        <th className="px-2 py-2 text-left">Category</th>
-                                    </tr>
-                                    </thead>
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-2 py-2 text-left sticky left-0 bg-gray-50">Pick</th>
+                    <th className="px-2 py-2 text-left">Date</th>
+                    <th className="px-2 py-2 text-right">Amount</th>
+                    <th className="px-2 py-2 text-left">Currency</th>
+                    <th className="px-2 py-2 text-left">Merchant</th>
+                    <th className="px-2 py-2 text-left">Payment</th>
+                    <th className="px-2 py-2 text-left">Category</th>
+                    <th className="px-2 py-2 text-left text-xs text-gray-500">Raw Category</th>
+                  </tr>
+                  </thead>
                                     <tbody>
                                       {parsedExpenses.map((p, idx) => (
                                         <tr key={idx} className="border-t">
@@ -820,6 +821,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                               <option value="__add__">+ Add new…</option>
                                             </select>
                                           </td>
+                                          <td className="px-2 py-2 text-xs text-gray-500">{p.category ? p.category : <span className="italic text-gray-400">—</span>}</td>
                                         </tr>
                                       ))}
                                     </tbody>
