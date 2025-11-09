@@ -348,6 +348,31 @@ export default function Expenses() {
     total: sortedExpenses.filter(e => e.currency === code).reduce((s, e) => s + e.amount, 0)
   })).sort((a,b)=> a.code.localeCompare(b.code))
 
+  // Calculate average per month when category is selected
+  const categoryAvgPerMonth = (() => {
+    if (!categoryFilter || sortedExpenses.length === 0) return null
+    
+    // Group expenses by month
+    const monthlyData = new Map<string, { total: number; currency: string }>()
+    sortedExpenses.forEach(expense => {
+      const date = new Date(expense.occurred_on)
+      const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+      const existing = monthlyData.get(monthKey)
+      monthlyData.set(monthKey, {
+        total: (existing?.total || 0) + expense.amount,
+        currency: expense.currency
+      })
+    })
+
+    // Calculate average
+    if (monthlyData.size === 0) return null
+    const totalAmount = Array.from(monthlyData.values()).reduce((sum, m) => sum + m.total, 0)
+    const avgPerMonth = totalAmount / monthlyData.size
+    const currencyOfFirst = Array.from(monthlyData.values())[0].currency
+    
+    return { avgPerMonth, currency: currencyOfFirst, monthCount: monthlyData.size }
+  })()
+
   const onAdded = () => {
   queryClient.invalidateQueries({ queryKey: ['expenses', user?.id] })
   }
@@ -521,41 +546,54 @@ export default function Expenses() {
               </div>
             </div>
             {/* Results Summary */}
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-sm text-gray-600">
-                {isLoading ? 'Loading...' : `${sortedExpenses.length} expense(s) found`}
-              </span>
-              <span className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                {singleCurrencyCode ? (
-                  // Single-currency list
-                  convertExistingData ? (
-                    singleCurrencyCode === prefCurrency ? (
-                      // No conversion needed
-                      <>Total: {formatCurrency(totalAmount)}</>
-                    ) : (
-                      // Converting to preference currency
-                      convertedTotal === null ? (
-                        <>Total: …</>
-                      ) : conversionSucceeded ? (
-                        <>Total: {formatCurrency(convertedTotal)}</>
+            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm text-gray-600">
+                  {isLoading ? 'Loading...' : `${sortedExpenses.length} expense(s) found`}
+                </span>
+                <span className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  {singleCurrencyCode ? (
+                    // Single-currency list
+                    convertExistingData ? (
+                      singleCurrencyCode === prefCurrency ? (
+                        // No conversion needed
+                        <>Total: {formatCurrency(totalAmount)}</>
                       ) : (
-                        // Conversion failed → show original currency explicitly
+                        // Converting to preference currency
+                        convertedTotal === null ? (
+                          <>Total: …</>
+                        ) : conversionSucceeded ? (
+                          <>Total: {formatCurrency(convertedTotal)}</>
+                        ) : (
+                          // Conversion failed → show original currency explicitly
+                          <>Total: {formatCurrencyExplicit(totalAmount, singleCurrencyCode)}</>
+                        )
+                      )
+                    ) : (
+                      // Not converting existing data → show original currency explicitly if different
+                      singleCurrencyCode === prefCurrency ? (
+                        <>Total: {formatCurrency(totalAmount)}</>
+                      ) : (
                         <>Total: {formatCurrencyExplicit(totalAmount, singleCurrencyCode)}</>
                       )
                     )
                   ) : (
-                    // Not converting existing data → show original currency explicitly if different
-                    singleCurrencyCode === prefCurrency ? (
-                      <>Total: {formatCurrency(totalAmount)}</>
-                    ) : (
-                      <>Total: {formatCurrencyExplicit(totalAmount, singleCurrencyCode)}</>
-                    )
-                  )
-                ) : (
-                  // Multi-currency list: keep existing behavior
-                  <>Total: {totalAmount.toFixed(2)} (mixed)</>
-                )}
-              </span>
+                    // Multi-currency list: keep existing behavior
+                    <>Total: {totalAmount.toFixed(2)} (mixed)</>
+                  )}
+                </span>
+              </div>
+              {categoryAvgPerMonth && (
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3 text-sm">
+                  <span className="text-gray-600">Average per month:</span>
+                  <span className="font-semibold text-blue-600">
+                    {formatCurrencyExplicit(categoryAvgPerMonth.avgPerMonth, categoryAvgPerMonth.currency)} 
+                    <span className="text-xs text-gray-500 ml-1">
+                      (across {categoryAvgPerMonth.monthCount} month{categoryAvgPerMonth.monthCount > 1 ? 's' : ''})
+                    </span>
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

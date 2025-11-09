@@ -23,11 +23,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadUser = useCallback(async () => {
     console.log('AuthContext loadUser: Starting')
     setLoading(true)
-    const { data: { session }, error } = await supabase.auth.getSession()
-    console.log('AuthContext loadUser:', { session: session?.user?.id, error })
-    if (error) console.error(error)
-    setUser(session?.user ?? null)
-    setLoading(false)
+    try {
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Auth session load timeout')), 10000) // 10 seconds
+      })
+      const sessionPromise = supabase.auth.getSession()
+      const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any
+      console.log('AuthContext loadUser:', { session: session?.user?.id, error })
+      if (error) console.error(error)
+      setUser(session?.user ?? null)
+    } catch (err) {
+      console.error('AuthContext loadUser error:', err)
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
