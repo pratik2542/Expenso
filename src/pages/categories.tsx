@@ -2,7 +2,8 @@ import Head from 'next/head'
 import { useState } from 'react'
 import Layout from '@/components/Layout'
 import { PlusIcon, EditIcon, TrashIcon, TagIcon, SearchIcon } from 'lucide-react'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RequireAuth } from '@/components/RequireAuth'
@@ -28,16 +29,19 @@ export default function CategoriesPage() {
   const [searchTerm, setSearchTerm] = useState('')
 
   const { data: categories = [], isLoading } = useQuery<Category[]>({
-    queryKey: ['categories', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['categories', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .eq('user_id', user!.id)
-        .order('name', { ascending: true })
-      if (error) throw error
-      return data as Category[]
+      if (!user?.uid) return []
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const q = query(categoriesRef, orderBy('name', 'asc'))
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        user_id: user.uid,
+        name: doc.data().name,
+        created_at: doc.data().created_at
+      })) as Category[]
     }
   })
 
@@ -52,12 +56,12 @@ export default function CategoriesPage() {
     setSaving(true)
     setError(null)
     try {
-      const { error } = await supabase.from('categories').insert({
-        user_id: user.id,
-        name: newCategory.name.trim()
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      await addDoc(categoriesRef, {
+        name: newCategory.name.trim(),
+        created_at: new Date().toISOString()
       })
-      if (error) throw error
-      queryClient.invalidateQueries({ queryKey: ['categories', user.id] })
+      queryClient.invalidateQueries({ queryKey: ['categories', user.uid] })
       setNewCategory({ name: '' })
       setShowAdd(false)
     } catch (e: unknown) {
@@ -70,8 +74,13 @@ export default function CategoriesPage() {
 
   const handleDelete = async (id: string) => {
     if (!user) return
-    const { error } = await supabase.from('categories').delete().eq('id', id).eq('user_id', user.id)
-    if (!error) queryClient.invalidateQueries({ queryKey: ['categories', user.id] })
+    try {
+      const categoryDocRef = doc(db, 'categories', user.uid, 'items', id)
+      await deleteDoc(categoryDocRef)
+      queryClient.invalidateQueries({ queryKey: ['categories', user.uid] })
+    } catch (error) {
+      console.error('Failed to delete category:', error)
+    }
   }
 
   const handleEdit = (category: Category) => {
@@ -84,13 +93,11 @@ export default function CategoriesPage() {
     setSaving(true)
     setError(null)
     try {
-      const { error } = await supabase
-        .from('categories')
-        .update({ name: editingName.trim() })
-        .eq('id', id)
-        .eq('user_id', user.id)
-      if (error) throw error
-      queryClient.invalidateQueries({ queryKey: ['categories', user.id] })
+      const categoryDocRef = doc(db, 'categories', user.uid, 'items', id)
+      await updateDoc(categoryDocRef, {
+        name: editingName.trim()
+      })
+      queryClient.invalidateQueries({ queryKey: ['categories', user.uid] })
       setEditingId(null)
       setEditingName('')
     } catch (e: unknown) {

@@ -1,23 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { createClient } from '@supabase/supabase-js'
+import { adminAuth, adminDb } from '@/lib/firebaseAdmin'
 
-// Server-side Supabase client with service role (DO NOT expose this key to the client)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string
-
-if (!supabaseUrl || !serviceKey) {
-  // eslint-disable-next-line no-console
-  console.warn('[delete-account] Missing SUPABASE env vars; endpoint will fail.')
-}
-
-const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false }
-})
-
-async function safeDelete(table: string, column: string, userId: string, log: { table: string; error?: string }[]) {
-  const { error } = await supabaseAdmin.from(table).delete().eq(column, userId)
-  if (error) log.push({ table, error: error.message })
-  else log.push({ table })
+async function deleteCollection(userId: string, collectionName: string, log: { collection: string; error?: string }[]) {
+  try {
+    const collectionRef = adminDb.collection(collectionName).doc(userId).collection('items')
+    const snapshot = await collectionRef.get()
+    const batch = adminDb.batch()
+    snapshot.docs.forEach(doc => batch.delete(doc.ref))
+    await batch.commit()
+    log.push({ collection: collectionName })
+  } catch (error: any) {
+    log.push({ collection: collectionName, error: error.message })
+  }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -26,57 +20,70 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const authHeader = req.headers.authorization
     if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing token' })
     const token = authHeader.slice('Bearer '.length)
-    const { data: userData, error: getUserErr } = await supabaseAdmin.auth.getUser(token)
-    if (getUserErr || !userData.user) return res.status(401).json({ error: 'Invalid token' })
-    const userId = userData.user.id
+    
+    const decodedToken = await adminAuth.verifyIdToken(token)
+    const userId = decodedToken.uid
 
     const { soft = false, export: doExport = false } = (req.body && typeof req.body === 'object') ? req.body : {}
 
     interface ExportPayload {
       expenses: unknown[]
       budgets: unknown[]
-      user_settings: unknown[]
-      profile: unknown[]
+      user_settings: unknown
+      categories: unknown[]
+      monthly_income: unknown[]
     }
     let exportPayload: ExportPayload | null = null
     if (doExport) {
-      const [expenses, budgets, userSettings, profile] = await Promise.all([
-        supabaseAdmin.from('expenses').select('*').eq('user_id', userId),
-        supabaseAdmin.from('budgets').select('*').eq('user_id', userId),
-        supabaseAdmin.from('user_settings').select('*').eq('user_id', userId),
-        supabaseAdmin.from('profiles').select('*').eq('id', userId),
+      const [expensesSnap, budgetsSnap, userSettingsDoc, categoriesSnap, incomeSnap] = await Promise.all([
+        adminDb.collection('expenses').doc(userId).collection('items').get(),
+        adminDb.collection('budgets').doc(userId).collection('items').get(),
+        adminDb.collection('user_settings').doc(userId).get(),
+        adminDb.collection('categories').doc(userId).collection('items').get(),
+        adminDb.collection('monthly_income').doc(userId).collection('items').get(),
       ])
       exportPayload = {
-        expenses: expenses.data || [],
-        budgets: budgets.data || [],
-        user_settings: userSettings.data || [],
-        profile: profile.data || []
+        expenses: expensesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })),
+        budgets: budgetsSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })),
+        categories: categoriesSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })),
+        monthly_income: incomeSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })),
+        user_settings: userSettingsDoc.exists ? { id: userSettingsDoc.id, ...userSettingsDoc.data() } : null
       }
     }
 
     if (soft) {
+      // Soft delete - mark as deleted but keep data
       const snapshot = JSON.stringify(exportPayload || {})
-      const { error: delAccErr } = await supabaseAdmin.from('deleted_accounts').insert({ user_id: userId, snapshot, deleted_at: new Date().toISOString() })
-      if (delAccErr && delAccErr.code !== '42P01') {
-        return res.status(500).json({ error: `Failed to record deletion snapshot: ${delAccErr.message}` })
-      }
-      const { error: profErr } = await supabaseAdmin.from('profiles').upsert({ id: userId, full_name: 'Deleted User', updated_at: new Date().toISOString(), deleted_at: new Date().toISOString() })
-      if (profErr && profErr.code !== '42P01') {
-        return res.status(500).json({ error: `Failed to flag profile: ${profErr.message}` })
-      }
-      await supabaseAdmin.auth.admin.updateUserById(userId, { user_metadata: { deleted_at: new Date().toISOString(), deleted: true } })
+      await adminDb.collection('deleted_accounts').doc(userId).set({
+        snapshot,
+        deleted_at: new Date().toISOString()
+      })
+      await adminAuth.updateUser(userId, {
+        disabled: true,
+        displayName: 'Deleted User'
+      })
       return res.status(200).json({ success: true, soft: true, exported: !!exportPayload, data: exportPayload })
     }
 
-    const tableDeletes: { table: string; error?: string }[] = []
-    await safeDelete('expenses', 'user_id', userId, tableDeletes)
-    await safeDelete('user_settings', 'user_id', userId, tableDeletes)
-    await safeDelete('profiles', 'id', userId, tableDeletes)
-    await safeDelete('budgets', 'user_id', userId, tableDeletes)
+    // Hard delete - remove all data
+    const collectionDeletes: { collection: string; error?: string }[] = []
+    await deleteCollection(userId, 'expenses', collectionDeletes)
+    await deleteCollection(userId, 'budgets', collectionDeletes)
+    await deleteCollection(userId, 'categories', collectionDeletes)
+    await deleteCollection(userId, 'monthly_income', collectionDeletes)
+    
+    // Delete user settings
+    try {
+      await adminDb.collection('user_settings').doc(userId).delete()
+      collectionDeletes.push({ collection: 'user_settings' })
+    } catch (error: any) {
+      collectionDeletes.push({ collection: 'user_settings', error: error.message })
+    }
 
-    const { error: delUserErr } = await supabaseAdmin.auth.admin.deleteUser(userId)
-    if (delUserErr) return res.status(500).json({ error: delUserErr.message, details: tableDeletes })
-    return res.status(200).json({ success: true, soft: false, exported: !!exportPayload, data: exportPayload, details: tableDeletes })
+    // Delete user from Auth
+    await adminAuth.deleteUser(userId)
+    
+    return res.status(200).json({ success: true, soft: false, exported: !!exportPayload, data: exportPayload, details: collectionDeletes })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unexpected error'
     return res.status(500).json({ error: msg })

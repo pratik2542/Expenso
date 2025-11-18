@@ -1,7 +1,22 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { auth, db } from '@/lib/firebaseClient'
+import { analytics } from '@/lib/firebaseClient'
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  GithubAuthProvider,
+  sendPasswordResetEmail,
+  updatePassword,
+  User as FirebaseUser,
+} from 'firebase/auth'
+import { doc, setDoc, collection, query, where, getDocs, getDoc, serverTimestamp } from 'firebase/firestore'
+import { logEvent } from 'firebase/analytics'
 
-import type { User } from '@supabase/supabase-js'
+type User = FirebaseUser
 
 interface AuthContextValue {
   user: User | null
@@ -12,6 +27,8 @@ interface AuthContextValue {
   signInWithGitHub: () => Promise<{ error?: string }>
   signOut: () => Promise<void>
   refresh: () => Promise<void>
+  resetPassword: (email: string) => Promise<{ error?: string }>
+  updateUserPassword: (newPassword: string) => Promise<{ error?: string }>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -24,15 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     console.log('AuthContext loadUser: Starting')
     setLoading(true)
     try {
-      // Add timeout to prevent infinite loading
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Auth session load timeout')), 10000) // 10 seconds
-      })
-      const sessionPromise = supabase.auth.getSession()
-      const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any
-      console.log('AuthContext loadUser:', { session: session?.user?.id, error })
-      if (error) console.error(error)
-      setUser(session?.user ?? null)
+      // Firebase handles auth state automatically, this is just for initial load
+      const currentUser = auth.currentUser
+      console.log('AuthContext loadUser:', { userId: currentUser?.uid })
+      setUser(currentUser)
     } catch (err) {
       console.error('AuthContext loadUser error:', err)
       setUser(null)
@@ -43,86 +55,134 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     loadUser()
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null)
+    
+    // Listen to Firebase auth state changes
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Firebase auth state changed:', firebaseUser?.uid)
+      setUser(firebaseUser)
+      setLoading(false)
       
-      // When user signs in with OAuth (Google/GitHub), save their name to user_settings
-      if (event === 'SIGNED_IN' && session?.user) {
-        const user = session.user
-        // Check if user signed in via OAuth provider
-        const provider = user.app_metadata?.provider
-        if (provider === 'google' || provider === 'github') {
-          // Extract name from user metadata
-          const fullName = user.user_metadata?.full_name || user.user_metadata?.name || ''
+      // When user signs in, save their display name and email to user_settings
+      if (firebaseUser) {
+        const displayName = firebaseUser.displayName
+        const email = firebaseUser.email
+        
+        // Track login event
+        if (analytics && typeof window !== 'undefined') {
+          logEvent(analytics as any, 'login', {
+            method: firebaseUser.providerData[0]?.providerId || 'email'
+          })
+        }
+        
+        try {
+          // Update or create user_settings with the name and email
+          const userSettingsRef = doc(db, 'user_settings', firebaseUser.uid)
           
-          if (fullName) {
-            // Update or insert user_settings with the name
-            const { error } = await supabase
-              .from('user_settings')
-              .upsert({
-                user_id: user.id,
-                full_name: fullName,
-                updated_at: new Date().toISOString()
-              }, {
-                onConflict: 'user_id'
-              })
-            
-            if (error) {
-              console.error('Failed to save OAuth user name:', error)
-            }
+          // First check if user_settings exists
+          const existingDoc = await getDoc(userSettingsRef)
+          
+          if (!existingDoc.exists()) {
+            // Only create/update if document doesn't exist
+            await setDoc(userSettingsRef, {
+              user_id: firebaseUser.uid,
+              full_name: displayName || '',
+              email: email || '',
+              updated_at: serverTimestamp()
+            })
           }
+        } catch (error) {
+          console.error('Failed to save user info:', error)
         }
       }
     })
-    return () => { sub.subscription.unsubscribe() }
+    
+    return () => unsubscribe()
   }, [loadUser])
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: error.message }
-    await loadUser()
-    return {}
+    try {
+      await signInWithEmailAndPassword(auth, email, password)
+      return {}
+    } catch (error: any) {
+      return { error: error.message }
+    }
   }
 
   async function signUp(email: string, password: string, fullName?: string) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined,
-      },
-    })
-    if (error) return { error: error.message }
-    const needsVerification = !!data?.user && !data.user.email_confirmed_at
-    return { needsVerification }
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      
+      // Track signup event
+      if (analytics && typeof window !== 'undefined') {
+        logEvent(analytics as any, 'sign_up', {
+          method: 'email'
+        })
+      }
+      
+      // Save full name and email to user_settings if provided
+      if (fullName && userCredential.user) {
+        const userSettingsRef = doc(db, 'user_settings', userCredential.user.uid)
+        await setDoc(userSettingsRef, {
+          user_id: userCredential.user.uid,
+          full_name: fullName,
+          email: email,
+          preferred_currency: 'CAD',
+          convert_existing_data: true,
+          updated_at: serverTimestamp()
+        }, { merge: true })
+      }
+      
+      // Firebase automatically verifies users, no email verification needed
+      return { needsVerification: false }
+    } catch (error: any) {
+      return { error: error.message }
+    }
   }
 
   async function signInWithGoogle() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
-      },
-    })
-    if (error) return { error: error.message }
-    return {}
+    try {
+      const provider = new GoogleAuthProvider()
+      await signInWithPopup(auth, provider)
+      return {}
+    } catch (error: any) {
+      return { error: error.message }
+    }
   }
 
   async function signInWithGitHub() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: {
-        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
-      },
-    })
-    if (error) return { error: error.message }
-    return {}
+    try {
+      const provider = new GithubAuthProvider()
+      await signInWithPopup(auth, provider)
+      return {}
+    } catch (error: any) {
+      return { error: error.message }
+    }
   }
 
   async function signOut() {
-    await supabase.auth.signOut()
+    await firebaseSignOut(auth)
     setUser(null)
+  }
+
+  async function resetPassword(email: string) {
+    try {
+      await sendPasswordResetEmail(auth, email)
+      return {}
+    } catch (error: any) {
+      return { error: error.message }
+    }
+  }
+
+  async function updateUserPassword(newPassword: string) {
+    try {
+      if (!auth.currentUser) {
+        return { error: 'No user logged in' }
+      }
+      await updatePassword(auth.currentUser, newPassword)
+      return {}
+    } catch (error: any) {
+      return { error: error.message }
+    }
   }
 
   const value: AuthContextValue = {
@@ -134,6 +194,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithGitHub,
     signOut,
     refresh: loadUser,
+    resetPassword,
+    updateUserPassword,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

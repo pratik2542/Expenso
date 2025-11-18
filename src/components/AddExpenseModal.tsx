@@ -1,9 +1,10 @@
 import React, { Fragment, useMemo, useRef, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { X } from 'lucide-react'
-// import { supabase } from '@/lib/supabaseClient' (already imported above)
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { analytics } from '@/lib/firebaseClient'
+import { logEvent } from 'firebase/analytics'
 
 interface AddExpenseModalProps {
   open: boolean
@@ -23,7 +24,8 @@ interface AddExpenseModalProps {
 }
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy } from 'firebase/firestore'
 
 const CATEGORY_MAP: Record<string, string> = {
   retail: 'Shopping',
@@ -63,16 +65,17 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const queryClient = useQueryClient()
   // Load categories for dropdown
   const { data: categories = [] } = useQuery({
-    queryKey: ['categories', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['categories', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name')
-        .eq('user_id', user!.id)
-        .order('name')
-      if (error) throw error
-      return data || []
+      if (!user?.uid) return []
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const q = fbQuery(categoriesRef, orderBy('name', 'asc'))
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      }))
     }
   })
   const definedCategoryNames = categories.map((c: any) => c.name)
@@ -171,24 +174,8 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     if (!user) return
     setLoading(true)
     setError(null)
-    let error
-    if (mode === 'edit' && expense?.id) {
-      ;({ error } = await supabase.from('expenses')
-        .update({
-          amount: parseFloat(formData.amount),
-          currency: formData.currency,
-          merchant: formData.merchant || 'Unknown',
-          payment_method: formData.payment_method || 'Credit Card',
-          note: formData.note || '',
-          occurred_on: formData.occurred_on,
-          category: formData.category || 'Other',
-        })
-        .eq('id', expense.id)
-        .eq('user_id', user.id)
-      )
-    } else {
-      ;({ error } = await supabase.from('expenses').insert({
-        user_id: user.id,
+    try {
+      const expenseData = {
         amount: parseFloat(formData.amount),
         currency: formData.currency,
         merchant: formData.merchant || 'Unknown',
@@ -196,10 +183,34 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         note: formData.note || '',
         occurred_on: formData.occurred_on,
         category: formData.category || 'Other',
-      }))
+      }
+      
+      if (mode === 'edit' && expense?.id) {
+        const expenseDocRef = doc(db, 'expenses', user.uid, 'items', expense.id)
+        await updateDoc(expenseDocRef, expenseData)
+      } else {
+        const expensesRef = collection(db, 'expenses', user.uid, 'items')
+        await addDoc(expensesRef, {
+          ...expenseData,
+          created_at: new Date().toISOString()
+        })
+        
+        // Track expense creation event
+        if (analytics && typeof window !== 'undefined') {
+          logEvent(analytics as any, 'expense_created', {
+            category: expenseData.category,
+            amount: expenseData.amount,
+            currency: expenseData.currency,
+            payment_method: expenseData.payment_method
+          })
+        }
+      }
+    } catch (error: any) {
+      setLoading(false)
+      setError(error.message)
+      return
     }
     setLoading(false)
-    if (error) { setError(error.message); return }
     onAdded()
     onClose()
     if (mode !== 'edit') {
@@ -233,7 +244,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const addCategory = async (nameRaw: string): Promise<{ id: string | undefined, name: string } | null> => {
     const name = (nameRaw || '').trim()
     if (!name) { alert('Category name cannot be empty.'); return null }
-    if (!user?.id) { alert('You must be signed in to add categories.'); return null }
+    if (!user?.uid) { alert('You must be signed in to add categories.'); return null }
 
     const existing = (categories as any[]).find(c => String(c.name).toLowerCase() === name.toLowerCase())
     if (existing) {
@@ -241,28 +252,31 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       return { id: (existing as any).id, name: existing.name }
     }
 
-    const { data, error } = await supabase
-      .from('categories')
-      .insert({ user_id: user.id, name })
-      .select('id, name')
-      .single()
-    if (error) {
+    try {
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const docRef = await addDoc(categoriesRef, {
+        name,
+        created_at: new Date().toISOString()
+      })
+      
+      const newCategory = { id: docRef.id, name }
+      
+      // Optimistically update cache so dropdowns reflect new category immediately
+      queryClient.setQueryData(['categories', user.uid], (prev: any) => {
+        const arr = Array.isArray(prev) ? prev.slice() : []
+        if (!arr.some((c: any) => String(c.name).toLowerCase() === name.toLowerCase())) {
+          arr.push(newCategory)
+        }
+        return arr
+      })
+      return newCategory
+    } catch (error: any) {
       // If unique constraint or similar, try to recover by finding it again
       const fallback = (categories as any[]).find(c => String(c.name).toLowerCase() === name.toLowerCase())
       if (fallback) return { id: (fallback as any).id, name: fallback.name }
       alert(error.message || 'Failed to add category')
       return null
     }
-
-    // Optimistically update cache so dropdowns reflect new category immediately
-    queryClient.setQueryData(['categories', user.id], (prev: any) => {
-      const arr = Array.isArray(prev) ? prev.slice() : []
-      if (!arr.some((c: any) => String(c.name).toLowerCase() === name.toLowerCase())) {
-        arr.push(data)
-      }
-      return arr
-    })
-    return { id: (data as any).id, name: (data as any).name }
   }
 
   const [converterUrl, setConverterUrl] = useState<string>('')
@@ -508,8 +522,8 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         return ''
       }
 
+      const expensesRef = collection(db, 'expenses', user.uid, 'items')
       const payload = rows.map(r => ({
-        user_id: user.id,
         amount: Number(r.amount),
         currency: r.currency || prefCurrency || 'CAD',
         merchant: r.merchant || 'Unknown',
@@ -517,9 +531,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         note: cleanNote(r.note, r.category, r.merchant),
         occurred_on: (r.occurred_on || new Date().toISOString().slice(0,10)).slice(0,10),
         category: r.category || 'Other',
+        created_at: new Date().toISOString()
       }))
-      const { error } = await supabase.from('expenses').insert(payload)
-      if (error) throw error
+      // Insert all expenses
+      await Promise.all(payload.map(expense => addDoc(expensesRef, expense)))
       setParsedExpenses([])
       onAdded()
       onClose()

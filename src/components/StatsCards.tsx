@@ -1,7 +1,8 @@
 import { CreditCardIcon, TrendingUpIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore'
 import { useState, useEffect } from 'react'
 import { usePreferences } from '@/contexts/PreferencesContext'
 
@@ -34,35 +35,37 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
   const [incomeError, setIncomeError] = useState<string | null>(null)
 
   const { data: spending = { amount: 0, currency: prefCurrency || 'USD' }, isLoading: loadingSpend } = useQuery({
-    queryKey: ['monthly-spend-total', user?.id, selectedStart, selectedEnd, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['monthly-spend-total', user?.uid, selectedStart, selectedEnd, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('amount, currency, occurred_on')
-        .eq('user_id', user!.id)
-        .gte('occurred_on', selectedStart)
-        .lte('occurred_on', selectedEnd)
-        .eq('currency', viewCurrency)
-      if (error) throw error
-      const total = (data || []).reduce((acc, row: any) => acc + Number(row.amount || 0), 0)
+      if (!user?.uid) return { amount: 0, currency: viewCurrency }
+      const expensesRef = collection(db, 'expenses', user.uid, 'items')
+      const q = query(
+        expensesRef,
+        where('occurred_on', '>=', selectedStart),
+        where('occurred_on', '<=', selectedEnd),
+        where('currency', '==', viewCurrency)
+      )
+      const snapshot = await getDocs(q)
+      const total = snapshot.docs.reduce((acc, doc) => acc + Number(doc.data().amount || 0), 0)
       return { amount: total, currency: viewCurrency }
     }
   })
 
   const { data: budget = { amount: 0, currency: prefCurrency || 'USD' }, isLoading: loadingBudget } = useQuery({
-    queryKey: ['monthly-budget-total', user?.id, selectedMonth, selectedYear, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['monthly-budget-total', user?.uid, selectedMonth, selectedYear, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('budgets')
-        .select('amount, currency')
-        .eq('user_id', user!.id)
-        .eq('month', selectedMonth)
-        .eq('year', selectedYear)
-        .eq('currency', viewCurrency)
-      if (error) throw error
-      const total = (data || []).reduce((acc, row: any) => acc + Number(row.amount || 0), 0)
+      if (!user?.uid) return { amount: 0, currency: viewCurrency }
+      const budgetsRef = collection(db, 'budgets', user.uid, 'items')
+      const q = query(
+        budgetsRef,
+        where('month', '==', selectedMonth),
+        where('year', '==', selectedYear),
+        where('currency', '==', viewCurrency)
+      )
+      const snapshot = await getDocs(q)
+      const total = snapshot.docs.reduce((acc, doc) => acc + Number(doc.data().amount || 0), 0)
       return { amount: total, currency: viewCurrency }
     }
   })
@@ -70,19 +73,21 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
   // Monthly Income for current month
   const queryClient = useQueryClient()
   const { data: income = { amount: 0, currency: prefCurrency || 'USD' }, isLoading: loadingIncome } = useQuery({
-    queryKey: ['monthly-income', user?.id, selectedMonth, selectedYear, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['monthly-income', user?.uid, selectedMonth, selectedYear, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('monthly_income')
-        .select('amount, currency')
-        .eq('user_id', user!.id)
-        .eq('month', selectedMonth)
-        .eq('year', selectedYear)
-        .eq('currency', viewCurrency)
-        .maybeSingle()
-      if (error && !(`${error.message}`.includes('does not exist'))) throw error
-      const originalAmount = Number(data?.amount ?? 0)
+      if (!user?.uid) return { amount: 0, currency: viewCurrency }
+      const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
+      const q = query(
+        incomeRef,
+        where('month', '==', selectedMonth),
+        where('year', '==', selectedYear),
+        where('currency', '==', viewCurrency)
+      )
+      const snapshot = await getDocs(q)
+      if (snapshot.empty) return { amount: 0, currency: viewCurrency }
+      const data = snapshot.docs[0].data()
+      const originalAmount = Number(data.amount ?? 0)
       return { amount: originalAmount, currency: viewCurrency }
     }
   })
@@ -109,8 +114,10 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
     }
     setSavingIncome(true)
     try {
+      // Create a deterministic doc ID based on user/year/month/currency
+      const docId = `${user.uid}_${selectedYear}_${selectedMonth}_${viewCurrency}`
+      const incomeDocRef = doc(db, 'monthly_income', user.uid, 'items', docId)
       const payload = {
-        user_id: user.id,
         month: selectedMonth,
         year: selectedYear,
         currency: viewCurrency,
@@ -118,17 +125,10 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
         updated_at: new Date().toISOString(),
         created_at: new Date().toISOString(),
       }
-      const { error } = await supabase
-        .from('monthly_income')
-        .upsert(payload, { onConflict: 'user_id,year,month' })
-      if (error) {
-        const msg = `${error.message}`.includes('does not exist')
-          ? 'Database table missing. Run migration to create monthly_income.'
-          : error.message
-        setIncomeError(msg)
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['monthly-income', user.id, selectedMonth, selectedYear, viewCurrency] })
-      }
+      await setDoc(incomeDocRef, payload, { merge: true })
+      queryClient.invalidateQueries({ queryKey: ['monthly-income', user.uid, selectedMonth, selectedYear, viewCurrency] })
+    } catch (error: any) {
+      setIncomeError(error.message || 'Failed to save income')
     } finally {
       setSavingIncome(false)
     }

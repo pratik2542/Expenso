@@ -21,7 +21,7 @@ const nextConfig = {
   },
   
     experimental: {
-      optimizePackageImports: ['lucide-react', '@supabase/supabase-js', '@tanstack/react-query'],
+      optimizePackageImports: ['lucide-react', 'firebase', '@tanstack/react-query'],
     },
   
   images: {

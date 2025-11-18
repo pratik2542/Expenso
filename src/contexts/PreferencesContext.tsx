@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'
 
 type Prefs = {
   currency: string
@@ -32,24 +33,30 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [loading, setLoading] = useState(false)
 
   const fetchPrefs = useCallback(async () => {
-    if (!user?.id) return
+    if (!user?.uid) {
+      console.log('PreferencesContext: No user UID')
+      return
+    }
     setLoading(true)
+    console.log('PreferencesContext: Fetching for user:', user.uid)
     try {
-      const { data, error } = await supabase
-        .from('user_settings')
-        .select('*')
-        .eq('user_id', user.id)
-        .single()
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('PreferencesContext: fetch error', error)
+      // Query user_settings collection where user_id equals the Firebase UID
+      const userSettingsRef = collection(db, 'user_settings')
+      const q = query(userSettingsRef, where('user_id', '==', user.uid))
+      console.log('PreferencesContext: Querying collection with user_id:', user.uid)
+      const querySnapshot = await getDocs(q)
+      
+      if (querySnapshot.empty) {
+        console.log('PreferencesContext: No user settings found for user:', user.uid)
         return
       }
 
-      if (!data) return
-
-      const currencyValue = (data as any)?.current_currency || (data as any)?.currency || initialCurrency
-      const convertExisting = (data as any)?.convert_existing_data
+      const docSnap = querySnapshot.docs[0] // Get the first matching document
+      const data = docSnap.data()
+      console.log('PreferencesContext: Found data:', data)
+      const currencyValue = data?.preferred_currency || data?.current_currency || data?.currency || initialCurrency
+      const convertExisting = data?.convert_existing_data
+      
       if (currencyValue) setCurrency(currencyValue)
       if (typeof convertExisting === 'boolean') setConvertExistingData(convertExisting)
       // timeZone currently not persisted in this context; settings page stores its own value
@@ -58,7 +65,7 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     } finally {
       setLoading(false)
     }
-  }, [user?.id, initialCurrency])
+  }, [user?.uid, initialCurrency])
 
   useEffect(() => {
     fetchPrefs()

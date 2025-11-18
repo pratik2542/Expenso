@@ -2,7 +2,8 @@ import Head from 'next/head'
 import React, { useMemo, useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
 import { PlusIcon, EditIcon, TrashIcon, AlertTriangleIcon } from 'lucide-react'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RequireAuth } from '@/components/RequireAuth'
@@ -90,56 +91,99 @@ export default function BudgetPage() {
   const { user } = useAuth()
   const { formatCurrency, currency: prefCurrency, convertExistingData } = usePreferences()
   const queryClient = useQueryClient()
+  
+  console.log('BudgetPage - User:', user?.uid, 'Email:', user?.email, 'Loading:', !user)
+  console.log('BudgetPage - Firebase config check:', {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.substring(0, 10) + '...',
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+  })
+  
+  // Check if user is signed in
+  useEffect(() => {
+    console.log('BudgetPage - Auth check:', {
+      isSignedIn: !!user,
+      userId: user?.uid,
+      email: user?.email,
+      provider: user?.providerData?.[0]?.providerId
+    })
+  }, [user])
+  
+  // Test export API - REMOVED: This was causing repeated API calls
   const { data: budgets = [], isLoading: loadingBudgets } = useQuery<Budget[]>({
-    queryKey: ['budgets', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['budgets', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('budgets')
-  .select('id, user_id, month, year, currency, amount, per_category, roll_over, catagory_name, period, created_at, updated_at')
-        .eq('user_id', user!.id)
-        .order('year', { ascending: false })
-        .order('month', { ascending: false })
-      if (error) throw error
-      return data as Budget[]
+      if (!user?.uid) return []
+      console.log('Fetching budgets for user:', user.uid)
+      const budgetsRef = collection(db, 'budgets', user.uid, 'items')
+      console.log('Budgets collection path:', budgetsRef.path)
+      try {
+        // Try with composite index first
+        const q = query(budgetsRef, orderBy('year', 'desc'), orderBy('month', 'desc'))
+        const snapshot = await getDocs(q)
+        console.log('Budgets snapshot:', snapshot.docs.length, 'documents')
+        const budgets = snapshot.docs.map(doc => ({
+          id: doc.id,
+          user_id: user.uid,
+          ...doc.data()
+        })) as Budget[]
+        console.log('Budgets data:', budgets)
+        return budgets
+      } catch (error) {
+        console.error('Budgets query failed with composite index, trying single orderBy:', error)
+        // Fallback to single orderBy if composite index doesn't exist
+        try {
+          const q = query(budgetsRef, orderBy('year', 'desc'))
+          const snapshot = await getDocs(q)
+          console.log('Budgets snapshot (fallback):', snapshot.docs.length, 'documents')
+          const budgets = snapshot.docs.map(doc => ({
+            id: doc.id,
+            user_id: user.uid,
+            ...doc.data()
+          })) as Budget[]
+          console.log('Budgets data (fallback):', budgets)
+          return budgets
+        } catch (fallbackError) {
+          console.error('Budgets query failed completely:', fallbackError)
+          return []
+        }
+      }
     }
   })
   // Monthly spend map keyed by 'YYYY-MM'
   const { data: monthlySpend = {} } = useQuery<Record<string, number>>({
-    queryKey: ['monthly-spend', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['monthly-spend', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('occurred_on, amount')
-        .eq('user_id', user!.id)
-      if (error) throw error
+      if (!user?.uid) return {}
+      const expensesRef = collection(db, 'expenses', user.uid, 'items')
+      const snapshot = await getDocs(expensesRef)
       const agg: Record<string, number> = {}
-      for (const row of data as { occurred_on: string; amount: number }[]) {
-        const d = new Date(row.occurred_on)
+      snapshot.docs.forEach(doc => {
+        const data = doc.data()
+        const d = new Date(data.occurred_on)
         const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-        agg[key] = (agg[key] || 0) + Number(row.amount)
-      }
+        agg[key] = (agg[key] || 0) + Number(data.amount)
+      })
       return agg
     }
   })
 
   // Monthly spend per category keyed by 'YYYY-MM|Category'
   const { data: monthlyCategorySpend = {} } = useQuery<Record<string, number>>({
-    queryKey: ['monthly-category-spend', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['monthly-category-spend', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('occurred_on, amount, category')
-        .eq('user_id', user!.id)
-      if (error) throw error
+      if (!user?.uid) return {}
+      const expensesRef = collection(db, 'expenses', user.uid, 'items')
+      const snapshot = await getDocs(expensesRef)
       const agg: Record<string, number> = {}
-      for (const row of data as { occurred_on: string; amount: number; category: string }[]) {
-        const d = new Date(row.occurred_on)
-        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}|${row.category}`
-        agg[key] = (agg[key] || 0) + Number(row.amount)
-      }
+      snapshot.docs.forEach(doc => {
+        const data = doc.data()
+        const d = new Date(data.occurred_on)
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}|${data.category}`
+        agg[key] = (agg[key] || 0) + Number(data.amount)
+      })
       return agg
     }
   })
@@ -192,16 +236,17 @@ export default function BudgetPage() {
 
   // Fetch available categories for selection
   const { data: categories = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ['categories', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['categories', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name')
-        .eq('user_id', user!.id)
-        .order('name')
-      if (error) throw error
-      return data as { id: string; name: string }[]
+      if (!user?.uid) return []
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const q = query(categoriesRef, orderBy('name', 'asc'))
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      }))
     }
   })
 
@@ -296,25 +341,23 @@ export default function BudgetPage() {
 
     // Pre-check for an existing budget for this user/month/year/category
     try {
-      const q = supabase
-        .from('budgets')
-        .select('id, catagory_name, period')
-        .eq('user_id', user.id)
-        .eq('year', Number(newBudget.year))
-        .eq('period', newBudget.period)
+      const budgetsRef = collection(db, 'budgets', user.uid, 'items')
+      let q = query(
+        budgetsRef,
+        where('year', '==', Number(newBudget.year)),
+        where('period', '==', newBudget.period)
+      )
 
       if (newBudget.period === 'monthly') {
-        q.eq('month', Number(newBudget.month))
-      } else {
-        q.is('month', null)
+        q = query(q, where('month', '==', Number(newBudget.month)))
       }
 
-      const { data: existing, error: existingErr } = await (newBudget.catagory_name
-        ? q.eq('catagory_name', newBudget.catagory_name)
-        : q.is('catagory_name', null))
+      if (newBudget.catagory_name) {
+        q = query(q, where('catagory_name', '==', newBudget.catagory_name))
+      }
 
-      if (existingErr) throw existingErr
-      if (existing && existing.length > 0) {
+      const existing = await getDocs(q)
+      if (!existing.empty) {
         const rangeLabel = newBudget.period === 'yearly'
           ? `${newBudget.year}`
           : `${new Date(0, newBudget.month - 1, 1).toLocaleString('en-US', { month: 'long' })} ${newBudget.year}`
@@ -329,7 +372,6 @@ export default function BudgetPage() {
       console.warn('Precheck failed', err?.message || err)
     }
     const payload = {
-      user_id: user.id,
       month: newBudget.period === 'monthly' ? Number(newBudget.month) : null,
       year: Number(newBudget.year),
       currency: newBudget.currency,
@@ -341,9 +383,10 @@ export default function BudgetPage() {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
-  const { error } = await supabase.from('budgets').insert(payload)
-    if (!error) {
-      queryClient.invalidateQueries({ queryKey: ['budgets', user.id] })
+    try {
+      const budgetsRef = collection(db, 'budgets', user.uid, 'items')
+      await addDoc(budgetsRef, payload)
+      queryClient.invalidateQueries({ queryKey: ['budgets', user.uid] })
   setNewBudget({
         month: now.getMonth() + 1,
         year: now.getFullYear(),
@@ -355,22 +398,22 @@ export default function BudgetPage() {
         period: 'monthly'
       })
       setShowAddForm(false)
-      setSubmitting(false)
-    } else {
-      // Show a user-friendly error
-      const msg =
-        error.message?.includes('row-level security') || error.message?.includes('permission')
-          ? 'Permission denied. Check RLS policies for budgets (INSERT must allow auth.uid() = user_id).'
-          : error.message || 'Failed to add budget'
-      setSubmitError(msg)
+    } catch (error: any) {
+      setSubmitError(error.message || 'Failed to add budget')
+    } finally {
       setSubmitting(false)
     }
   }
 
   const deleteBudget = async (id: string) => {
     if (!user) return
-    const { error } = await supabase.from('budgets').delete().eq('id', id).eq('user_id', user.id)
-    if (!error) queryClient.invalidateQueries({ queryKey: ['budgets', user.id] })
+    try {
+      const budgetDocRef = doc(db, 'budgets', user.uid, 'items', id)
+      await deleteDoc(budgetDocRef)
+      queryClient.invalidateQueries({ queryKey: ['budgets', user.uid] })
+    } catch (error) {
+      console.error('Failed to delete budget:', error)
+    }
   }
 
   const openEdit = (b: Budget) => {
@@ -417,26 +460,25 @@ export default function BudgetPage() {
     setUpdating(true)
     // Duplicate check excluding the current budget id
     try {
-      const q = supabase
-        .from('budgets')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('year', Number(editBudget.year))
-        .eq('period', editBudget.period)
-        .neq('id', editing.id)
+      const budgetsRef = collection(db, 'budgets', user.uid, 'items')
+      let q = query(
+        budgetsRef,
+        where('year', '==', Number(editBudget.year)),
+        where('period', '==', editBudget.period)
+      )
 
       if (editBudget.period === 'monthly') {
-        q.eq('month', Number(editBudget.month))
-      } else {
-        q.is('month', null)
+        q = query(q, where('month', '==', Number(editBudget.month)))
       }
 
-      const { data: existing, error: existingErr } = await (editBudget.catagory_name
-        ? q.eq('catagory_name', editBudget.catagory_name)
-        : q.is('catagory_name', null))
+      if (editBudget.catagory_name) {
+        q = query(q, where('catagory_name', '==', editBudget.catagory_name))
+      }
 
-      if (existingErr) throw existingErr
-      if (existing && existing.length > 0) {
+      const existing = await getDocs(q)
+      // Check if any existing budget is NOT the current one we're editing
+      const hasConflict = existing.docs.some(doc => doc.id !== editing.id)
+      if (hasConflict) {
         const rangeLabel = editBudget.period === 'yearly'
           ? `${editBudget.year}`
           : `${new Date(0, editBudget.month - 1, 1).toLocaleString('en-US', { month: 'long' })} ${editBudget.year}`
@@ -460,26 +502,20 @@ export default function BudgetPage() {
       updated_at: new Date().toISOString(),
     }
 
-    const { error } = await supabase
-      .from('budgets')
-      .update(payload)
-      .eq('id', editing.id)
-      .eq('user_id', user.id)
-
-    setUpdating(false)
-    if (error) {
-      const msg =
-        error.message?.includes('row-level security') || error.message?.includes('permission')
-          ? 'Permission denied. Check RLS policies for budgets (UPDATE must allow auth.uid() = user_id).'
-          : error.message || 'Failed to update budget'
+    try {
+      const budgetDocRef = doc(db, 'budgets', user.uid, 'items', editing.id)
+      await updateDoc(budgetDocRef, payload)
+      // success
+      queryClient.invalidateQueries({ queryKey: ['budgets', user.uid] })
+      setShowEditForm(false)
+      setEditing(null)
+      setEditBudget(null)
+    } catch (error: any) {
+      const msg = error.message || 'Failed to update budget'
       setEditError(msg)
-      return
+    } finally {
+      setUpdating(false)
     }
-    // success
-    queryClient.invalidateQueries({ queryKey: ['budgets', user.id] })
-    setShowEditForm(false)
-    setEditing(null)
-    setEditBudget(null)
   }
 
   return (

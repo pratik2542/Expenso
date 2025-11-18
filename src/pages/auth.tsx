@@ -3,7 +3,6 @@ import Head from 'next/head'
 import { EyeIcon, EyeOffIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/router'
-import { supabase } from '@/lib/supabaseClient'
 import { CalcBrand } from '@/components/Logo'
 
 export default function Auth() {
@@ -16,7 +15,7 @@ export default function Auth() {
   const [resetRequested, setResetRequested] = useState(false)
   const [isRecoveryMode, setIsRecoveryMode] = useState(false)
   const [newPassword, setNewPassword] = useState('')
-  const { signIn, signUp, signInWithGoogle, signInWithGitHub, user } = useAuth()
+  const { signIn, signUp, signInWithGoogle, signInWithGitHub, user, resetPassword, updateUserPassword } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
@@ -43,9 +42,9 @@ export default function Auth() {
     if (!formData.email) { setError('Enter your email first'); return }
     setLoading(true)
     setError(null)
-    const { error } = await supabase.auth.resetPasswordForEmail(formData.email, { redirectTo: `${window.location.origin}/auth?reset=1` })
+    const { error } = await resetPassword(formData.email)
     setLoading(false)
-    if (error) setError(error.message); else setResetRequested(true)
+    if (error) setError(error); else setResetRequested(true)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -54,9 +53,9 @@ export default function Auth() {
     if (isRecoveryMode) {
       if (!newPassword) { setError('Enter a new password'); return }
       setLoading(true)
-      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      const { error } = await updateUserPassword(newPassword)
       setLoading(false)
-      if (error) setError(error.message); else router.replace('/')
+      if (error) setError(error); else router.replace('/')
       return
     }
     if (!isLogin && formData.password !== formData.confirmPassword) {
@@ -96,9 +95,8 @@ export default function Auth() {
           <div className="card">
             <form className="space-y-6" onSubmit={handleSubmit}>
               {error && <div className="text-sm text-error-600 bg-error-50 border border-error-100 rounded p-2">{error}</div>}
-              {verificationNotice && <div className="text-sm text-primary-700 bg-primary-50 border border-primary-100 rounded p-2">Check your email to verify your account before signing in.</div>}
+              {verificationNotice && <div className="text-sm text-primary-700 bg-primary-50 border border-primary-100 rounded p-2">Account created successfully! You can now sign in.</div>}
               {resetRequested && <div className="text-sm text-success-600 bg-success-50 border border-success-100 rounded p-2">Password reset email sent. Check your inbox.</div>}
-              {user && !user.email_confirmed_at && !isRecoveryMode && <div className="text-xs text-warning-700 bg-warning-50 border border-warning-100 rounded p-2">Email not verified yet. Please verify for full functionality.</div>}
               {!isRecoveryMode && !isLogin && (
                 <div>
                   <label htmlFor="fullName" className="label">Full Name</label>

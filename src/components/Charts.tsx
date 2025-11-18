@@ -14,7 +14,8 @@ import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
@@ -73,16 +74,17 @@ export default function Charts({ month, year, currency }: { month: number; year:
 
   // Load user's defined categories for normalization
   const { data: categories = [] } = useQuery<{ id: string; name: string }[]>({
-    queryKey: ['categories', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['categories', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name')
-        .eq('user_id', user!.id)
-        .order('name')
-      if (error) throw error
-      return data as { id: string; name: string }[]
+      if (!user?.uid) return []
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const q = query(categoriesRef, orderBy('name', 'asc'))
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      }))
     }
   })
 
@@ -90,25 +92,27 @@ export default function Charts({ month, year, currency }: { month: number; year:
 
   // Sum by category for the selected month with currency conversion
   const { data: categoryData = [] } = useQuery<{ name: string; value: number }[]>({
-    queryKey: ['chart-category', user?.id, startISO, endISO, viewCurrency, definedCategoryNames.join(',')],
-    enabled: !!user?.id,
+    queryKey: ['chart-category', user?.uid, startISO, endISO, viewCurrency, definedCategoryNames.join(',')],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('category, amount, currency, occurred_on')
-        .eq('user_id', user!.id)
-        .gte('occurred_on', startISO)
-        .lte('occurred_on', endISO)
-        .eq('currency', viewCurrency)
-      if (error) throw error
+      if (!user?.uid) return []
+      const expensesRef = collection(db, 'expenses', user.uid, 'items')
+      const q = query(
+        expensesRef,
+        where('occurred_on', '>=', startISO),
+        where('occurred_on', '<=', endISO),
+        where('currency', '==', viewCurrency)
+      )
+      const snapshot = await getDocs(q)
       const map: Record<string, number> = {}
-      for (const r of data || []) {
-        const rawCategory = (r as any).category
+      snapshot.docs.forEach(doc => {
+        const data = doc.data()
+        const rawCategory = data.category
         // Normalize the category to combine duplicates
         const normalizedCategory = normalizeCategory(rawCategory, definedCategoryNames)
-        const originalAmount = Number((r as any).amount || 0)
+        const originalAmount = Number(data.amount || 0)
         map[normalizedCategory] = (map[normalizedCategory] || 0) + originalAmount
-      }
+      })
       const items = Object.entries(map).map(([name, value]) => ({ name, value }))
       items.sort((a, b) => b.value - a.value)
       return items
@@ -117,25 +121,26 @@ export default function Charts({ month, year, currency }: { month: number; year:
 
   // Last 6 months spending trend (ending at selected month) with currency conversion
   const { data: monthlyData = [] } = useQuery<{ month: string; amount: number }[]>({
-    queryKey: ['chart-monthly', user?.id, month, year, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['chart-monthly', user?.uid, month, year, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
+      if (!user?.uid) return []
       const points: { month: string; amount: number }[] = []
       const base = new Date(year, month - 1, 1)
       for (let i = 5; i >= 0; i--) {
         const d = new Date(base.getFullYear(), base.getMonth() - i, 1)
         const start = new Date(d.getFullYear(), d.getMonth(), 1)
         const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-        const { data, error } = await supabase
-          .from('expenses')
-          .select('amount, currency, occurred_on')
-          .eq('user_id', user!.id)
-          .gte('occurred_on', start.toISOString().slice(0,10))
-          .lte('occurred_on', end.toISOString().slice(0,10))
-          .eq('currency', viewCurrency)
-        if (error) throw error
         
-        const total = (data || []).reduce((acc, r: any) => acc + Number(r.amount || 0), 0)
+        const expensesRef = collection(db, 'expenses', user.uid, 'items')
+        const q = query(
+          expensesRef,
+          where('occurred_on', '>=', start.toISOString().slice(0,10)),
+          where('occurred_on', '<=', end.toISOString().slice(0,10)),
+          where('currency', '==', viewCurrency)
+        )
+        const snapshot = await getDocs(q)
+        const total = snapshot.docs.reduce((acc, doc) => acc + Number(doc.data().amount || 0), 0)
         points.push({ month: d.toLocaleString(undefined, { month: 'short' }), amount: total })
       }
       return points

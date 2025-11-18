@@ -5,7 +5,8 @@ import Charts from '@/components/Charts'
 import { TrendingUpIcon, DollarSignIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useMemo, useState } from 'react'
 
 export default function Analytics() {
@@ -15,6 +16,8 @@ export default function Analytics() {
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [viewCurrency, setViewCurrency] = useState(prefCurrency || 'USD')
+  
+  console.log('AnalyticsPage - User:', user?.uid, 'Loading:', !user)
 
   const startOfMonth = useMemo(() => new Date(selectedYear, selectedMonth - 1, 1), [selectedMonth, selectedYear])
   const endOfMonth = useMemo(() => new Date(selectedYear, selectedMonth, 0), [selectedMonth, selectedYear])
@@ -25,38 +28,58 @@ export default function Analytics() {
 
   // Total spend for selected month with currency conversion
   const { data: spendTotal = 0 } = useQuery({
-    queryKey: ['analytics-spend-total', user?.id, startISO, endISO, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['analytics-spend-total', user?.uid, startISO, endISO, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('amount, currency, occurred_on')
-        .eq('user_id', user!.id)
-        .gte('occurred_on', startISO)
-        .lte('occurred_on', endISO)
-        .eq('currency', viewCurrency)
-      if (error) throw error
-      const total = (data || []).reduce((acc, r: any) => acc + Number(r.amount || 0), 0)
-      return total
+      if (!user?.uid) return 0
+      console.log('Fetching analytics spend for user:', user.uid, 'period:', startISO, 'to', endISO, 'currency:', viewCurrency)
+      try {
+        const expensesRef = collection(db, 'expenses', user.uid, 'items')
+        const q = query(
+          expensesRef,
+          where('occurred_on', '>=', startISO),
+          where('occurred_on', '<=', endISO),
+          where('currency', '==', viewCurrency)
+        )
+        const snapshot = await getDocs(q)
+        console.log('Analytics expenses snapshot:', snapshot.docs.length, 'documents')
+        const total = snapshot.docs.reduce((acc, doc) => {
+          const data = doc.data()
+          return acc + Number(data.amount || 0)
+        }, 0)
+        console.log('Analytics spend total:', total)
+        return total
+      } catch (error) {
+        console.error('Analytics spend query failed:', error)
+        // Return 0 if query fails (likely due to missing index)
+        return 0
+      }
     }
   })
 
   // Monthly income for selected month with currency conversion
   const { data: incomeAmt = 0 } = useQuery({
-    queryKey: ['analytics-income', user?.id, selectedMonth, selectedYear, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['analytics-income', user?.uid, selectedMonth, selectedYear, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('monthly_income')
-        .select('amount, currency')
-        .eq('user_id', user!.id)
-        .eq('month', selectedMonth)
-        .eq('year', selectedYear)
-        .eq('currency', viewCurrency)
-        .maybeSingle()
-      if (error && !(`${error.message}`.includes('does not exist'))) throw error
-      const originalAmount = Number(data?.amount || 0)
-      return originalAmount
+      if (!user?.uid) return 0
+      try {
+        const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
+        const q = query(
+          incomeRef,
+          where('month', '==', selectedMonth),
+          where('year', '==', selectedYear),
+          where('currency', '==', viewCurrency)
+        )
+        const snapshot = await getDocs(q)
+        if (snapshot.empty) return 0
+        const data = snapshot.docs[0].data()
+        return Number(data.amount || 0)
+      } catch (error) {
+        console.error('Analytics income query failed:', error)
+        // Return 0 if query fails (likely due to missing index)
+        return 0
+      }
     }
   })
 

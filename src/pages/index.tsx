@@ -18,7 +18,8 @@ import StatsCards from '@/components/StatsCards'
 import { RequireAuth } from '@/components/RequireAuth'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
 import { usePreferences } from '@/contexts/PreferencesContext'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
@@ -122,42 +123,45 @@ export default function Dashboard() {
   }
 
   const { data: recentExpenses = [] } = useQuery<RecentExpense[]>({
-    queryKey: ['recent-expenses', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['recent-expenses', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('id, amount, currency, merchant, payment_method, note, occurred_on, category')
-        .eq('user_id', user!.id)
-        .order('occurred_on', { ascending: false })
-        .limit(5)
-      if (error) throw error
-      return data as RecentExpense[]
+      const expensesRef = collection(db, 'expenses', user!.uid, 'items')
+      const q = query(expensesRef, orderBy('occurred_on', 'desc'), limit(5))
+      const snapshot = await getDocs(q)
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as RecentExpense[]
     }
   })
 
   // Category breakdown for last 30 days
   const { data: categoryData = [] } = useQuery<{ name: string; value: number }[]>({
-    queryKey: ['dashboard-category', user?.id, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['dashboard-category', user?.uid, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10)
       
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('category, amount, currency, occurred_on')
-        .eq('user_id', user!.id)
-        .gte('occurred_on', thirtyDaysAgo.toISOString().slice(0,10))
-        .eq('currency', viewCurrency)
-      if (error) throw error
+      const expensesRef = collection(db, 'expenses', user!.uid, 'items')
+      const q = query(
+        expensesRef,
+        where('occurred_on', '>=', thirtyDaysAgoStr),
+        where('currency', '==', viewCurrency)
+      )
+      const snapshot = await getDocs(q)
       
       const map: Record<string, number> = {}
-      for (const r of data || []) {
-        const c = (r as { category?: string }).category || 'Other'
-        const originalAmount = Number((r as { amount?: number }).amount || 0)
+      snapshot.docs.forEach(doc => {
+        const data = doc.data()
+        const c = data.category || 'Other'
+        const originalAmount = Number(data.amount || 0)
         map[c] = (map[c] || 0) + originalAmount
-      }
+      })
+      
       const items = Object.entries(map).map(([name, value]) => ({ name, value }))
       items.sort((a, b) => b.value - a.value)
       return items.slice(0, 8) // Top 8 categories
@@ -166,27 +170,39 @@ export default function Dashboard() {
 
   // Last 6 months spending trend
   const { data: monthlyData = [] } = useQuery<{ month: string; amount: number }[]>({
-    queryKey: ['dashboard-monthly', user?.id, viewCurrency],
-    enabled: !!user?.id,
+    queryKey: ['dashboard-monthly', user?.uid, viewCurrency],
+    enabled: !!user?.uid,
     queryFn: async () => {
       const points: { month: string; amount: number }[] = []
       const today = new Date()
       
+      // Get all expenses for the last 6 months at once
+      const sixMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 5, 1)
+      const expensesRef = collection(db, 'expenses', user!.uid, 'items')
+      const q = query(
+        expensesRef,
+        where('occurred_on', '>=', sixMonthsAgo.toISOString().slice(0, 10)),
+        where('currency', '==', viewCurrency)
+      )
+      const snapshot = await getDocs(q)
+      
+      // Group by month
       for (let i = 5; i >= 0; i--) {
         const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
         const start = new Date(d.getFullYear(), d.getMonth(), 1)
         const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+        const startStr = start.toISOString().slice(0, 10)
+        const endStr = end.toISOString().slice(0, 10)
         
-        const { data, error } = await supabase
-          .from('expenses')
-          .select('amount, currency, occurred_on')
-          .eq('user_id', user!.id)
-          .gte('occurred_on', start.toISOString().slice(0,10))
-          .lte('occurred_on', end.toISOString().slice(0,10))
-          .eq('currency', viewCurrency)
-        if (error) throw error
+        const total = snapshot.docs.reduce((acc: number, doc) => {
+          const data = doc.data()
+          const occurredOn = data.occurred_on
+          if (occurredOn >= startStr && occurredOn <= endStr) {
+            return acc + Number(data.amount || 0)
+          }
+          return acc
+        }, 0)
         
-        const total = (data || []).reduce((acc, r: any) => acc + Number(r.amount || 0), 0)
         points.push({ month: d.toLocaleString(undefined, { month: 'short' }), amount: total })
       }
       return points
@@ -195,17 +211,22 @@ export default function Dashboard() {
 
   // Income history: list all monthly incomes for the user
   const { data: incomeHistory = [] } = useQuery<Array<{ month: number; year: number; amount: number; currency: string }>>({
-    queryKey: ['dashboard-income-history', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['dashboard-income-history', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('monthly_income')
-        .select('month, year, amount, currency')
-        .eq('user_id', user!.id)
-        .order('year', { ascending: false })
-        .order('month', { ascending: false })
-      if (error) throw error
-      return (data || []).map((r: any) => ({ month: Number(r.month), year: Number(r.year), amount: Number(r.amount || 0), currency: String(r.currency || 'USD') }))
+      const incomeRef = collection(db, 'monthly_income', user!.uid, 'items')
+      const q = query(incomeRef, orderBy('year', 'desc'), orderBy('month', 'desc'))
+      const snapshot = await getDocs(q)
+      
+      return snapshot.docs.map(doc => {
+        const data = doc.data()
+        return {
+          month: Number(data.month),
+          year: Number(data.year),
+          amount: Number(data.amount || 0),
+          currency: String(data.currency || 'USD')
+        }
+      })
     }
   })
   const [showIncomeHistory, setShowIncomeHistory] = useState(false)

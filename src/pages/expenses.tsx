@@ -4,7 +4,8 @@ import Layout from '@/components/Layout'
 import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState as useReactState } from 'react';
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, orderBy } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { RequireAuth } from '@/components/RequireAuth'
 import AddExpenseModal from '@/components/AddExpenseModal'
@@ -187,16 +188,17 @@ export default function Expenses() {
   }
   
   const { data: expenses = [], isLoading } = useQuery<Expense[]>({
-    queryKey: ['expenses', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['expenses', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', user!.id)
-        .order('occurred_on', { ascending: false })
-      if (error) throw error
-      return data as Expense[]
+      if (!user?.uid) return []
+      const expensesRef = collection(db, 'expenses', user.uid, 'items')
+      const q = query(expensesRef, orderBy('occurred_on', 'desc'))
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Expense[]
     },
   })
 
@@ -214,16 +216,17 @@ export default function Expenses() {
 
   // Load categories for filter dropdown
   const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: ['categories', user?.id],
-    enabled: !!user?.id,
+    queryKey: ['categories', user?.uid],
+    enabled: !!user?.uid,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('id, name')
-        .eq('user_id', user!.id)
-        .order('name')
-      if (error) throw error
-      return data as Category[]
+      if (!user?.uid) return []
+      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const q = query(categoriesRef, orderBy('name', 'asc'))
+      const snapshot = await getDocs(q)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      })) as Category[]
     }
   })
 
@@ -374,7 +377,7 @@ export default function Expenses() {
   })()
 
   const onAdded = () => {
-  queryClient.invalidateQueries({ queryKey: ['expenses', user?.id] })
+  queryClient.invalidateQueries({ queryKey: ['expenses', user?.uid] })
   }
 
   const deleteExpense = async (id: string) => {
@@ -383,17 +386,15 @@ export default function Expenses() {
     const confirmDelete = window.confirm('Delete this expense? This cannot be undone.')
     if (!confirmDelete) return
     setDeletingId(id)
-    const { error } = await supabase
-      .from('expenses')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id)
-    setDeletingId(null)
-    if (error) {
-      setActionError(error.message)
-    } else {
-      queryClient.invalidateQueries({ queryKey: ['expenses', user.id] })
+    try {
+      const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
+      await deleteDoc(expenseDocRef)
+      queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
       setActionOpenId(null)
+    } catch (error: any) {
+      setActionError(error.message)
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -424,17 +425,18 @@ export default function Expenses() {
                         if (!window.confirm(`Delete ${selectedIds.size} selected item(s)? This cannot be undone.`)) return
                         setDeletingId('bulk')
                         const ids = Array.from(selectedIds)
-                        const { error } = await supabase
-                          .from('expenses')
-                          .delete()
-                          .in('id', ids)
-                          .eq('user_id', user.id)
-                        setDeletingId(null)
-                        if (error) {
-                          setActionError(error.message)
-                        } else {
+                        try {
+                          // Delete each expense
+                          await Promise.all(ids.map(id => {
+                            const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
+                            return deleteDoc(expenseDocRef)
+                          }))
                           setSelectedIds(new Set())
-                          queryClient.invalidateQueries({ queryKey: ['expenses', user?.id] })
+                          queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
+                        } catch (error: any) {
+                          setActionError(error.message)
+                        } finally {
+                          setDeletingId(null)
                         }
                       }}
                     >
@@ -915,16 +917,15 @@ export default function Expenses() {
                   setDuplicatesError(null)
                   try {
                     const ids = Array.from(selectedDuplicateIds)
-                    const { error } = await supabase
-                      .from('expenses')
-                      .delete()
-                      .in('id', ids)
-                      .eq('user_id', user.id)
-                    if (error) throw new Error(error.message)
+                    // Delete each expense
+                    await Promise.all(ids.map(id => {
+                      const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
+                      return deleteDoc(expenseDocRef)
+                    }))
                     setShowDuplicatesModal(false)
                     setDetectedDuplicates([])
                     setSelectedDuplicateIds(new Set())
-                    queryClient.invalidateQueries({ queryKey: ['expenses', user.id] })
+                    queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
                   } catch (e: any) {
                     setDuplicatesError(e.message || 'Error deleting duplicates')
                   } finally {

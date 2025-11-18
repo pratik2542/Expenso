@@ -3,12 +3,13 @@ import { useState, useEffect, useCallback } from 'react'
 import Layout from '@/components/Layout'
 import { RequireAuth } from '@/components/RequireAuth'
 import { UserIcon } from 'lucide-react'
-import { supabase } from '@/lib/supabaseClient'
+import { db } from '@/lib/firebaseClient'
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { usePreferences } from '@/contexts/PreferencesContext'
 
 export default function Settings() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const { refetch: refetchPrefs, currency: currentPrefCurrency, convertExistingData, updatePrefs } = usePreferences()
   console.log('Settings page - current preferences:', { currentPrefCurrency, convertExistingData })
   const [loading, setLoading] = useState(true)
@@ -35,48 +36,33 @@ export default function Settings() {
     setLoading(true)
     setError(null)
     try {
-      // Load from user_settings using user_id
-      const { data: settingsRow, error: settingsError } = await supabase
-        .from('user_settings')
-        .select('full_name, email_notifications, push_notifications, weekly_reports, analytics, marketing, current_currency, time_zone, updated_at')
-        .eq('user_id', user.id)
-        .maybeSingle()
-
-      if (settingsError) {
-        if (
-          settingsError.message?.includes('relation') &&
-          settingsError.message?.includes('does not exist')
-        ) {
-          setError('Database tables missing. Please run the SQL migration.')
-        } else {
-          console.warn('user_settings load error:', settingsError)
-        }
-      }
+      // Load from user_settings using Firebase - query by user_id field
+      const userSettingsRef = collection(db, 'user_settings')
+      const q = query(userSettingsRef, where('user_id', '==', user.uid))
+      const querySnapshot = await getDocs(q)
+      const settingsRow = !querySnapshot.empty ? querySnapshot.docs[0].data() : null
 
       // Fallback: If no name in database, try to get from OAuth metadata
       let fullName = settingsRow?.full_name || ''
       if (!fullName) {
         // Try to get name from user metadata (OAuth providers)
-        fullName = user.user_metadata?.full_name || user.user_metadata?.name || ''
+        fullName = user.displayName || ''
         
         // If we found a name in metadata, save it to database
         if (fullName) {
-          await supabase
-            .from('user_settings')
-            .upsert({
-              user_id: user.id,
-              full_name: fullName,
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: 'user_id'
-            })
+          const newDocRef = doc(db, 'user_settings', user.uid)
+          await setDoc(newDocRef, {
+            user_id: user.uid,
+            full_name: fullName,
+            updated_at: new Date().toISOString()
+          }, { merge: true })
         }
       }
       
       setSettings({
         full_name: fullName,
-        email: user.email || '',
-  email_notifications: settingsRow?.email_notifications ?? true,
+        email: settingsRow?.email || user.email || '',
+        email_notifications: settingsRow?.email_notifications ?? true,
         push_notifications: settingsRow?.push_notifications ?? false,
         weekly_reports: settingsRow?.weekly_reports ?? false,
         analytics: settingsRow?.analytics ?? false,
@@ -99,6 +85,25 @@ export default function Settings() {
   }, [user])
 
   useEffect(() => { load() }, [load])
+
+  // Reset settings when user changes (logout/login)
+  useEffect(() => {
+    if (!user) {
+      setSettings({
+        full_name: '',
+        email: '',
+        email_notifications: true,
+        push_notifications: false,
+        weekly_reports: false,
+        analytics: false,
+        marketing: false,
+        current_currency: 'INR',
+        time_zone: 'UTC',
+      })
+      setDirty(false)
+      setError(null)
+    }
+  }, [user])
 
   const markDirty = () => { if (!dirty) setDirty(true) }
 
@@ -130,7 +135,6 @@ export default function Settings() {
   // Store the user's choice about converting existing data
     try {
       const basePayload = {
-        user_id: user!.id,
         full_name: settings.full_name,
         email_notifications: settings.email_notifications,
         push_notifications: settings.push_notifications,
@@ -140,26 +144,26 @@ export default function Settings() {
         current_currency: pendingCurrency, // Use the new currency
         time_zone: settings.time_zone,
         updated_at: new Date().toISOString(),
+        convert_existing_data: convertExisting
       }
 
-      // Try to save with convert_existing_data column first
-      let { error } = await supabase
-        .from('user_settings')
-        .upsert({ ...basePayload, convert_existing_data: convertExisting }, { onConflict: 'user_id' })
-      
-      console.log('First save attempt result:', { error, basePayload })
-      
-      // If the column doesn't exist, fall back to saving without it
-      if (error && error.message.includes('convert_existing_data')) {
-        console.warn('convert_existing_data column not found, saving without it:', error.message)
-        const { error: fallbackError } = await supabase
-          .from('user_settings')
-          .upsert(basePayload, { onConflict: 'user_id' })
-        error = fallbackError
-        console.log('Fallback save attempt result:', { error: fallbackError, basePayload })
-      }
-      
-      if (error) {
+      // Save to Firebase - find existing document by user_id and update it
+      try {
+        const userSettingsRef = collection(db, 'user_settings')
+        const q = query(userSettingsRef, where('user_id', '==', user!.uid))
+        const querySnapshot = await getDocs(q)
+        
+        if (!querySnapshot.empty) {
+          // Update existing document
+          const existingDocRef = querySnapshot.docs[0].ref
+          await setDoc(existingDocRef, basePayload, { merge: true })
+        } else {
+          // Create new document with Firebase UID as document ID
+          const newDocRef = doc(db, 'user_settings', user!.uid)
+          await setDoc(newDocRef, { ...basePayload, user_id: user!.uid }, { merge: true })
+        }
+        console.log('Currency settings saved successfully')
+      } catch (error: any) {
         console.warn('Failed to save currency change:', error)
         setError('Failed to save currency change: ' + error.message)
         // even if DB save failed, proceed with local update so UI reflects change
@@ -207,8 +211,8 @@ export default function Settings() {
     setError(null)
     try {
       const payload = {
-        user_id: user.id,
         full_name: settings.full_name,
+        email: user.email || '',
         email_notifications: settings.email_notifications,
         push_notifications: settings.push_notifications,
         weekly_reports: settings.weekly_reports,
@@ -219,19 +223,19 @@ export default function Settings() {
         updated_at: new Date().toISOString(),
       }
 
-      const { error: upsertError } = await supabase
-        .from('user_settings')
-        .upsert(payload, { onConflict: 'user_id' })
-
-      if (upsertError) {
-        if (
-          upsertError.message?.includes('relation') &&
-          upsertError.message?.includes('does not exist')
-        ) {
-          throw new Error('Database tables missing. Please run the SQL migration.')
-        } else {
-          throw upsertError
-        }
+      // Save to Firebase - find existing document by user_id and update it
+      const userSettingsRef = collection(db, 'user_settings')
+      const q = query(userSettingsRef, where('user_id', '==', user.uid))
+      const querySnapshot = await getDocs(q)
+      
+      if (!querySnapshot.empty) {
+        // Update existing document
+        const existingDocRef = querySnapshot.docs[0].ref
+        await setDoc(existingDocRef, payload, { merge: true })
+      } else {
+        // Create new document with Firebase UID as document ID
+        const newDocRef = doc(db, 'user_settings', user.uid)
+        await setDoc(newDocRef, { ...payload, user_id: user.uid }, { merge: true })
       }
 
   setDirty(false)
@@ -285,7 +289,7 @@ export default function Settings() {
                 <div className="mt-4 space-y-2">
                   <p className="text-sm">To fix this:</p>
                   <ol className="list-decimal list-inside space-y-1 text-sm">
-                    <li>Open your <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Supabase Dashboard</a></li>
+                    <li>Open your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Firebase Console</a></li>
                     <li>Go to "SQL Editor" tab</li>
                     <li>Copy the contents of <code className="bg-gray-100 px-1 rounded">COMPLETE_MIGRATION.sql</code> file</li>
                     <li>Paste and click "RUN"</li>
@@ -499,7 +503,7 @@ export default function Settings() {
                       }
                       
                       // Sign out and redirect to auth page
-                      await supabase.auth.signOut()
+                      await signOut()
                       window.location.href = '/auth'
                     } catch (e) {
                       const msg = e instanceof Error ? e.message : 'Failed to delete account'
