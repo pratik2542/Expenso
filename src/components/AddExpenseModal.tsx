@@ -621,7 +621,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               leaveFrom="opacity-100 translate-y-0 sm:scale-100"
               leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-7xl sm:p-6">
                 <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
                   <button
                     type="button"
@@ -772,17 +772,17 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               </div>
                               <div className="max-h-60 overflow-auto border rounded">
                                 <div className="overflow-x-auto">
-                                  <table className="min-w-[720px] w-full text-xs">
+                                  <table className="min-w-full w-full text-xs">
                   <thead className="bg-gray-50 sticky top-0 z-10">
                   <tr>
-                    <th className="px-2 py-2 text-left sticky left-0 bg-gray-50">Pick</th>
-                    <th className="px-2 py-2 text-left">Date</th>
-                    <th className="px-2 py-2 text-right">Amount</th>
-                    <th className="px-2 py-2 text-left">Currency</th>
-                    <th className="px-2 py-2 text-left">Merchant</th>
-                    <th className="px-2 py-2 text-left">Payment</th>
-                    <th className="px-2 py-2 text-left">Category</th>
-                    <th className="px-2 py-2 text-left text-xs text-gray-500">Raw Category</th>
+                    <th className="px-2 py-2 text-left sticky left-0 bg-gray-50 w-12">Pick</th>
+                    <th className="px-2 py-2 text-left w-24">Date</th>
+                    <th className="px-2 py-2 text-right w-20">Amount</th>
+                    <th className="px-2 py-2 text-left w-16">Currency</th>
+                    <th className="px-2 py-2 text-left min-w-32">Merchant</th>
+                    <th className="px-2 py-2 text-left w-24">Payment</th>
+                    <th className="px-2 py-2 text-left w-24">Category</th>
+                    <th className="px-2 py-2 text-left text-xs text-gray-500 min-w-24">Raw Category</th>
                   </tr>
                   </thead>
                                     <tbody>
@@ -790,7 +790,19 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                         <tr key={idx} className="border-t">
                                           <td className="px-2 py-2 sticky left-0 bg-white"><input type="checkbox" checked={p.selected !== false} onChange={() => toggleSelect(idx)} /></td>
                                           <td className="px-2 py-2 whitespace-nowrap">{p.occurred_on}</td>
-                                          <td className="px-2 py-2 text-right whitespace-nowrap">{p.amount}</td>
+                                          <td className="px-2 py-2 text-right whitespace-nowrap">
+                                            <div className="flex items-center justify-end gap-1">
+                                              <span>{p.amount}</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => updateParsedRow(idx, { amount: -p.amount })}
+                                                className="text-xs text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded border border-gray-200 hover:border-gray-300 flex-shrink-0"
+                                                title="Toggle amount sign (+/-)"
+                                              >
+                                                ±
+                                              </button>
+                                            </div>
+                                          </td>
                                           <td className="px-2 py-2 whitespace-nowrap">{p.currency}</td>
                                           <td className="px-2 py-2">{p.merchant || '—'}</td>
                                           <td className="px-2 py-2">

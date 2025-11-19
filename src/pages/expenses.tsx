@@ -376,6 +376,17 @@ export default function Expenses() {
     return { avgPerMonth, currency: currencyOfFirst, monthCount: monthlyData.size }
   })()
 
+  // Calculate predicted yearly average when category is selected
+  const categoryPredictedYearly = (() => {
+    if (!categoryFilter || sortedExpenses.length === 0) return null
+    
+    const totalAmount = sortedExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+    const predictedMonthly = totalAmount / 12
+    const currencyOfFirst = sortedExpenses[0].currency
+    
+    return { predictedMonthly, currency: currencyOfFirst }
+  })()
+
   const onAdded = () => {
   queryClient.invalidateQueries({ queryKey: ['expenses', user?.uid] })
   }
@@ -592,6 +603,17 @@ export default function Expenses() {
                     {formatCurrencyExplicit(categoryAvgPerMonth.avgPerMonth, categoryAvgPerMonth.currency)} 
                     <span className="text-xs text-gray-500 ml-1">
                       (across {categoryAvgPerMonth.monthCount} month{categoryAvgPerMonth.monthCount > 1 ? 's' : ''})
+                    </span>
+                  </span>
+                </div>
+              )}
+              {categoryPredictedYearly && (
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3 text-sm">
+                  <span className="text-gray-600">Predicted monthly average (yearly):</span>
+                  <span className="font-semibold text-green-600">
+                    {formatCurrencyExplicit(categoryPredictedYearly.predictedMonthly, categoryPredictedYearly.currency)} 
+                    <span className="text-xs text-gray-500 ml-1">
+                      (based on 12 months)
                     </span>
                   </span>
                 </div>
