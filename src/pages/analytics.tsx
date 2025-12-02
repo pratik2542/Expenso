@@ -2,12 +2,23 @@ import Head from 'next/head'
 import Layout from '@/components/Layout'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import Charts from '@/components/Charts'
-import { TrendingUpIcon, DollarSignIcon } from 'lucide-react'
+import { TrendingUpIcon, DollarSignIcon, SparklesIcon, SendIcon, RefreshCwIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useMemo, useState } from 'react'
+
+interface Expense {
+  id: string
+  amount: number
+  currency: string
+  merchant?: string
+  payment_method?: string
+  note?: string
+  occurred_on: string
+  category: string
+}
 
 export default function Analytics() {
   const { formatCurrencyExplicit, currency: prefCurrency } = usePreferences()
@@ -17,6 +28,14 @@ export default function Analytics() {
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [viewCurrency, setViewCurrency] = useState(prefCurrency || 'USD')
   
+  // AI Insights state
+  const [aiInsights, setAiInsights] = useState<string | null>(null)
+  const [aiInsightsLoading, setAiInsightsLoading] = useState(false)
+  const [aiInsightsError, setAiInsightsError] = useState<string | null>(null)
+  const [userQuestion, setUserQuestion] = useState('')
+  const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'ai', content: string}>>([])
+  const [chatLoading, setChatLoading] = useState(false)
+  
   console.log('AnalyticsPage - User:', user?.uid, 'Loading:', !user)
 
   const startOfMonth = useMemo(() => new Date(selectedYear, selectedMonth - 1, 1), [selectedMonth, selectedYear])
@@ -25,6 +44,32 @@ export default function Analytics() {
   const endISO = useMemo(() => endOfMonth.toISOString().slice(0,10), [endOfMonth])
 
   // No conversion for Analytics; filter by selected currency only
+
+  // Fetch all expenses for the selected month (for AI insights)
+  const { data: monthExpenses = [] } = useQuery<Expense[]>({
+    queryKey: ['analytics-expenses-list', user?.uid, startISO, endISO, viewCurrency],
+    enabled: !!user?.uid,
+    queryFn: async () => {
+      if (!user?.uid) return []
+      try {
+        const expensesRef = collection(db, 'expenses', user.uid, 'items')
+        const q = query(
+          expensesRef,
+          where('occurred_on', '>=', startISO),
+          where('occurred_on', '<=', endISO),
+          where('currency', '==', viewCurrency)
+        )
+        const snapshot = await getDocs(q)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Expense[]
+      } catch (error) {
+        console.error('Analytics expenses list query failed:', error)
+        return []
+      }
+    }
+  })
 
   // Total spend for selected month with currency conversion
   const { data: spendTotal = 0 } = useQuery({
@@ -82,6 +127,80 @@ export default function Analytics() {
       }
     }
   })
+
+  // Function to generate AI insights
+  const generateAIInsights = async () => {
+    if (monthExpenses.length === 0) {
+      setAiInsightsError('No expenses found for this month to analyze')
+      return
+    }
+    
+    setAiInsightsLoading(true)
+    setAiInsightsError(null)
+    
+    try {
+      const resp = await fetch('/api/ai/analytics-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expenses: monthExpenses,
+          income: { amount: incomeAmt, currency: viewCurrency },
+          month: selectedMonth,
+          year: selectedYear,
+          currency: viewCurrency
+        })
+      })
+      
+      if (!resp.ok) throw new Error('Failed to generate insights')
+      const json = await resp.json()
+      setAiInsights(json.insights)
+    } catch (e: any) {
+      setAiInsightsError(e.message || 'Error generating insights')
+    } finally {
+      setAiInsightsLoading(false)
+    }
+  }
+
+  // Function to ask a question
+  const askQuestion = async () => {
+    if (!userQuestion.trim()) return
+    if (monthExpenses.length === 0) {
+      setChatHistory(prev => [...prev, 
+        { role: 'user', content: userQuestion },
+        { role: 'ai', content: 'No expenses found for this month to analyze. Please add some expenses first.' }
+      ])
+      setUserQuestion('')
+      return
+    }
+    
+    const question = userQuestion.trim()
+    setChatHistory(prev => [...prev, { role: 'user', content: question }])
+    setUserQuestion('')
+    setChatLoading(true)
+    
+    try {
+      const resp = await fetch('/api/ai/analytics-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expenses: monthExpenses,
+          income: { amount: incomeAmt, currency: viewCurrency },
+          month: selectedMonth,
+          year: selectedYear,
+          currency: viewCurrency,
+          question
+        })
+      })
+      
+      if (!resp.ok) throw new Error('Failed to get answer')
+      const json = await resp.json()
+      setChatHistory(prev => [...prev, { role: 'ai', content: json.insights }])
+    } catch (e: any) {
+      setChatHistory(prev => [...prev, { role: 'ai', content: `Error: ${e.message || 'Failed to get answer'}` }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
 
   // Average daily spend for the selected month
   const daysInMonth = useMemo(() => endOfMonth.getDate(), [endOfMonth])
@@ -249,14 +368,196 @@ export default function Analytics() {
           {/* Charts */}
           <Charts month={selectedMonth} year={selectedYear} currency={viewCurrency} />
 
-          {/* Spending Insights */}
-          <div className="mt-8">
+          {/* AI Insights Section */}
+          <div className="mt-8 space-y-6">
+            {/* AI Generated Insights */}
             <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Spending Insights</h3>
-              <div className="space-y-2 text-sm text-gray-700">
-                <p>Total spending: <span className="font-semibold">{formatCurrencyExplicit(spendTotal, viewCurrency)}</span></p>
-                <p>Income: <span className="font-semibold">{formatCurrencyExplicit(incomeAmt, viewCurrency)}</span></p>
-                <p>Average daily: <span className="font-semibold">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</span></p>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <SparklesIcon className="w-5 h-5 text-purple-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">AI Spending Insights</h3>
+                </div>
+                <button
+                  onClick={generateAIInsights}
+                  disabled={aiInsightsLoading || monthExpenses.length === 0}
+                  className="btn-secondary inline-flex items-center gap-2 text-purple-700 border-purple-200 hover:bg-purple-50 disabled:opacity-50"
+                >
+                  <RefreshCwIcon className={`w-4 h-4 ${aiInsightsLoading ? 'animate-spin' : ''}`} />
+                  {aiInsightsLoading ? 'Analyzing...' : 'Generate Insights'}
+                </button>
+              </div>
+              
+              {aiInsightsError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
+                  {aiInsightsError}
+                </div>
+              )}
+              
+              {!aiInsights && !aiInsightsLoading && !aiInsightsError && (
+                <div className="text-center py-8 text-gray-500">
+                  <SparklesIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p>Click "Generate Insights" to get AI-powered analysis of your spending patterns.</p>
+                  <p className="text-sm mt-1">The AI will analyze where you're spending most and provide recommendations.</p>
+                </div>
+              )}
+              
+              {aiInsightsLoading && (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center gap-2 text-purple-600">
+                    <RefreshCwIcon className="w-5 h-5 animate-spin" />
+                    <span>Analyzing your spending data...</span>
+                  </div>
+                </div>
+              )}
+              
+              {aiInsights && !aiInsightsLoading && (
+                <div className="prose prose-sm max-w-none">
+                  <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-100">
+                    <div className="whitespace-pre-wrap text-gray-700 leading-relaxed">
+                      {aiInsights.split('\n').map((line, i) => {
+                        // Handle bold text marked with **
+                        const parts = line.split(/(\*\*[^*]+\*\*)/g)
+                        return (
+                          <p key={i} className={line.startsWith('-') ? 'ml-4' : ''}>
+                            {parts.map((part, j) => {
+                              if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={j} className="text-gray-900">{part.slice(2, -2)}</strong>
+                              }
+                              return part
+                            })}
+                          </p>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ask AI Section */}
+            <div className="card">
+              <div className="flex items-center gap-2 mb-4">
+                <SparklesIcon className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Ask AI About Your Finances</h3>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Ask any question about your spending data for {new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}.
+              </p>
+              
+              {/* Chat History */}
+              {chatHistory.length > 0 && (
+                <div className="mb-4 max-h-96 overflow-y-auto space-y-3 border rounded-lg p-3 bg-gray-50">
+                  {chatHistory.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-[85%] rounded-lg px-4 py-2 ${
+                          msg.role === 'user'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white border border-gray-200 text-gray-700'
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap text-sm">
+                          {msg.content.split('\n').map((line, j) => {
+                            const parts = line.split(/(\*\*[^*]+\*\*)/g)
+                            return (
+                              <p key={j} className={line.startsWith('-') ? 'ml-2' : ''}>
+                                {parts.map((part, k) => {
+                                  if (part.startsWith('**') && part.endsWith('**')) {
+                                    return <strong key={k}>{part.slice(2, -2)}</strong>
+                                  }
+                                  return part
+                                })}
+                              </p>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-white border border-gray-200 rounded-lg px-4 py-2">
+                        <div className="flex items-center gap-2 text-gray-500">
+                          <RefreshCwIcon className="w-4 h-4 animate-spin" />
+                          <span className="text-sm">Thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Question Input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={userQuestion}
+                  onChange={(e) => setUserQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      askQuestion()
+                    }
+                  }}
+                  placeholder="e.g., What's my biggest spending category? How can I save more?"
+                  className="input flex-1"
+                  disabled={chatLoading}
+                />
+                <button
+                  onClick={askQuestion}
+                  disabled={chatLoading || !userQuestion.trim()}
+                  className="btn-primary inline-flex items-center gap-2 disabled:opacity-50"
+                >
+                  <SendIcon className="w-4 h-4" />
+                  Ask
+                </button>
+              </div>
+              
+              {/* Example Questions */}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="text-xs text-gray-500">Try:</span>
+                {[
+                  'Where am I spending the most?',
+                  'How can I reduce my expenses?',
+                  'Am I on track with my budget?',
+                  'What are my top 3 merchants?'
+                ].map((q, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setUserQuestion(q)
+                    }}
+                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Basic Stats Card */}
+            <div className="card">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Summary</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-gray-600">Total Spending</p>
+                  <p className="font-semibold text-lg">{formatCurrencyExplicit(spendTotal, viewCurrency)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-gray-600">Income</p>
+                  <p className="font-semibold text-lg">{formatCurrencyExplicit(incomeAmt, viewCurrency)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-gray-600">Daily Average</p>
+                  <p className="font-semibold text-lg">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-gray-600">Transactions</p>
+                  <p className="font-semibold text-lg">{monthExpenses.length}</p>
+                </div>
               </div>
             </div>
           </div>
