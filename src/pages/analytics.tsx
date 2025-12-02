@@ -415,18 +415,48 @@ export default function Analytics() {
                   <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-100">
                     <div className="whitespace-pre-wrap text-gray-700 leading-relaxed">
                       {aiInsights.split('\n').map((line, i) => {
-                        // Handle bold text marked with **
-                        const parts = line.split(/(\*\*[^*]+\*\*)/g)
-                        return (
-                          <p key={i} className={line.startsWith('-') ? 'ml-4' : ''}>
-                            {parts.map((part, j) => {
-                              if (part.startsWith('**') && part.endsWith('**')) {
-                                return <strong key={j} className="text-gray-900">{part.slice(2, -2)}</strong>
-                              }
-                              return part
-                            })}
-                          </p>
-                        )
+                        const trimmed = line.trim()
+                        if (!trimmed) return <div key={i} className="h-2" />
+
+                        // Helper to render bold text
+                        const renderText = (text: string) => {
+                          return text.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
+                            if (part.startsWith('**') && part.endsWith('**')) {
+                              return <strong key={j} className="text-gray-900 font-semibold">{part.slice(2, -2)}</strong>
+                            }
+                            return part
+                          })
+                        }
+
+                        // Headers
+                        if (trimmed.startsWith('###')) {
+                          return <h3 key={i} className="text-lg font-bold text-indigo-900 mt-4 mb-2 flex items-center gap-2">{renderText(trimmed.replace(/^###\s*/, ''))}</h3>
+                        }
+                        if (trimmed.startsWith('##')) {
+                          return <h2 key={i} className="text-xl font-bold text-indigo-900 mt-5 mb-3">{renderText(trimmed.replace(/^##\s*/, ''))}</h2>
+                        }
+
+                        // List items
+                        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                          return (
+                            <div key={i} className="flex items-start gap-2 mb-2 pl-2">
+                              <span className="text-indigo-400 mt-1.5 flex-shrink-0">•</span>
+                              <div className="text-gray-700">{renderText(trimmed.replace(/^[-*]\s*/, ''))}</div>
+                            </div>
+                          )
+                        }
+
+                        // Numbered lists
+                        if (/^\d+\.\s/.test(trimmed)) {
+                           return (
+                            <div key={i} className="flex items-start gap-2 mb-2 pl-2">
+                              <span className="text-indigo-600 font-medium min-w-[1.5rem] flex-shrink-0">{trimmed.match(/^\d+\./)?.[0]}</span>
+                              <div className="text-gray-700">{renderText(trimmed.replace(/^\d+\.\s*/, ''))}</div>
+                            </div>
+                          )
+                        }
+
+                        return <p key={i} className="mb-2 text-gray-700">{renderText(line)}</p>
                       })}
                     </div>
                   </div>

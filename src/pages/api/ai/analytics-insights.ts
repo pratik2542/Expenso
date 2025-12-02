@@ -87,17 +87,25 @@ The user asks: "${question}"
 Please provide a helpful, concise answer based on the data above. Be specific with numbers and percentages. If the question can't be answered with the available data, say so politely.`
   } else {
     // Generate automatic insights
-    prompt = `You are a personal finance assistant. Analyze this expense data and provide actionable insights:
+    prompt = `You are a friendly and knowledgeable personal finance assistant. Analyze this expense data and provide engaging, actionable insights.
 
 ${expensesSummary}
 
-Please provide:
-1. **Key Insights**: 2-3 important observations about spending patterns
-2. **Top Spending Areas**: Where the most money is going
-3. **Recommendations**: 2-3 specific, actionable tips to save money or improve financial health
-4. **Potential Concerns**: Any spending patterns that might need attention
+Please structure your response as follows:
 
-Keep the response concise and practical. Use bullet points for clarity. Include specific amounts and percentages where relevant.`
+### 📊 Key Insights
+(2-3 important observations about spending patterns. Be specific and use bold text for emphasis.)
+
+### 💸 Top Spending Areas
+(Where the most money is going. Use percentages.)
+
+### 💡 Smart Recommendations
+(2-3 specific, actionable tips to save money or improve financial health.)
+
+### ⚠️ Potential Concerns
+(Any spending patterns that might need attention, if any.)
+
+Make the content easy to read, use emojis where appropriate to make it lively, and keep it practical.`
   }
 
   const body = {
@@ -106,12 +114,18 @@ Keep the response concise and practical. Use bullet points for clarity. Include 
     }],
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 1024,
-    }
+      maxOutputTokens: 8192,
+    },
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    ]
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -125,6 +139,7 @@ Keep the response concise and practical. Use bullet points for clarity. Include 
   }
 
   const result = await response.json()
+  console.log('Gemini response:', JSON.stringify(result, null, 2))
   const text = result?.candidates?.[0]?.content?.parts?.[0]?.text || ''
   
   if (!text) {

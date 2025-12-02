@@ -207,6 +207,7 @@ export default function Expenses() {
   const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
   const [duplicatesLoading, setDuplicatesLoading] = useState(false)
   const [detectedDuplicates, setDetectedDuplicates] = useState<string[]>([])
+  const [duplicateGroups, setDuplicateGroups] = useState<any[]>([])
   const [duplicatesError, setDuplicatesError] = useState<string|null>(null)
   const [selectedDuplicateIds, setSelectedDuplicateIds] = useState<Set<string>>(new Set())
   
@@ -509,6 +510,7 @@ export default function Expenses() {
                       setDuplicatesLoading(true)
                       setDuplicatesError(null)
                       setDetectedDuplicates([])
+                      setDuplicateGroups([])
                       setSelectedDuplicateIds(new Set())
                       try {
                         const resp = await fetch('/api/ai/detect-duplicates', {
@@ -518,9 +520,25 @@ export default function Expenses() {
                         })
                         if (!resp.ok) throw new Error('Failed to detect duplicates')
                         const json = await resp.json()
-                        if (!json.duplicateIds) throw new Error('No duplicates found')
-                        setDetectedDuplicates(json.duplicateIds)
-                        setSelectedDuplicateIds(new Set(json.duplicateIds))
+                        
+                        if (json.groups && Array.isArray(json.groups)) {
+                          setDuplicateGroups(json.groups)
+                          // Pre-select all detected duplicates
+                          const allIds = new Set<string>()
+                          json.groups.forEach((g: any) => {
+                            if (Array.isArray(g.duplicate_ids)) {
+                              g.duplicate_ids.forEach((id: string) => allIds.add(id))
+                            }
+                          })
+                          if (allIds.size === 0) throw new Error('No duplicates found')
+                          setSelectedDuplicateIds(allIds)
+                        } else if (json.duplicateIds) {
+                          // Fallback for old API response if any
+                          setDetectedDuplicates(json.duplicateIds)
+                          setSelectedDuplicateIds(new Set(json.duplicateIds))
+                        } else {
+                          throw new Error('No duplicates found')
+                        }
                       } catch (e: any) {
                         setDuplicatesError(e.message || 'Error detecting duplicates')
                       } finally {
@@ -915,70 +933,122 @@ export default function Expenses() {
 
       {/* AI Duplicates Modal */}
       {showDuplicatesModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-          <div className="bg-white rounded-lg shadow-lg max-w-2xl w-full p-6 relative">
-            <h2 className="text-xl font-bold mb-2">AI Detected Duplicate Expenses</h2>
-            <p className="mb-4 text-gray-600 text-sm">Review the detected duplicates below. Uncheck any you do not want to delete. Click Confirm to remove selected duplicates.</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-4 sm:p-6 relative max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg sm:text-xl font-bold mb-2">AI Detected Duplicate Expenses</h2>
+            <p className="mb-4 text-gray-600 text-sm">
+              The AI has analyzed your expenses and found potential duplicates. 
+              Please review the groups below and select the ones to delete.
+            </p>
+            
             {duplicatesLoading ? (
-              <div className="py-8 text-center text-blue-600">Detecting duplicates…</div>
+              <div className="py-12 flex flex-col items-center justify-center text-blue-600">
+                <svg className="animate-spin h-8 w-8 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p>Analyzing expenses with AI...</p>
+              </div>
             ) : duplicatesError ? (
-              <div className="py-4 text-red-600">{duplicatesError}</div>
-            ) : detectedDuplicates.length === 0 ? (
-              <div className="py-8 text-center text-gray-500">No duplicates detected.</div>
+              <div className="py-4 text-red-600 bg-red-50 p-4 rounded border border-red-200">
+                <p className="font-bold">Error</p>
+                <p>{duplicatesError}</p>
+              </div>
+            ) : duplicateGroups.length === 0 && detectedDuplicates.length === 0 ? (
+              <div className="py-8 text-center text-gray-500">No duplicates detected. Great job!</div>
             ) : (
-              <div className="max-h-64 overflow-y-auto border rounded mb-4">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-2 py-1"><input type="checkbox"
-                        checked={selectedDuplicateIds.size === detectedDuplicates.length}
-                        onChange={e => {
-                          if (e.target.checked) setSelectedDuplicateIds(new Set(detectedDuplicates))
-                          else setSelectedDuplicateIds(new Set())
-                        }}
-                      /></th>
-                      <th className="px-2 py-1 text-left">Description</th>
-                      <th className="px-2 py-1 text-left">Amount</th>
-                      <th className="px-2 py-1 text-left">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detectedDuplicates.map(id => {
-                      const exp = expenses.find(e => e.id === id)
-                      if (!exp) return null
-                      return (
-                        <tr key={id} className="border-t">
-                          <td className="px-2 py-1">
-                            <input type="checkbox"
-                              checked={selectedDuplicateIds.has(id)}
-                              onChange={e => {
-                                setSelectedDuplicateIds(prev => {
-                                  const next = new Set(prev)
-                                  if (e.target.checked) next.add(id)
-                                  else next.delete(id)
-                                  return next
-                                })
-                              }}
-                            />
-                          </td>
-                          <td className="px-2 py-1">{exp.note || exp.merchant || exp.category || 'No description'}</td>
-                          <td className="px-2 py-1">{exp.amount} {exp.currency}</td>
-                          <td className="px-2 py-1">{formatDate(exp.occurred_on)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+              <div className="space-y-6">
+                {duplicateGroups.map((group, idx) => (
+                  <div key={idx} className="border rounded-lg p-3 bg-blue-50 border-blue-200">
+                    <div className="mb-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-blue-800">Group #{idx + 1}</span>
+                        <span className={`text-xs px-2 py-1 rounded uppercase font-bold ${
+                          group.confidence === 'high' ? 'bg-green-100 text-green-800' : 
+                          group.confidence === 'medium' ? 'bg-yellow-100 text-yellow-800' : 
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {group.confidence || 'Potential'} Match
+                        </span>
+                      </div>
+                      <p className="text-sm text-blue-700 mt-1">{group.reason}</p>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm bg-white rounded border border-blue-100">
+                        <thead>
+                          <tr className="bg-blue-100 text-blue-800">
+                            <th className="px-2 py-1 w-10">Action</th>
+                            <th className="px-2 py-1 text-left whitespace-nowrap">Status</th>
+                            <th className="px-2 py-1 text-left whitespace-nowrap">Description</th>
+                            <th className="px-2 py-1 text-left whitespace-nowrap">Amount</th>
+                            <th className="px-2 py-1 text-left whitespace-nowrap">Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Original (if identified) */}
+                          {group.original_id && (() => {
+                            const original = expenses.find(e => e.id === group.original_id)
+                            if (!original) return null
+                            return (
+                              <tr className="bg-green-50">
+                                <td className="px-2 py-1 text-center text-green-600">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mx-auto" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                  </svg>
+                                </td>
+                                <td className="px-2 py-1 font-medium text-green-700">Keep</td>
+                                <td className="px-2 py-1 whitespace-nowrap max-w-[150px] overflow-hidden text-ellipsis">{original.note || original.merchant || original.category}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{original.amount} {original.currency}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{formatDate(original.occurred_on)}</td>
+                              </tr>
+                            )
+                          })()}
+                          
+                          {/* Duplicates */}
+                          {group.duplicate_ids.map((id: string) => {
+                            const exp = expenses.find(e => e.id === id)
+                            if (!exp) return null
+                            return (
+                              <tr key={id} className="hover:bg-red-50">
+                                <td className="px-2 py-1 text-center">
+                                  <input 
+                                    type="checkbox"
+                                    className="w-4 h-4 text-red-600 rounded focus:ring-red-500"
+                                    checked={selectedDuplicateIds.has(id)}
+                                    onChange={e => {
+                                      setSelectedDuplicateIds(prev => {
+                                        const next = new Set(prev)
+                                        if (e.target.checked) next.add(id)
+                                        else next.delete(id)
+                                        return next
+                                      })
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-1 text-red-600 font-medium">Delete</td>
+                                <td className="px-2 py-1 whitespace-nowrap max-w-[150px] overflow-hidden text-ellipsis">{exp.note || exp.merchant || exp.category}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{exp.amount} {exp.currency}</td>
+                                <td className="px-2 py-1 whitespace-nowrap">{formatDate(exp.occurred_on)}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="flex justify-end gap-2 mt-4">
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-4 pt-4 border-t">
               <button
-                className="btn-secondary"
+                className="btn-secondary w-full sm:w-auto"
                 onClick={() => setShowDuplicatesModal(false)}
                 disabled={duplicatesLoading}
               >Cancel</button>
               <button
-                className="btn-primary"
+                className="btn-primary bg-red-600 hover:bg-red-700 w-full sm:w-auto"
                 disabled={duplicatesLoading || selectedDuplicateIds.size === 0}
                 onClick={async () => {
                   if (!user) return
@@ -987,13 +1057,13 @@ export default function Expenses() {
                   setDuplicatesError(null)
                   try {
                     const ids = Array.from(selectedDuplicateIds)
-                    // Delete each expense
                     await Promise.all(ids.map(id => {
                       const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
                       return deleteDoc(expenseDocRef)
                     }))
                     setShowDuplicatesModal(false)
                     setDetectedDuplicates([])
+                    setDuplicateGroups([])
                     setSelectedDuplicateIds(new Set())
                     queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
                   } catch (e: any) {
@@ -1002,7 +1072,7 @@ export default function Expenses() {
                     setDuplicatesLoading(false)
                   }
                 }}
-              >Confirm & Delete</button>
+              >Delete Selected ({selectedDuplicateIds.size})</button>
             </div>
             <button
               className="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
