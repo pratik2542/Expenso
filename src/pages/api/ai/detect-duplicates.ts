@@ -1,5 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 
+export const config = {
+  maxDuration: 60, // Increase timeout to 60 seconds for AI processing
+};
+
 type Expense = {
   id: string
   amount: number
