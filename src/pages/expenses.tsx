@@ -209,6 +209,12 @@ export default function Expenses() {
   const [detectedDuplicates, setDetectedDuplicates] = useState<string[]>([])
   const [duplicatesError, setDuplicatesError] = useState<string|null>(null)
   const [selectedDuplicateIds, setSelectedDuplicateIds] = useState<Set<string>>(new Set())
+  
+  // State for Similar in Same Month detection
+  const [showSimilarModal, setShowSimilarModal] = useState(false)
+  const [similarGroups, setSimilarGroups] = useState<Array<{month: string, expenses: Expense[]}>>([])
+  const [selectedSimilarIds, setSelectedSimilarIds] = useState<Set<string>>(new Set())
+  
   const [sortBy, setSortBy] = useState('occurred_on')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [categoryFilter, setCategoryFilter] = useState('')
@@ -454,6 +460,48 @@ export default function Expenses() {
                       Delete Selected ({selectedIds.size})
                     </button>
                   )}
+                  <button
+                    className="btn-secondary border-amber-200 text-amber-700 hover:bg-amber-50 w-full sm:w-auto"
+                    onClick={() => {
+                      // Find similar expenses in the same month (potential duplicates by mistake)
+                      const monthMap = new Map<string, Expense[]>()
+                      expenses.forEach(exp => {
+                        const date = new Date(exp.occurred_on)
+                        const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+                        const existing = monthMap.get(monthKey) || []
+                        existing.push(exp)
+                        monthMap.set(monthKey, existing)
+                      })
+                      
+                      // Find groups of similar expenses within each month
+                      const groups: Array<{month: string, expenses: Expense[]}> = []
+                      monthMap.forEach((monthExpenses, month) => {
+                        // Group by same amount
+                        const amountMap = new Map<number, Expense[]>()
+                        monthExpenses.forEach(exp => {
+                          const existing = amountMap.get(exp.amount) || []
+                          existing.push(exp)
+                          amountMap.set(exp.amount, existing)
+                        })
+                        
+                        // Only include groups with 2+ expenses with same amount
+                        amountMap.forEach((sameAmountExpenses) => {
+                          if (sameAmountExpenses.length >= 2) {
+                            groups.push({ month, expenses: sameAmountExpenses })
+                          }
+                        })
+                      })
+                      
+                      // Sort by month descending
+                      groups.sort((a, b) => b.month.localeCompare(a.month))
+                      
+                      setSimilarGroups(groups)
+                      setSelectedSimilarIds(new Set())
+                      setShowSimilarModal(true)
+                    }}
+                  >
+                    Find Similar (Same Month)
+                  </button>
                   <button
                     className="btn-secondary border-blue-200 text-blue-700 hover:bg-blue-50 w-full sm:w-auto"
                     onClick={async () => {
@@ -967,6 +1015,128 @@ export default function Expenses() {
           </div>
         </div>
       )}
+
+      {/* Similar in Same Month Modal */}
+      {showSimilarModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+          <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full p-6 relative max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-2">Similar Expenses in Same Month</h2>
+            <p className="mb-4 text-gray-600 text-sm">
+              These expenses have the same amount within the same month — they might be duplicates added by mistake. 
+              Select the ones you want to delete.
+            </p>
+            {similarGroups.length === 0 ? (
+              <div className="py-8 text-center text-gray-500">No similar expenses found in the same month.</div>
+            ) : (
+              <div className="space-y-4">
+                {similarGroups.map((group, groupIdx) => {
+                  const [year, monthNum] = group.month.split('-')
+                  const monthName = new Date(parseInt(year), parseInt(monthNum) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+                  const groupAmount = group.expenses[0]?.amount
+                  const groupCurrency = group.expenses[0]?.currency
+                  return (
+                    <div key={groupIdx} className="border rounded-lg p-3 bg-amber-50 border-amber-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-semibold text-amber-800">{monthName}</span>
+                        <span className="text-sm text-amber-700 bg-amber-100 px-2 py-1 rounded">
+                          {group.expenses.length} items × {groupAmount} {groupCurrency}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="bg-amber-100">
+                              <th className="px-2 py-1 w-10">
+                                <input
+                                  type="checkbox"
+                                  checked={group.expenses.every(e => selectedSimilarIds.has(e.id))}
+                                  onChange={e => {
+                                    setSelectedSimilarIds(prev => {
+                                      const next = new Set(prev)
+                                      group.expenses.forEach(exp => {
+                                        if (e.target.checked) next.add(exp.id)
+                                        else next.delete(exp.id)
+                                      })
+                                      return next
+                                    })
+                                  }}
+                                />
+                              </th>
+                              <th className="px-2 py-1 text-left">Description</th>
+                              <th className="px-2 py-1 text-left">Merchant</th>
+                              <th className="px-2 py-1 text-left">Amount</th>
+                              <th className="px-2 py-1 text-left">Date</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.expenses.map(exp => (
+                              <tr key={exp.id} className="border-t border-amber-200 bg-white">
+                                <td className="px-2 py-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedSimilarIds.has(exp.id)}
+                                    onChange={e => {
+                                      setSelectedSimilarIds(prev => {
+                                        const next = new Set(prev)
+                                        if (e.target.checked) next.add(exp.id)
+                                        else next.delete(exp.id)
+                                        return next
+                                      })
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-1">{exp.note || exp.category || 'No description'}</td>
+                                <td className="px-2 py-1">{exp.merchant || '-'}</td>
+                                <td className="px-2 py-1">{exp.amount} {exp.currency}</td>
+                                <td className="px-2 py-1">{formatDate(exp.occurred_on)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
+              <button
+                className="btn-secondary"
+                onClick={() => setShowSimilarModal(false)}
+              >Cancel</button>
+              <button
+                className="btn-primary bg-red-600 hover:bg-red-700"
+                disabled={selectedSimilarIds.size === 0}
+                onClick={async () => {
+                  if (!user) return
+                  if (!window.confirm(`Delete ${selectedSimilarIds.size} expense(s)? This cannot be undone.`)) return
+                  try {
+                    const ids = Array.from(selectedSimilarIds)
+                    await Promise.all(ids.map(id => {
+                      const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
+                      return deleteDoc(expenseDocRef)
+                    }))
+                    setShowSimilarModal(false)
+                    setSimilarGroups([])
+                    setSelectedSimilarIds(new Set())
+                    queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
+                  } catch (e: any) {
+                    alert(e.message || 'Error deleting expenses')
+                  }
+                }}
+              >Delete Selected ({selectedSimilarIds.size})</button>
+            </div>
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+              onClick={() => setShowSimilarModal(false)}
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Global actions menu overlay and popup to avoid clipping/scroll issues */}
       {actionOpenId && actionExpense && menuPos && (
         <>
