@@ -116,6 +116,28 @@ export default function Dashboard() {
   const [showRealName, setShowRealName] = useState(false)
   const [loadingNickname, setLoadingNickname] = useState(false)
 
+  // Load nickname from Firestore on mount
+  useEffect(() => {
+    if (!user?.uid) return
+    
+    const loadNickname = async () => {
+      try {
+        const userSettingsRef = collection(db, 'user_settings')
+        const q = query(userSettingsRef, where('user_id', '==', user.uid))
+        const querySnapshot = await getDocs(q)
+        const settingsRow = !querySnapshot.empty ? querySnapshot.docs[0].data() : null
+        
+        if (settingsRow?.nickname) {
+          setNickname(settingsRow.nickname)
+        }
+      } catch (error) {
+        console.error('Failed to load nickname:', error)
+      }
+    }
+    
+    loadNickname()
+  }, [user?.uid])
+
   // Helper function to convert amount to preference currency
   const convertToPrefCurrency = async (amount: number, fromCurrency: string): Promise<number> => {
     if (!amount) return amount

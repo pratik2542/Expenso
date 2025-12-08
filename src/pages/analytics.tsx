@@ -446,7 +446,7 @@ export default function Analytics() {
           <div className="mt-8 space-y-6">
             {/* AI Generated Insights */}
             <div className="card">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <div className="flex items-center gap-2">
                   <SparklesIcon className="w-5 h-5 text-purple-600" />
                   <h3 className="text-lg font-semibold text-gray-900">AI Spending Insights</h3>
@@ -454,7 +454,7 @@ export default function Analytics() {
                 <button
                   onClick={generateAIInsights}
                   disabled={aiInsightsLoading || monthExpenses.length === 0}
-                  className="btn-secondary inline-flex items-center gap-2 text-purple-700 border-purple-200 hover:bg-purple-50 disabled:opacity-50"
+                  className="btn-secondary inline-flex items-center justify-center gap-2 text-purple-700 border-purple-200 hover:bg-purple-50 disabled:opacity-50 w-full sm:w-auto"
                 >
                   <RefreshCwIcon className={`w-4 h-4 ${aiInsightsLoading ? 'animate-spin' : ''}`} />
                   {aiInsightsLoading ? 'Analyzing...' : 'Generate Insights'}
@@ -540,16 +540,16 @@ export default function Analytics() {
 
             {/* Ask AI Section */}
             <div className="card">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col gap-3 mb-4">
                 <div className="flex items-center gap-2">
                   <SparklesIcon className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">Ask AI About Your Finances</h3>
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">Ask AI About Your Finances</h3>
                 </div>
                 {/* Scope Toggle */}
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
                   <button
                     onClick={() => setChatScope('month')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                       chatScope === 'month' 
                         ? 'bg-white text-blue-600 shadow-sm' 
                         : 'text-gray-600 hover:text-gray-900'
@@ -559,7 +559,7 @@ export default function Analytics() {
                   </button>
                   <button
                     onClick={() => setChatScope('all')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                       chatScope === 'all' 
                         ? 'bg-white text-blue-600 shadow-sm' 
                         : 'text-gray-600 hover:text-gray-900'
@@ -628,7 +628,7 @@ export default function Analytics() {
               )}
               
               {/* Question Input */}
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={userQuestion}
@@ -639,14 +639,14 @@ export default function Analytics() {
                       askQuestion()
                     }
                   }}
-                  placeholder="e.g., What's my biggest spending category? How can I save more?"
-                  className="input flex-1"
+                  placeholder="e.g., What's my biggest spending category?"
+                  className="input flex-1 text-sm"
                   disabled={chatLoading}
                 />
                 <button
                   onClick={askQuestion}
                   disabled={chatLoading || !userQuestion.trim()}
-                  className="btn-primary inline-flex items-center gap-2 disabled:opacity-50"
+                  className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50 w-full sm:w-auto"
                 >
                   <SendIcon className="w-4 h-4" />
                   Ask
@@ -655,7 +655,7 @@ export default function Analytics() {
               
               {/* Example Questions */}
               <div className="mt-3 flex flex-wrap gap-2">
-                <span className="text-xs text-gray-500">Try:</span>
+                <span className="text-xs text-gray-500 w-full sm:w-auto">Try:</span>
                 {(chatScope === 'all' ? [
                   'What is my saving rate in last 6 months?',
                   'Which month did I save the most?',
