@@ -15,12 +15,14 @@ import {
 } from 'recharts'
 import Layout from '@/components/Layout'
 import StatsCards from '@/components/StatsCards'
+import AIInsightsWidget from '@/components/AIInsightsWidget'
 import { RequireAuth } from '@/components/RequireAuth'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
+import { collection, query, where, getDocs, orderBy, limit, doc, setDoc } from 'firebase/firestore'
 import { usePreferences } from '@/contexts/PreferencesContext'
+import { SparklesIcon } from 'lucide-react'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
@@ -103,7 +105,16 @@ export default function Dashboard() {
   const { user } = useAuth()
   const { formatCurrency, formatCurrencyExplicit, formatDate, currency: prefCurrency, convertExistingData } = usePreferences()
   const [viewCurrency, setViewCurrency] = useState(prefCurrency)
- 
+  
+  // Get current month/year for AI insights (controlled by StatsCards selector)
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  
+  // AI-generated nickname state
+  const [nickname, setNickname] = useState<string | null>(null)
+  const [showRealName, setShowRealName] = useState(false)
+  const [loadingNickname, setLoadingNickname] = useState(false)
 
   // Helper function to convert amount to preference currency
   const convertToPrefCurrency = async (amount: number, fromCurrency: string): Promise<number> => {
@@ -230,6 +241,83 @@ export default function Dashboard() {
     }
   })
   const [showIncomeHistory, setShowIncomeHistory] = useState(false)
+
+  // Fetch user's full name from settings
+  const { data: userFullName } = useQuery<string>({
+    queryKey: ['user-full-name', user?.uid],
+    enabled: !!user?.uid,
+    queryFn: async () => {
+      if (!user) return ''
+      
+      // Try to get full name from user_settings
+      const userSettingsRef = collection(db, 'user_settings')
+      const q = query(userSettingsRef, where('user_id', '==', user.uid))
+      const querySnapshot = await getDocs(q)
+      const settingsRow = !querySnapshot.empty ? querySnapshot.docs[0].data() : null
+      
+      // Return full_name from settings, fallback to displayName, then email username
+      return settingsRow?.full_name || user.displayName || user.email?.split('@')[0] || 'User'
+    }
+  })
+
+  // Fetch or generate nickname (cached in Firestore to avoid repeated API calls)
+  useQuery({
+    queryKey: ['user-nickname', user?.uid, userFullName],
+    enabled: !!user?.uid && !nickname && !!userFullName,
+    staleTime: Infinity, // Never refetch - nickname is permanent
+    cacheTime: Infinity, // Keep in cache forever
+    queryFn: async () => {
+      if (!user || !userFullName) return null
+      
+      setLoadingNickname(true)
+      try {
+        // First check if nickname already exists in Firestore
+        const userSettingsRef = collection(db, 'user_settings')
+        const q = query(userSettingsRef, where('user_id', '==', user.uid))
+        const querySnapshot = await getDocs(q)
+        const settingsRow = !querySnapshot.empty ? querySnapshot.docs[0].data() : null
+        
+        if (settingsRow?.nickname) {
+          console.log('💾 Using cached nickname from Firestore:', settingsRow.nickname)
+          setNickname(settingsRow.nickname)
+          return settingsRow.nickname
+        }
+        
+        // If no cached nickname, generate a new one
+        console.log('🎲 Generating new nickname for:', userFullName)
+        const response = await fetch('/api/ai/generate-nickname', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fullName: userFullName })
+        })
+        if (!response.ok) throw new Error('Failed to generate nickname')
+        const data = await response.json()
+        console.log('✅ AI Generated Nickname for "' + userFullName + '":', data.nickname)
+        console.log('👤 Full name:', userFullName)
+        console.log('🔤 4-letter code:', data.nickname)
+        
+        // Save to Firestore for future use
+        const docRef = !querySnapshot.empty ? querySnapshot.docs[0].ref : doc(db, 'user_settings', user.uid)
+        await setDoc(docRef, {
+          user_id: user.uid,
+          nickname: data.nickname,
+          updated_at: new Date().toISOString()
+        }, { merge: true })
+        
+        setNickname(data.nickname)
+        return data.nickname
+      } catch (error) {
+        console.error('Nickname generation failed:', error)
+        // Fallback to first name or email username
+        const fallback = userFullName.split(' ')[0] || user.email?.split('@')[0] || 'User'
+        setNickname(fallback)
+        return null
+      } finally {
+        setLoadingNickname(false)
+      }
+    }
+  })
+
   return (
     <>
       <Head>
@@ -238,15 +326,55 @@ export default function Dashboard() {
       </Head>
       <RequireAuth>
       <Layout>
-        <div className="max-w-7xl mx-auto space-y-10">
-          {/* Heading */}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-gray-600 mt-2">Snapshot of your current spending & performance</p>
-
+        <div className="max-w-7xl mx-auto space-y-8">
+          {/* Welcome Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Welcome back,{' '}
+                <span 
+                  className="relative inline-block cursor-pointer group"
+                  onMouseEnter={() => setShowRealName(true)}
+                  onMouseLeave={() => setShowRealName(false)}
+                  onClick={() => setShowRealName(!showRealName)}
+                >
+                  <span className="text-primary-600 border-b-2 border-dashed border-primary-300 hover:border-primary-500 transition-colors">
+                    {loadingNickname ? 'Loading...' : (nickname || userFullName?.split(' ')[0] || 'User')}
+                  </span>
+                  {showRealName && (
+                    <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 px-4 py-2 bg-gray-900 text-white text-base font-medium rounded-lg shadow-lg whitespace-nowrap z-10 animate-in fade-in slide-in-from-top-1 duration-200">
+                      {userFullName || 'User'}
+                      <span className="absolute left-1/2 -translate-x-1/2 -top-1 w-2 h-2 bg-gray-900 rotate-45"></span>
+                    </span>
+                  )}
+                </span>
+                ! 👋
+              </h1>
+              <p className="text-gray-600 mt-1">Here's what's happening with your finances.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              </span>
+            </div>
           </div>
 
-            <StatsCards selectedCurrency={viewCurrency} onSelectedCurrencyChange={setViewCurrency} />
+          <StatsCards 
+            selectedCurrency={viewCurrency} 
+            onSelectedCurrencyChange={setViewCurrency}
+            selectedMonth={selectedMonth}
+            selectedYear={selectedYear}
+            onSelectedMonthChange={setSelectedMonth}
+            onSelectedYearChange={setSelectedYear}
+          />
+          
+          {/* AI Insights Widget */}
+          <AIInsightsWidget 
+            month={selectedMonth} 
+            year={selectedYear} 
+            currency={viewCurrency} 
+          />
+
         {/* Income History (all months) */}
         <div className="card">
           <div className="flex items-center justify-between">
@@ -319,22 +447,53 @@ export default function Dashboard() {
               <h2 className="text-lg font-semibold text-gray-900">Recent Expenses</h2>
               <Link href="/expenses" className="text-sm font-medium text-primary-600 hover:text-primary-500">View all</Link>
             </div>
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
+            
+            {/* Mobile View - Card Layout */}
+            <div className="block sm:hidden space-y-3">
+              {recentExpenses.map(e => (
+                <div key={e.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{e.note || 'No note'}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{e.category}</p>
+                    </div>
+                    <div className="text-right ml-3">
+                      <p className="text-sm font-semibold text-gray-900">
+                        <ConvertedAmount 
+                          amount={e.amount} 
+                          fromCurrency={e.currency} 
+                          prefCurrency={prefCurrency} 
+                          formatCurrency={formatCurrency} 
+                          convertExistingData={convertExistingData}
+                        />
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">{formatDate(e.occurred_on, { month: 'short', day: 'numeric' })}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {recentExpenses.length === 0 && (
+                <div className="text-center py-8 text-sm text-gray-500">No recent expenses</div>
+              )}
+            </div>
+
+            {/* Desktop View - Table Layout */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Note</th>
-                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-4 sm:px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Note</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
                   {recentExpenses.map(e => (
                     <tr key={e.id} className="hover:bg-gray-50">
-                      <td className="px-4 sm:px-6 py-3 text-sm font-medium text-gray-900">{e.note || 'No note'}</td>
-                      <td className="px-4 sm:px-6 py-3 text-sm text-gray-600">{e.category}</td>
-                      <td className="px-4 sm:px-6 py-3 text-sm text-gray-900 text-right">
+                      <td className="px-6 py-3 text-sm font-medium text-gray-900">{e.note || 'No note'}</td>
+                      <td className="px-6 py-3 text-sm text-gray-600">{e.category}</td>
+                      <td className="px-6 py-3 text-sm text-gray-900 text-right">
                         <ConvertedAmount 
                           amount={e.amount} 
                           fromCurrency={e.currency} 
@@ -343,7 +502,7 @@ export default function Dashboard() {
                           convertExistingData={convertExistingData}
                         />
                       </td>
-                      <td className="px-4 sm:px-6 py-3 text-sm text-gray-500 text-right">{formatDate(e.occurred_on, { month: 'short', day: 'numeric' })}</td>
+                      <td className="px-6 py-3 text-sm text-gray-500 text-right">{formatDate(e.occurred_on, { month: 'short', day: 'numeric' })}</td>
                     </tr>
                   ))}
                 </tbody>

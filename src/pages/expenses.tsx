@@ -1,7 +1,7 @@
 import Head from 'next/head'
 import { useState, useEffect } from 'react'
 import Layout from '@/components/Layout'
-import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState as useReactState } from 'react';
 import { db } from '@/lib/firebaseClient'
@@ -220,6 +220,21 @@ export default function Expenses() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [monthFilter, setMonthFilter] = useState('')
+  
+  // Scroll to top button visibility
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400)
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+  
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   // Load categories for filter dropdown
   const { data: categories = [] } = useQuery<Category[]>({
@@ -1088,10 +1103,10 @@ export default function Expenses() {
 
       {/* Similar in Same Month Modal */}
       {showSimilarModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-          <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full p-6 relative max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-2">Similar Expenses in Same Month</h2>
-            <p className="mb-4 text-gray-600 text-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 p-4">
+          <div className="bg-white rounded-lg shadow-lg max-w-3xl w-full p-4 sm:p-6 relative max-h-[90vh] overflow-y-auto">
+            <h2 className="text-lg sm:text-xl font-bold mb-2">Similar Expenses in Same Month</h2>
+            <p className="mb-4 text-gray-600 text-xs sm:text-sm">
               These expenses have the same amount within the same month — they might be duplicates added by mistake. 
               Select the ones you want to delete.
             </p>
@@ -1105,60 +1120,66 @@ export default function Expenses() {
                   const groupAmount = group.expenses[0]?.amount
                   const groupCurrency = group.expenses[0]?.currency
                   return (
-                    <div key={groupIdx} className="border rounded-lg p-3 bg-amber-50 border-amber-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold text-amber-800">{monthName}</span>
-                        <span className="text-sm text-amber-700 bg-amber-100 px-2 py-1 rounded">
+                    <div key={groupIdx} className="border rounded-lg p-2 sm:p-3 bg-amber-50 border-amber-200">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                        <span className="font-semibold text-amber-800 text-sm sm:text-base">{monthName}</span>
+                        <span className="text-xs sm:text-sm text-amber-700 bg-amber-100 px-2 py-1 rounded self-start sm:self-auto">
                           {group.expenses.length} items × {groupAmount} {groupCurrency}
                         </span>
                       </div>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm">
+                      <div className="overflow-x-auto -mx-2 sm:mx-0">
+                        <table className="min-w-full text-xs sm:text-sm">
                           <thead>
                             <tr className="bg-amber-100">
-                              <th className="px-2 py-1 w-10">
-                                <input
-                                  type="checkbox"
-                                  checked={group.expenses.every(e => selectedSimilarIds.has(e.id))}
-                                  onChange={e => {
-                                    setSelectedSimilarIds(prev => {
-                                      const next = new Set(prev)
-                                      group.expenses.forEach(exp => {
-                                        if (e.target.checked) next.add(exp.id)
-                                        else next.delete(exp.id)
+                              <th className="px-1 sm:px-2 py-2 w-8 sm:w-10 align-middle">
+                                <div className="flex items-center justify-center">
+                                  <input
+                                    type="checkbox"
+                                    className="w-3 h-3 sm:w-4 sm:h-4"
+                                    checked={group.expenses.every(e => selectedSimilarIds.has(e.id))}
+                                    onChange={e => {
+                                      setSelectedSimilarIds(prev => {
+                                        const next = new Set(prev)
+                                        group.expenses.forEach(exp => {
+                                          if (e.target.checked) next.add(exp.id)
+                                          else next.delete(exp.id)
+                                        })
+                                        return next
                                       })
-                                      return next
-                                    })
-                                  }}
-                                />
+                                    }}
+                                  />
+                                </div>
                               </th>
-                              <th className="px-2 py-1 text-left">Description</th>
-                              <th className="px-2 py-1 text-left">Merchant</th>
-                              <th className="px-2 py-1 text-left">Amount</th>
-                              <th className="px-2 py-1 text-left">Date</th>
+                              <th className="px-1 sm:px-2 py-2 text-left text-xs align-middle">Note</th>
+                              <th className="px-1 sm:px-2 py-2 text-left text-xs align-middle hidden sm:table-cell">Merchant</th>
+                              <th className="px-1 sm:px-2 py-2 text-left text-xs align-middle">Amount</th>
+                              <th className="px-1 sm:px-2 py-2 text-left text-xs align-middle">Date</th>
                             </tr>
                           </thead>
                           <tbody>
                             {group.expenses.map(exp => (
                               <tr key={exp.id} className="border-t border-amber-200 bg-white">
-                                <td className="px-2 py-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedSimilarIds.has(exp.id)}
-                                    onChange={e => {
-                                      setSelectedSimilarIds(prev => {
-                                        const next = new Set(prev)
-                                        if (e.target.checked) next.add(exp.id)
-                                        else next.delete(exp.id)
-                                        return next
-                                      })
-                                    }}
-                                  />
+                                <td className="px-1 sm:px-2 py-2 align-middle">
+                                  <div className="flex items-center justify-center">
+                                    <input
+                                      type="checkbox"
+                                      className="w-3 h-3 sm:w-4 sm:h-4"
+                                      checked={selectedSimilarIds.has(exp.id)}
+                                      onChange={e => {
+                                        setSelectedSimilarIds(prev => {
+                                          const next = new Set(prev)
+                                          if (e.target.checked) next.add(exp.id)
+                                          else next.delete(exp.id)
+                                          return next
+                                        })
+                                      }}
+                                    />
+                                  </div>
                                 </td>
-                                <td className="px-2 py-1">{exp.note || exp.category || 'No description'}</td>
-                                <td className="px-2 py-1">{exp.merchant || '-'}</td>
-                                <td className="px-2 py-1">{exp.amount} {exp.currency}</td>
-                                <td className="px-2 py-1">{formatDate(exp.occurred_on)}</td>
+                                <td className="px-1 sm:px-2 py-2 text-xs sm:text-sm truncate max-w-[100px] sm:max-w-none align-middle">{exp.note || exp.category || 'No description'}</td>
+                                <td className="px-1 sm:px-2 py-2 text-xs sm:text-sm hidden sm:table-cell align-middle">{exp.merchant || '-'}</td>
+                                <td className="px-1 sm:px-2 py-2 text-xs sm:text-sm whitespace-nowrap align-middle">{exp.amount} {exp.currency}</td>
+                                <td className="px-1 sm:px-2 py-2 text-xs sm:text-sm whitespace-nowrap align-middle">{formatDate(exp.occurred_on)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1240,6 +1261,17 @@ export default function Expenses() {
             </button>
           </div>
         </>
+      )}
+      
+      {/* Scroll to Top Button */}
+      {showScrollTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-6 right-6 z-50 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all duration-300 hover:scale-110"
+          aria-label="Scroll to top"
+        >
+          <ArrowUpIcon className="w-5 h-5" />
+        </button>
       )}
     </RequireAuth>
     </>

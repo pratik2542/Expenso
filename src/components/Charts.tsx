@@ -151,54 +151,75 @@ export default function Charts({ month, year, currency }: { month: number; year:
       {/* Expenses by Category */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Expenses by Category</h3>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={categoryData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {categoryData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {categoryData.map((category, idx) => (
-            <div key={category.name} className="flex items-center gap-2">
-              <div 
-                className="w-3 h-3 rounded-full" 
-                style={{ backgroundColor: palette[idx % palette.length] }}
-              ></div>
-              <span className="text-xs text-gray-600 truncate">{category.name}</span>
-              <span className="text-xs font-medium text-gray-900">{formatCurrencyExplicit(category.value, viewCurrency)}</span>
+        {categoryData.length > 0 ? (
+          <>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={100}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-          ))}
-        </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {categoryData.map((category, idx) => (
+                <div key={category.name} className="flex items-center gap-2">
+                  <div 
+                    className="w-3 h-3 rounded-full" 
+                    style={{ backgroundColor: palette[idx % palette.length] }}
+                  ></div>
+                  <span className="text-xs text-gray-600 truncate">{category.name}</span>
+                  <span className="text-xs font-medium text-gray-900">{formatCurrencyExplicit(category.value, viewCurrency)}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+            <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+            <p className="text-sm">No expenses this month</p>
+          </div>
+        )}
       </div>
 
       {/* Monthly Spending Trend */}
       <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Spending Trend</h3>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
-              <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {monthlyData.some(d => d.amount > 0) ? (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
+                <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+            <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <p className="text-sm">No spending history found</p>
+          </div>
+        )}
       </div>
     </div>
   )

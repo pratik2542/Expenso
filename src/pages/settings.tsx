@@ -253,6 +253,8 @@ export default function Settings() {
     }
   }
 
+  
+
   return (
     <RequireAuth>
       <Head>
@@ -334,6 +336,50 @@ export default function Settings() {
                     disabled
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 cursor-not-allowed"
                   />
+                </div>
+              </div>
+
+              {/* Regenerate Nickname */}
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Dashboard Nickname</label>
+                    <p className="text-xs text-gray-500">Regenerate your AI-generated 4-letter code</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!user) return
+                      const confirmed = confirm('Regenerate your nickname? This will create a new 4-letter code.')
+                      if (!confirmed) return
+                      
+                      try {
+                        setLoading(true)
+                        // Delete cached nickname from Firestore
+                        const userSettingsRef = collection(db, 'user_settings')
+                        const q = query(userSettingsRef, where('user_id', '==', user.uid))
+                        const querySnapshot = await getDocs(q)
+                        
+                        if (!querySnapshot.empty) {
+                          const docRef = querySnapshot.docs[0].ref
+                          await setDoc(docRef, {
+                            nickname: null,
+                            updated_at: new Date().toISOString()
+                          }, { merge: true })
+                        }
+                        
+                        setError('Nickname cleared! Reload the dashboard to generate a new one.')
+                      } catch (e: any) {
+                        setError('Failed to clear nickname: ' + e.message)
+                      } finally {
+                        setLoading(false)
+                      }
+                    }}
+                    className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                    disabled={loading}
+                  >
+                    🔄 Regenerate
+                  </button>
                 </div>
               </div>
             </div>

@@ -13,7 +13,23 @@ function startEndOfMonth(d = new Date()) {
   return { start: toISO(start), end: toISO(end) }
 }
 
-export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange }: { selectedCurrency?: string; onSelectedCurrencyChange?: (code: string) => void } = {}) {
+interface StatsCardsProps {
+  selectedCurrency?: string
+  onSelectedCurrencyChange?: (code: string) => void
+  selectedMonth?: number
+  selectedYear?: number
+  onSelectedMonthChange?: (month: number) => void
+  onSelectedYearChange?: (year: number) => void
+}
+
+export default function StatsCards({ 
+  selectedCurrency, 
+  onSelectedCurrencyChange,
+  selectedMonth: controlledMonth,
+  selectedYear: controlledYear,
+  onSelectedMonthChange,
+  onSelectedYearChange
+}: StatsCardsProps = {}) {
   const { user } = useAuth()
   const { formatCurrencyExplicit, currency: prefCurrency } = usePreferences()
   const now = new Date()
@@ -22,8 +38,22 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
   const year = now.getFullYear()
 
   // Month/Year selection for editing income (defaults to current)
-  const [selectedMonth, setSelectedMonth] = useState(month)
-  const [selectedYear, setSelectedYear] = useState(year)
+  // Use controlled values if provided, otherwise use local state
+  const [localMonth, setLocalMonth] = useState(month)
+  const [localYear, setLocalYear] = useState(year)
+  
+  const selectedMonth = controlledMonth ?? localMonth
+  const selectedYear = controlledYear ?? localYear
+  
+  const setSelectedMonth = (m: number) => {
+    if (onSelectedMonthChange) onSelectedMonthChange(m)
+    else setLocalMonth(m)
+  }
+  
+  const setSelectedYear = (y: number) => {
+    if (onSelectedYearChange) onSelectedYearChange(y)
+    else setLocalYear(y)
+  }
   const { start: selectedStart, end: selectedEnd } = startEndOfMonth(new Date(selectedYear, selectedMonth - 1, 1))
 
   // In mixed mode, we don't convert. Use the selected incomeCurrency as the view currency for all cards.
@@ -160,15 +190,21 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
     const incomeAmt = Number(income.amount || 0)
     if (incomeAmt > 0) {
       const balance = incomeAmt - spending.amount
+      const isDeficit = balance < 0
+      
       cards.unshift({
         name: 'Total Balance',
         value: formatCurrencyExplicit(balance, viewCurrency),
         icon: TrendingUpIcon,
       })
-  const savingsRate = incomeAmt > 0 ? Math.max(0, Math.min(100, (balance / incomeAmt) * 100)) : 0
+      
+      // Calculate savings rate (can be negative for deficit)
+      const savingsRate = incomeAmt > 0 ? ((balance / incomeAmt) * 100) : 0
+      
+      // Add savings rate card
       cards.push({
-        name: 'Savings Rate',
-        value: `${savingsRate.toFixed(0)}%`,
+        name: isDeficit ? 'Deficit Rate' : 'Savings Rate',
+        value: `${Math.abs(savingsRate).toFixed(0)}%${isDeficit ? ' over' : ''}`,
         icon: TrendingUpIcon,
       })
     }
@@ -305,17 +341,22 @@ export default function StatsCards({ selectedCurrency, onSelectedCurrencyChange 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map((stat) => {
         const IconComponent = stat.icon
+        const isDeficitCard = stat.name === 'Deficit Rate' || (stat.name === 'Total Balance' && stat.value.startsWith('-'))
+        const borderColor = isDeficitCard ? 'border-red-500' : 'border-indigo-500'
+        const bgColor = isDeficitCard ? 'bg-red-50' : 'bg-indigo-50'
+        const textColor = isDeficitCard ? 'text-red-600' : 'text-indigo-600'
+        
         return (
-          <div key={stat.name} className="card">
+          <div key={stat.name} className={`card hover:shadow-md transition-shadow duration-200 border-l-4 ${borderColor}`}>
             <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <IconComponent className="h-6 w-6 text-gray-400" />
+              <div className={`flex-shrink-0 p-3 ${bgColor} rounded-lg`}>
+                <IconComponent className={`h-6 w-6 ${textColor}`} />
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
                   <dd className="flex items-baseline">
-                    <div className="text-2xl font-semibold text-gray-900">{stat.value}</div>
+                    <div className={`text-2xl font-semibold ${isDeficitCard ? 'text-red-600' : 'text-gray-900'}`}>{stat.value}</div>
                   </dd>
                 </dl>
               </div>

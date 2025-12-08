@@ -35,6 +35,7 @@ export default function Analytics() {
   const [userQuestion, setUserQuestion] = useState('')
   const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'ai', content: string}>>([])
   const [chatLoading, setChatLoading] = useState(false)
+  const [chatScope, setChatScope] = useState<'month' | 'all'>('month') // Toggle for chat data scope
   
   console.log('AnalyticsPage - User:', user?.uid, 'Loading:', !user)
 
@@ -70,6 +71,68 @@ export default function Analytics() {
       }
     }
   })
+
+  // Fetch ALL expenses for the user (for "All Time" chat scope)
+  const { data: allExpenses = [] } = useQuery<Expense[]>({
+    queryKey: ['analytics-all-expenses', user?.uid, viewCurrency],
+    enabled: !!user?.uid && chatScope === 'all',
+    queryFn: async () => {
+      if (!user?.uid) return []
+      try {
+        const expensesRef = collection(db, 'expenses', user.uid, 'items')
+        const q = query(
+          expensesRef,
+          where('currency', '==', viewCurrency)
+        )
+        const snapshot = await getDocs(q)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Expense[]
+      } catch (error) {
+        console.error('All expenses query failed:', error)
+        return []
+      }
+    }
+  })
+
+  // Fetch all income records for all time (with month/year breakdown)
+  interface IncomeRecord {
+    month: number
+    year: number
+    amount: number
+    currency: string
+  }
+  
+  const { data: allTimeIncomeData = [] } = useQuery<IncomeRecord[]>({
+    queryKey: ['analytics-all-income-detailed', user?.uid, viewCurrency],
+    enabled: !!user?.uid && chatScope === 'all',
+    queryFn: async () => {
+      if (!user?.uid) return []
+      try {
+        const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
+        const q = query(incomeRef, where('currency', '==', viewCurrency))
+        const snapshot = await getDocs(q)
+        return snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            month: data.month,
+            year: data.year,
+            amount: Number(data.amount || 0),
+            currency: data.currency
+          }
+        })
+      } catch (error) {
+        console.error('All income query failed:', error)
+        return []
+      }
+    }
+  })
+  
+  // Calculate total income for all time
+  const allTimeIncomeTotal = useMemo(() => {
+    return allTimeIncomeData.reduce((acc, inc) => acc + inc.amount, 0)
+  }, [allTimeIncomeData])
 
   // Total spend for selected month with currency conversion
   const { data: spendTotal = 0 } = useQuery({
@@ -147,7 +210,8 @@ export default function Analytics() {
           income: { amount: incomeAmt, currency: viewCurrency },
           month: selectedMonth,
           year: selectedYear,
-          currency: viewCurrency
+          currency: viewCurrency,
+          format: 'markdown' // Request detailed markdown format for analytics page
         })
       })
       
@@ -164,10 +228,18 @@ export default function Analytics() {
   // Function to ask a question
   const askQuestion = async () => {
     if (!userQuestion.trim()) return
-    if (monthExpenses.length === 0) {
+    
+    const expensesToUse = chatScope === 'all' ? allExpenses : monthExpenses
+    const incomeToUse = chatScope === 'all' ? allTimeIncomeTotal : incomeAmt
+    const incomeRecordsToUse = chatScope === 'all' ? allTimeIncomeData : null
+    const periodLabel = chatScope === 'all' 
+      ? 'All Time' 
+      : new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+    
+    if (expensesToUse.length === 0) {
       setChatHistory(prev => [...prev, 
         { role: 'user', content: userQuestion },
-        { role: 'ai', content: 'No expenses found for this month to analyze. Please add some expenses first.' }
+        { role: 'ai', content: `No expenses found for ${periodLabel} to analyze. Please add some expenses first.` }
       ])
       setUserQuestion('')
       return
@@ -183,12 +255,14 @@ export default function Analytics() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          expenses: monthExpenses,
-          income: { amount: incomeAmt, currency: viewCurrency },
+          expenses: expensesToUse,
+          income: { amount: incomeToUse, currency: viewCurrency },
+          incomeRecords: incomeRecordsToUse, // Pass monthly income breakdown for all-time analysis
           month: selectedMonth,
           year: selectedYear,
           currency: viewCurrency,
-          question
+          question,
+          periodLabel: chatScope === 'all' ? 'All Time Data' : undefined
         })
       })
       
@@ -466,12 +540,45 @@ export default function Analytics() {
 
             {/* Ask AI Section */}
             <div className="card">
-              <div className="flex items-center gap-2 mb-4">
-                <SparklesIcon className="w-5 h-5 text-blue-600" />
-                <h3 className="text-lg font-semibold text-gray-900">Ask AI About Your Finances</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <SparklesIcon className="w-5 h-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900">Ask AI About Your Finances</h3>
+                </div>
+                {/* Scope Toggle */}
+                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setChatScope('month')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      chatScope === 'month' 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    This Month
+                  </button>
+                  <button
+                    onClick={() => setChatScope('all')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      chatScope === 'all' 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    All Time
+                  </button>
+                </div>
               </div>
               <p className="text-sm text-gray-600 mb-4">
-                Ask any question about your spending data for {new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}.
+                {chatScope === 'all' 
+                  ? `Ask any question about all your ${viewCurrency} finances across all time.`
+                  : `Ask any question about your spending data for ${new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}.`
+                }
+                {chatScope === 'all' && allExpenses.length > 0 && (
+                  <span className="ml-1 text-blue-600 font-medium">
+                    ({allExpenses.length} transactions, {allTimeIncomeData.length} income records)
+                  </span>
+                )}
               </p>
               
               {/* Chat History */}
@@ -549,12 +656,17 @@ export default function Analytics() {
               {/* Example Questions */}
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="text-xs text-gray-500">Try:</span>
-                {[
+                {(chatScope === 'all' ? [
+                  'What is my saving rate in last 6 months?',
+                  'Which month did I save the most?',
+                  'What\'s my average monthly spending?',
+                  'How are my savings trending?'
+                ] : [
                   'Where am I spending the most?',
                   'How can I reduce my expenses?',
                   'Am I on track with my budget?',
                   'What are my top 3 merchants?'
-                ].map((q, i) => (
+                ]).map((q, i) => (
                   <button
                     key={i}
                     onClick={() => {
