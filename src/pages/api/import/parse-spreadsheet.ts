@@ -59,6 +59,7 @@ function toNumber(val: unknown): number | null {
 }
 
 function parseExcelDate(val: unknown): string | null {
+  // console.log(`[DEBUG] parseExcelDate input: ${val} (${typeof val})`)
   if (val == null) return null
   if (val instanceof Date) {
     if (!isNaN(val.getTime())) return val.toISOString().slice(0, 10)
@@ -74,25 +75,48 @@ function parseExcelDate(val: unknown): string | null {
   if (typeof val === 'string') {
     const s = val.trim()
     if (!s) return null
-    // Try common formats first: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, e.g.
-    // Normalize to a parsable format for Date
-    // Prefer explicit parsing
+    
+    // ISO format YYYY-MM-DD
     const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
     if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`
-    const dmy = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/)
-    if (dmy) {
-      let [_, dd, mm, yy] = dmy
-      if (yy.length === 2) yy = `20${yy}`
-      const d = new Date(Number(yy), Number(mm) - 1, Number(dd))
-      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+    
+    // Slash or dash separated: part1/part2/part3
+    const partsMatch = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/)
+    if (partsMatch) {
+      let [_, p1, p2, p3] = partsMatch
+      let y = Number(p3)
+      if (p3.length === 2) y += 2000 // Assume 20xx
+      
+      const n1 = Number(p1)
+      const n2 = Number(p2)
+      
+      // Heuristic:
+      // If n1 > 12, it must be DD/MM/YYYY (since MM cannot be > 12)
+      if (n1 > 12) {
+        const d = new Date(y, n2 - 1, n1)
+        if (!isNaN(d.getTime())) {
+           console.log(`[DEBUG] Parsed ${s} as DD/MM/YYYY -> ${d.toISOString().slice(0, 10)}`)
+           return d.toISOString().slice(0, 10)
+        }
+      }
+      
+      // If n2 > 12, it must be MM/DD/YYYY (since MM cannot be > 12)
+      if (n2 > 12) {
+        const d = new Date(y, n1 - 1, n2)
+        if (!isNaN(d.getTime())) {
+           console.log(`[DEBUG] Parsed ${s} as MM/DD/YYYY -> ${d.toISOString().slice(0, 10)}`)
+           return d.toISOString().slice(0, 10)
+        }
+      }
+      
+      // Ambiguous case (both <= 12). Prefer MM/DD/YYYY for US/Canada context
+      const d = new Date(y, n1 - 1, n2)
+      if (!isNaN(d.getTime())) {
+         console.log(`[DEBUG] Parsed ${s} as MM/DD/YYYY (ambiguous) -> ${d.toISOString().slice(0, 10)}`)
+         return d.toISOString().slice(0, 10)
+      }
     }
-    const mdy = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/)
-    if (mdy) {
-      let [_, mm, dd, yy] = mdy
-      if (yy.length === 2) yy = `20${yy}`
-      const d = new Date(Number(yy), Number(mm) - 1, Number(dd))
-      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
-    }
+
     const parsed = new Date(s)
     if (!isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10)
   }
@@ -425,13 +449,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             else if (direction === 'debit' && signed < 0) signed = Math.abs(signed)
             else if (!direction && refundLike && signed > 0) signed = -Math.abs(signed)
           }
+          let occurred_on = e.occurred_on
+          // If AI returns an invalid date (e.g. 2025-11-XX), try to recover it from the original row using manual parser
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(occurred_on) || occurred_on.includes('XX')) {
+             const idx = Number((e as any).line_index)
+             if (Number.isFinite(idx) && idx >= 1 && rows[idx - 1]) {
+                const row = rows[idx - 1]
+                // Try to find date using the header map if available
+                if (headerMap['date'] !== undefined) {
+                   const manualDate = parseExcelDate(row[headerMap['date']])
+                   if (manualDate) {
+                      console.log(`[DEBUG] Recovered date for line ${idx} from manual parser: ${manualDate}`)
+                      occurred_on = manualDate
+                   }
+                } else {
+                   // Fallback: scan row for any date-like cell
+                   for (const cell of row) {
+                      const d = parseExcelDate(cell)
+                      if (d) {
+                         console.log(`[DEBUG] Recovered date for line ${idx} by scanning row: ${d}`)
+                         occurred_on = d
+                         break
+                      }
+                   }
+                }
+             }
+          }
+
+          // Ensure we pass the final date through the parser one last time to be safe
+          const finalDate = parseExcelDate(occurred_on) || occurred_on
+
           return {
             amount: signed,
             currency: String(e.currency || 'USD').toUpperCase(),
             merchant: e.merchant || undefined,
             payment_method: e.payment_method || undefined,
             note: e.note || undefined,
-            occurred_on: e.occurred_on,
+            occurred_on: finalDate,
             category: e.category || undefined,
             line_index: Number.isFinite(Number((e as any).line_index)) ? Number((e as any).line_index) : undefined,
           }
@@ -472,6 +526,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     // If external calls disabled, return local parse
     if (process.env.AI_DISABLE_EXTERNAL === '1') {
+      console.log('[DEBUG] AI disabled, returning manual results')
       return res.status(200).json({ success: true, expenses })
     }
 
@@ -490,6 +545,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       }
       // Prefer AI results; if none, fallback to local parsed rows
       if (extracted.length > 0) {
+        console.log(`[DEBUG] AI extracted ${extracted.length} expenses. First one:`, extracted[0])
         // Filter out negative card payments from AI output
         const filtered = extracted.filter((e) => {
           const txt = `${e.merchant || ''} ${e.note || ''}`.toLowerCase()
@@ -498,9 +554,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         })
         return res.status(200).json({ success: true, expenses: filtered })
       }
+      console.log('[DEBUG] AI returned no results, falling back to manual parsing')
       return res.status(200).json({ success: true, expenses })
     } catch (e: any) {
       // On AI error, fallback to local parsed rows
+      console.error('[DEBUG] AI parsing failed:', e)
       return res.status(200).json({ success: true, expenses })
     }
   } catch (e: any) {

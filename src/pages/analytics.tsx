@@ -306,11 +306,11 @@ export default function Analytics() {
           </div>
 
           {/* Period and Currency selection */}
-          <div className="card mb-6">
+          <div className="card mb-4 sm:mb-6">
             {/* Mobile Layout - Stacked with Labels */}
-            <div className="flex flex-col gap-4 lg:hidden">
+            <div className="flex flex-col gap-2 sm:gap-4 lg:hidden">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Month</label>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Month</label>
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
@@ -321,9 +321,9 @@ export default function Analytics() {
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Year</label>
                   <select
                     value={selectedYear}
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
@@ -335,7 +335,7 @@ export default function Analytics() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Currency</label>
                   <select
                     value={viewCurrency}
                     onChange={(e) => setViewCurrency(e.target.value)}
@@ -391,14 +391,14 @@ export default function Analytics() {
           </div>
 
           {/* Quick Stats */}
-          <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-6 mb-8">
+          <div className="space-y-3 sm:space-y-4 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-6 mb-6 sm:mb-8">
             <div className="card">
               <div className="flex items-center justify-between">
                 <div className="flex items-center min-w-0 flex-1">
-                  <div className="p-3 rounded-full bg-primary-100 flex-shrink-0">
-                    <DollarSignIcon className="w-6 h-6 text-primary-600" />
+                  <div className="p-2 sm:p-3 rounded-full bg-primary-100 flex-shrink-0">
+                    <DollarSignIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
                   </div>
-                  <div className="ml-4 min-w-0">
+                  <div className="ml-3 sm:ml-4 min-w-0">
                     <p className="text-sm font-medium text-gray-600">Average Daily Spend</p>
                     <p className="text-lg lg:text-2xl font-bold text-gray-900">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
                   </div>
@@ -409,10 +409,10 @@ export default function Analytics() {
             <div className="card">
               <div className="flex items-center justify-between">
                 <div className="flex items-center min-w-0 flex-1">
-                  <div className={`p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100' : 'bg-success-100'}`}>
-                    <TrendingUpIcon className={`w-6 h-6 ${isOverspending ? 'text-red-600 rotate-180' : 'text-success-600'}`} />
+                  <div className={`p-2 sm:p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100' : 'bg-success-100'}`}>
+                    <TrendingUpIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${isOverspending ? 'text-red-600 rotate-180' : 'text-success-600'}`} />
                   </div>
-                  <div className="ml-4 min-w-0">
+                  <div className="ml-3 sm:ml-4 min-w-0">
                     <p className="text-sm font-medium text-gray-600">{isOverspending ? 'Deficit' : 'Savings'}</p>
                     <p className={`text-lg lg:text-2xl font-bold ${isOverspending ? 'text-red-600' : 'text-gray-900'}`}>
                       {formatCurrencyExplicit(Math.abs(savings), viewCurrency)}
@@ -426,10 +426,10 @@ export default function Analytics() {
               <div className="card">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center min-w-0 flex-1">
-                    <div className="p-3 rounded-full bg-warning-100 flex-shrink-0">
-                      <span className="w-6 h-6 inline-flex items-center justify-center text-warning-700 font-semibold">⏳</span>
+                    <div className="p-2 sm:p-3 rounded-full bg-warning-100 flex-shrink-0">
+                      <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-warning-700 font-semibold">⏳</span>
                     </div>
-                    <div className="ml-4 min-w-0">
+                    <div className="ml-3 sm:ml-4 min-w-0">
                       <p className="text-sm font-medium text-gray-600">Days left in month</p>
                       <p className="text-lg lg:text-2xl font-bold text-gray-900">{daysLeft}</p>
                     </div>

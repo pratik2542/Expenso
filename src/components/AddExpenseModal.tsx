@@ -789,7 +789,14 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                       {parsedExpenses.map((p, idx) => (
                                         <tr key={idx} className="border-t">
                                           <td className="px-2 py-2 sticky left-0 bg-white"><input type="checkbox" checked={p.selected !== false} onChange={() => toggleSelect(idx)} /></td>
-                                          <td className="px-2 py-2 whitespace-nowrap">{p.occurred_on}</td>
+                                          <td className="px-2 py-2 whitespace-nowrap">
+                                            <input
+                                              type="date"
+                                              value={p.occurred_on}
+                                              onChange={(ev) => updateParsedRow(idx, { occurred_on: ev.target.value })}
+                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white w-full"
+                                            />
+                                          </td>
                                           <td className="px-2 py-2 text-right whitespace-nowrap">
                                             <div className="flex items-center justify-end gap-1">
                                               <span>{p.amount}</span>
@@ -804,7 +811,15 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                             </div>
                                           </td>
                                           <td className="px-2 py-2 whitespace-nowrap">{p.currency}</td>
-                                          <td className="px-2 py-2">{p.merchant || '—'}</td>
+                                          <td className="px-2 py-2">
+                                            <input
+                                              type="text"
+                                              value={p.merchant || ''}
+                                              onChange={(ev) => updateParsedRow(idx, { merchant: ev.target.value })}
+                                              placeholder="Enter merchant"
+                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white w-full"
+                                            />
+                                          </td>
                                           <td className="px-2 py-2">
                                             <select
                                               value={p.payment_method || ''}

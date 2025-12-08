@@ -213,20 +213,20 @@ export default function StatsCards({
   if (cards.length === 0) return null
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       {/* Monthly Income editor */}
       <div className="card">
         {/* Header - always visible */}
-        <div className="text-sm font-medium text-gray-700 mb-3">
+        <div className="text-sm font-medium text-gray-700 mb-2 sm:mb-3">
           Monthly Income
           <span className="hidden sm:inline"> ({new Date(selectedYear, selectedMonth - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })})</span>
         </div>
         {incomeError && (
-          <div className="text-xs text-red-600 mb-3">{incomeError}</div>
+          <div className="text-xs text-red-600 mb-2 sm:mb-3">{incomeError}</div>
         )}
         
         {/* Mobile Layout - Stacked */}
-        <div className="flex flex-col gap-3 sm:hidden">
+        <div className="flex flex-col gap-2 sm:hidden">
           <div className="grid grid-cols-2 gap-2">
             <select
               value={selectedMonth}
@@ -338,7 +338,7 @@ export default function StatsCards({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4">
       {cards.map((stat) => {
         const IconComponent = stat.icon
         const isDeficitCard = stat.name === 'Deficit Rate' || (stat.name === 'Total Balance' && stat.value.startsWith('-'))
@@ -347,16 +347,16 @@ export default function StatsCards({
         const textColor = isDeficitCard ? 'text-red-600' : 'text-indigo-600'
         
         return (
-          <div key={stat.name} className={`card hover:shadow-md transition-shadow duration-200 border-l-4 ${borderColor}`}>
+          <div key={stat.name} className={`card hover:shadow-md transition-shadow duration-200 border-l-4 ${borderColor} px-3 py-3 sm:px-4 sm:py-4`}>
             <div className="flex items-center">
-              <div className={`flex-shrink-0 p-3 ${bgColor} rounded-lg`}>
-                <IconComponent className={`h-6 w-6 ${textColor}`} />
+              <div className={`flex-shrink-0 p-2 sm:p-3 ${bgColor} rounded-lg`}>
+                <IconComponent className={`h-5 w-5 sm:h-6 sm:w-6 ${textColor}`} />
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
+                  <dt className="text-xs sm:text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
                   <dd className="flex items-baseline">
-                    <div className={`text-2xl font-semibold ${isDeficitCard ? 'text-red-600' : 'text-gray-900'}`}>{stat.value}</div>
+                    <div className={`text-lg sm:text-2xl font-semibold ${isDeficitCard ? 'text-red-600' : 'text-gray-900'}`}>{stat.value}</div>
                   </dd>
                 </dl>
               </div>

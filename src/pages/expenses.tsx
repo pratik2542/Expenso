@@ -572,19 +572,19 @@ export default function Expenses() {
           </div>
 
           {/* Filters and Search - Responsive for mobile */}
-          <div className="card mb-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:gap-4">
+          <div className="card mb-4 sm:mb-6">
+            <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 w-full">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-gray-600 mb-1 sm:sr-only">Search</label>
                   <div className="relative">
-                    <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
+                    <SearchIcon className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="Search by note, merchant, category, method, or amount..."
+                      placeholder="Search..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="input !pl-14 pr-3"
+                      className="input !pl-10 sm:!pl-14 pr-3"
                     />
                   </div>
                 </div>
@@ -630,7 +630,7 @@ export default function Expenses() {
                     </select>
                     <button
                       onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                      className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                      className="px-3 py-1.5 sm:py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                       title={`Sort ${sortOrder === 'asc' ? 'descending' : 'ascending'}`}
                     >
                       {sortOrder === 'asc' ? '↑' : '↓'}
@@ -640,7 +640,7 @@ export default function Expenses() {
               </div>
             </div>
             {/* Results Summary */}
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col gap-3">
+            <div className="mt-2 pt-2 sm:mt-4 sm:pt-4 border-t border-gray-200 flex flex-col gap-2 sm:gap-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-sm text-gray-600">
                   {isLoading ? 'Loading...' : `${sortedExpenses.length} expense(s) found`}

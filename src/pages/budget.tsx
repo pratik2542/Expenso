@@ -529,8 +529,8 @@ export default function BudgetPage() {
         <Layout>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
-          <div className="mb-8">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mb-6 sm:mb-8">
+            <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Budget</h1>
                 <p className="text-gray-600 mt-1 sm:mt-2 text-sm sm:text-base">Set spending limits and track your progress</p>
@@ -546,15 +546,15 @@ export default function BudgetPage() {
           </div>
 
           {/* Budget Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
             <div className="card">
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-primary-100">
+                <div className="p-2 sm:p-3 rounded-full bg-primary-100">
                   <span className="text-primary-600 font-semibold">$</span>
                 </div>
-                <div className="ml-4">
+                <div className="ml-3 sm:ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Budget</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900">
                     {singleCurrency ? (
                       <ConvertedAmount 
                         amount={totalBudget} 
@@ -571,12 +571,12 @@ export default function BudgetPage() {
 
             <div className="card">
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-warning-100">
+                <div className="p-2 sm:p-3 rounded-full bg-warning-100">
                   <span className="text-warning-600 font-semibold">$</span>
                 </div>
-                <div className="ml-4">
+                <div className="ml-3 sm:ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Spent</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900">
                     {singleCurrency ? (
                       <ConvertedAmount 
                         amount={totalSpent} 
@@ -593,10 +593,10 @@ export default function BudgetPage() {
 
             <div className="card">
               <div className="flex items-center">
-                <div className="p-3 rounded-full bg-success-100">
+                <div className="p-2 sm:p-3 rounded-full bg-success-100">
                   <span className="text-success-600 font-semibold">$</span>
                 </div>
-                <div className="ml-4">
+                <div className="ml-3 sm:ml-4">
                   <p className="text-sm font-medium text-gray-600">Remaining</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {singleCurrency ? (

@@ -147,13 +147,13 @@ export default function Charts({ month, year, currency }: { month: number; year:
     }
   })
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
       {/* Expenses by Category */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Expenses by Category</h3>
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 sm:mb-4">Expenses by Category</h3>
         {categoryData.length > 0 ? (
           <>
-            <div className="h-64">
+            <div className="h-56 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -173,7 +173,7 @@ export default function Charts({ month, year, currency }: { month: number; year:
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-2 sm:mt-4 grid grid-cols-2 gap-2">
               {categoryData.map((category, idx) => (
                 <div key={category.name} className="flex items-center gap-2">
                   <div 
@@ -187,7 +187,7 @@ export default function Charts({ month, year, currency }: { month: number; year:
             </div>
           </>
         ) : (
-          <div className="h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+          <div className="h-56 sm:h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
             <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
@@ -199,9 +199,9 @@ export default function Charts({ month, year, currency }: { month: number; year:
 
       {/* Monthly Spending Trend */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Spending Trend</h3>
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 sm:mb-4">Monthly Spending Trend</h3>
         {monthlyData.some(d => d.amount > 0) ? (
-          <div className="h-64">
+          <div className="h-56 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthlyData}>
                 <CartesianGrid strokeDasharray="3 3" />
@@ -213,7 +213,7 @@ export default function Charts({ month, year, currency }: { month: number; year:
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+          <div className="h-56 sm:h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
             <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
