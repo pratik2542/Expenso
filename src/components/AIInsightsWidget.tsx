@@ -18,6 +18,7 @@ interface InsightData {
   summary: string
   highlights: Array<{ icon: string; text: string }>
   generatedAt?: string
+  periodLabel?: string
 }
 
 export default function AIInsightsWidget({ month, year, currency }: AIInsightsWidgetProps) {
@@ -133,14 +134,24 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
 
   // Fetch insights (from DB only initially)
   const { data: insights, isLoading: loadingInsights } = useQuery<InsightData | null>({
-    queryKey: ['ai-insights-result', user?.uid, month, year, currency],
+    queryKey: ['ai-insights-result', user?.uid, month, year, currency, monthlyData?.periodLabel],
     enabled: !!monthlyData && monthlyData.expenses.length > 0,
     queryFn: async () => {
       if (!user?.uid) return null
       const docId = `${year}-${month}-${currency}`
       const insightRef = doc(db, 'insights', user.uid, 'items', docId)
       const insightSnap = await getDoc(insightRef)
-      return insightSnap.exists() ? (insightSnap.data() as InsightData) : null
+      
+      if (!insightSnap.exists()) return null
+      
+      const data = insightSnap.data() as InsightData
+      // If the cached insight is for a different period scope (e.g. was 'Last 6 Months' but now we have 'Last 30 Days' data),
+      // ignore the cache so user can regenerate relevant insights.
+      if (data.periodLabel !== monthlyData?.periodLabel) {
+        return null
+      }
+      
+      return data
     }
   })
 
@@ -167,7 +178,8 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
       
       const insightData: InsightData = {
         ...parsed,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        periodLabel: monthlyData.periodLabel
       }
       
       // Save to Firestore
@@ -176,7 +188,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
       await setDoc(insightRef, insightData)
       
       // Update Cache
-      queryClient.setQueryData(['ai-insights-result', user.uid, month, year, currency], insightData)
+      queryClient.setQueryData(['ai-insights-result', user.uid, month, year, currency, monthlyData.periodLabel], insightData)
       
     } catch (e) {
       console.error('Generation failed:', e)
