@@ -265,7 +265,7 @@ export default function Dashboard() {
     queryKey: ['user-nickname', user?.uid, userFullName],
     enabled: !!user?.uid && !nickname && !!userFullName,
     staleTime: Infinity, // Never refetch - nickname is permanent
-    cacheTime: Infinity, // Keep in cache forever
+    gcTime: Infinity, // Keep in cache forever (renamed from cacheTime in v5)
     queryFn: async () => {
       if (!user || !userFullName) return null
       
