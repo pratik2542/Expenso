@@ -60,6 +60,19 @@ function normalizeCategory(raw?: string, definedCategories?: string[]): string {
   return ''
 }
 
+function formatDateToISO(dateStr?: string): string {
+  if (!dateStr) return new Date().toISOString().split('T')[0]
+  
+  // If already YYYY-MM-DD, return it
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+
+  const d = new Date(dateStr)
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0]
+  }
+  return new Date().toISOString().split('T')[0]
+}
+
 export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', expense = null }: AddExpenseModalProps) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -344,7 +357,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           merchant: t.description || '',
           payment_method: defaultPM || 'Credit Card',
           note: '',
-          occurred_on: t.date || new Date().toISOString().split('T')[0],
+          occurred_on: formatDateToISO(t.date),
           category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
         }))
         
@@ -408,7 +421,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           merchant: t.description || '',
           payment_method: defaultPM || 'Credit Card',
           note: '',
-          occurred_on: t.date || new Date().toISOString().split('T')[0],
+          occurred_on: formatDateToISO(t.date),
           category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
         }))
         setParsedExpenses(mapped)
