@@ -21,6 +21,7 @@ interface Expense {
   occurred_on: string
   created_at: string
   category: string
+  attachment?: string
 }
 interface Category { id: string; name: string }
 
@@ -172,6 +173,9 @@ export default function Expenses() {
   const [actionExpense, setActionExpense] = useState<Expense | null>(null)
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [viewAttachment, setViewAttachment] = useState<string | null>(null)
+  const [attachingToExpense, setAttachingToExpense] = useState<Expense | null>(null)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
   
   // Helper function to convert amount to preference currency
   const convertToPrefCurrency = async (amount: number, fromCurrency: string): Promise<number> => {
@@ -428,6 +432,42 @@ export default function Expenses() {
       setActionError(error.message)
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleAttachBill = async (file: File) => {
+    if (!user || !attachingToExpense) return
+    
+    // Check file size (limit to 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File is too large. Please select an image under 5MB.')
+      return
+    }
+
+    setUploadingAttachment(true)
+    try {
+      const reader = new FileReader()
+      reader.onloadend = async () => {
+        const base64String = reader.result as string
+        try {
+          const expenseDocRef = doc(db, 'expenses', user.uid, 'items', attachingToExpense.id)
+          await updateDoc(expenseDocRef, { attachment: base64String })
+          queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
+          setAttachingToExpense(null)
+        } catch (error: any) {
+          alert('Failed to attach bill: ' + error.message)
+        } finally {
+          setUploadingAttachment(false)
+        }
+      }
+      reader.onerror = () => {
+        alert('Failed to read file')
+        setUploadingAttachment(false)
+      }
+      reader.readAsDataURL(file)
+    } catch (error: any) {
+      alert('Failed to attach bill: ' + error.message)
+      setUploadingAttachment(false)
     }
   }
 
@@ -747,10 +787,19 @@ export default function Expenses() {
                         <span className={categoryBadgeClass(mappedCategory)}>{mappedCategory}</span>
                       </div>
                       {expense.merchant && (
-                        <div className="text-sm text-gray-500">{expense.merchant}</div>
+                        <div className="text-sm text-gray-500 break-words line-clamp-2">{expense.merchant}</div>
                       )}
                       <div className="flex items-center justify-between text-sm text-gray-500">
-                        <span>{formatDate(expense.occurred_on)}</span>
+                        <div className="flex items-center gap-2">
+                          <span>{formatDate(expense.occurred_on)}</span>
+                          {expense.attachment && (
+                            <span title="Has attachment">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                            </span>
+                          )}
+                        </div>
                         <span className="font-medium text-gray-900">
                           <ConvertedAmount 
                             amount={expense.amount} 
@@ -861,9 +910,9 @@ export default function Expenses() {
                             }}
                           />
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
+                        <td className="px-6 py-4">
+                          <div className="max-w-[200px] sm:max-w-xs">
+                            <div className="text-sm font-medium text-gray-900 truncate">
                               {(() => {
                                 const clean = String(expense.note || '').replace(/\bTransaction date\b[^;\n]*;\s*\bPosting date\b[^\n]*/gi, '').trim()
                                 if (clean) return clean
@@ -873,7 +922,7 @@ export default function Expenses() {
                               })()}
                             </div>
                             {expense.merchant && (
-                              <div className="text-sm text-gray-500">
+                              <div className="text-sm text-gray-500 break-words line-clamp-2">
                                 {expense.merchant}
                               </div>
                             )}
@@ -885,7 +934,16 @@ export default function Expenses() {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {formatDate(expense.occurred_on)}
+                          <div className="flex items-center gap-2">
+                            {formatDate(expense.occurred_on)}
+                            {expense.attachment && (
+                              <span title="Has attachment">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                </svg>
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-gray-900">
                           <ConvertedAmount 
@@ -1252,6 +1310,44 @@ export default function Expenses() {
             >
               Edit
             </button>
+            {actionExpense.attachment ? (
+              <>
+                <button
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setViewAttachment(actionExpense.attachment || null)
+                    setActionOpenId(null)
+                    setActionExpense(null)
+                    setMenuPos(null)
+                  }}
+                >
+                  View Attachment
+                </button>
+                <button
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  onClick={() => {
+                    setAttachingToExpense(actionExpense)
+                    setActionOpenId(null)
+                    setActionExpense(null)
+                    setMenuPos(null)
+                  }}
+                >
+                  Replace Attachment
+                </button>
+              </>
+            ) : (
+              <button
+                className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                onClick={() => {
+                  setAttachingToExpense(actionExpense)
+                  setActionOpenId(null)
+                  setActionExpense(null)
+                  setMenuPos(null)
+                }}
+              >
+                Attach Bill
+              </button>
+            )}
             <button
               className="block w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600"
               onClick={() => actionExpense && deleteExpense(actionExpense.id)}
@@ -1261,6 +1357,117 @@ export default function Expenses() {
             </button>
           </div>
         </>
+      )}
+
+      {/* Attachment Viewer Modal */}
+      {viewAttachment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-2 sm:p-4" onClick={() => setViewAttachment(null)}>
+          <div className="relative max-w-full sm:max-w-4xl max-h-[90vh] w-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
+            <img 
+              src={viewAttachment} 
+              alt="Bill Attachment" 
+              className="max-w-full max-h-[85vh] object-contain rounded shadow-lg bg-white" 
+            />
+            <button
+              className="absolute top-2 right-2 bg-white rounded-full p-2 text-gray-800 hover:bg-gray-100 shadow-md"
+              onClick={() => setViewAttachment(null)}
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Attach Bill Modal */}
+      {attachingToExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {attachingToExpense.attachment ? 'Replace' : 'Attach'} Bill
+              </h3>
+              <button
+                onClick={() => setAttachingToExpense(null)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                <p className="font-medium mb-1">Expense Details:</p>
+                <p className="text-gray-800">{attachingToExpense.note || attachingToExpense.category || 'No description'}</p>
+                <p className="text-gray-500 text-xs mt-1">
+                  {attachingToExpense.amount} {attachingToExpense.currency} • {formatDate(attachingToExpense.occurred_on)}
+                </p>
+              </div>
+
+              {attachingToExpense.attachment && (
+                <div className="border rounded-lg p-3 bg-gray-50">
+                  <p className="text-xs text-gray-600 mb-2">Current Attachment:</p>
+                  <img 
+                    src={attachingToExpense.attachment} 
+                    alt="Current bill" 
+                    className="h-24 w-auto object-contain mx-auto border rounded"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Image
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) handleAttachBill(file)
+                  }}
+                  disabled={uploadingAttachment}
+                  className="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-md file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-primary-50 file:text-primary-700
+                    hover:file:bg-primary-100
+                    disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <p className="mt-2 text-xs text-gray-500">
+                  Maximum file size: 5MB. Supported formats: JPG, PNG, etc.
+                </p>
+              </div>
+
+              {uploadingAttachment && (
+                <div className="flex items-center justify-center py-4 text-blue-600">
+                  <svg className="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span className="text-sm">Uploading...</span>
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => setAttachingToExpense(null)}
+                  className="btn-secondary flex-1"
+                  disabled={uploadingAttachment}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       
       {/* Scroll to Top Button */}

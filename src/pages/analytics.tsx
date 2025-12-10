@@ -18,6 +18,7 @@ interface Expense {
   note?: string
   occurred_on: string
   category: string
+  attachment?: string
 }
 
 export default function Analytics() {
