@@ -24,7 +24,7 @@ const nextConfig = {
       optimizePackageImports: ['lucide-react', 'firebase', '@tanstack/react-query'],
     },
   
-  output: 'export',
+  output: process.env.MOBILE_BUILD === 'true' ? 'export' : undefined,
   images: {
     unoptimized: true,
     domains: [],
