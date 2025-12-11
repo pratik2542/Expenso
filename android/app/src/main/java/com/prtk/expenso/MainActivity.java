@@ -1,4 +1,4 @@
-package com.expenso.app;
+package com.prtk.expenso;
 
 import com.getcapacitor.BridgeActivity;
 
