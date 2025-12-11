@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">Expenso</string>
     <string name="title_activity_main">Expenso</string>
-    <string name="package_name">com.expenso.app</string>
-    <string name="custom_url_scheme">com.expenso.app</string>
+    <string name="package_name">com.prtk.expenso</string>
+    <string name="custom_url_scheme">com.prtk.expenso</string>
+    <string name="server_client_id">630618173026-0sit7elnmpdqksl520e79gp5oti8978q.apps.googleusercontent.com</string>
 </resources>
