@@ -7,11 +7,20 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import { PreferencesProvider } from '@/contexts/PreferencesContext'
 import { analytics } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
+import { Capacitor } from '@capacitor/core'
 
 const queryClient = new QueryClient()
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter()
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      import('@codetrix-studio/capacitor-google-auth').then(({ GoogleAuth }) => {
+        GoogleAuth.initialize()
+      })
+    }
+  }, [])
 
   // Track page views
   useEffect(() => {
