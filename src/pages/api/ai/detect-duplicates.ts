@@ -73,7 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    const response = await fetch(
+    let response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
@@ -81,6 +81,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         body: JSON.stringify(body)
       }
     )
+
+    if (!response.ok && response.status === 503) {
+      console.warn('Gemini 2.5 Flash overloaded, falling back to 1.5 Flash')
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }
+      )
+    }
 
     if (!response.ok) {
         const errorText = await response.text();
