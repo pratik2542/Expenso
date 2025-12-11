@@ -1,10 +1,13 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
 import { auth, db } from '@/lib/firebaseClient'
 import { analytics } from '@/lib/firebaseClient'
+import { Capacitor } from '@capacitor/core'
+// import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth' // Removed static import
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithCredential,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   GoogleAuthProvider,
@@ -141,8 +144,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signInWithGoogle() {
     try {
-      const provider = new GoogleAuthProvider()
-      await signInWithPopup(auth, provider)
+      if (Capacitor.isNativePlatform()) {
+        const { GoogleAuth } = await import('@codetrix-studio/capacitor-google-auth')
+        const googleUser = await GoogleAuth.signIn()
+        const idToken = googleUser.authentication.idToken
+        const credential = GoogleAuthProvider.credential(idToken)
+        await signInWithCredential(auth, credential)
+      } else {
+        const provider = new GoogleAuthProvider()
+        await signInWithPopup(auth, provider)
+      }
       return {}
     } catch (error: any) {
       return { error: error.message }
