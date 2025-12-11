@@ -87,9 +87,17 @@ function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, c
   return <span>{formatCurrency(convertedAmount)}</span>
 }
 
+function getCurrencySymbol(currency: string) {
+  try {
+    return (0).toLocaleString(undefined, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).replace(/\d/g, '').trim()
+  } catch (e) {
+    return currency
+  }
+}
+
 export default function BudgetPage() {
   const { user } = useAuth()
-  const { formatCurrency, currency: prefCurrency, convertExistingData } = usePreferences()
+  const { formatCurrency, currency: prefCurrency, convertExistingData, loading: prefsLoading } = usePreferences()
   const queryClient = useQueryClient()
   
   console.log('BudgetPage - User:', user?.uid, 'Email:', user?.email, 'Loading:', !user)
@@ -550,7 +558,9 @@ export default function BudgetPage() {
             <div className="card">
               <div className="flex items-center">
                 <div className="p-2 sm:p-3 rounded-full bg-primary-100">
-                  <span className="text-primary-600 font-semibold">$</span>
+                  <span className="text-primary-600 font-semibold">
+                    {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
+                  </span>
                 </div>
                 <div className="ml-3 sm:ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Budget</p>
@@ -572,7 +582,9 @@ export default function BudgetPage() {
             <div className="card">
               <div className="flex items-center">
                 <div className="p-2 sm:p-3 rounded-full bg-warning-100">
-                  <span className="text-warning-600 font-semibold">$</span>
+                  <span className="text-warning-600 font-semibold">
+                    {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
+                  </span>
                 </div>
                 <div className="ml-3 sm:ml-4">
                   <p className="text-sm font-medium text-gray-600">Total Spent</p>
@@ -594,7 +606,9 @@ export default function BudgetPage() {
             <div className="card">
               <div className="flex items-center">
                 <div className="p-2 sm:p-3 rounded-full bg-success-100">
-                  <span className="text-success-600 font-semibold">$</span>
+                  <span className="text-success-600 font-semibold">
+                    {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
+                  </span>
                 </div>
                 <div className="ml-3 sm:ml-4">
                   <p className="text-sm font-medium text-gray-600">Remaining</p>

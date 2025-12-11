@@ -13,6 +13,11 @@ PUBLIC_APK="public/Expenso.apk"
 
 echo "🚀 Starting Android Build Process..."
 
+# 0. Update version.json
+echo "📝 Updating version.json..."
+VERSION=$(node -p "require('./package.json').version")
+echo "{\"version\": \"$VERSION\", \"build\": $(date +%s), \"releaseDate\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}" > public/version.json
+
 # 1. Build Web Assets
 echo "📦 Building Next.js project..."
 export MOBILE_BUILD=true 

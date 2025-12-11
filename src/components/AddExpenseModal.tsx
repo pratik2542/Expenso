@@ -1,6 +1,6 @@
 import React, { Fragment, useMemo, useRef, useState } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { X } from 'lucide-react'
+import { X, ExternalLink } from 'lucide-react'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { analytics } from '@/lib/firebaseClient'
@@ -1207,10 +1207,19 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                   <button
                     type="button"
                     onClick={openPopupConverter}
-                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                    className="inline-flex items-center rounded-md border border-gray-300 bg-white p-2 sm:px-3 sm:py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
                     title="Open in popup if iframe is blocked"
                   >
-                    Open in popup
+                    <ExternalLink className="h-5 w-5 sm:h-4 sm:w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Open in popup</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="sm:hidden rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 p-1"
+                    onClick={closeConverterModal}
+                  >
+                    <span className="sr-only">Close</span>
+                    <X className="h-6 w-6" />
                   </button>
                 </div>
               </div>

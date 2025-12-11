@@ -8,6 +8,7 @@ import { PreferencesProvider } from '@/contexts/PreferencesContext'
 import { analytics } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
 import { Capacitor } from '@capacitor/core'
+import UpdateChecker from '@/components/UpdateChecker'
 
 const queryClient = new QueryClient()
 
@@ -48,6 +49,7 @@ export default function App({ Component, pageProps }: AppProps) {
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <PreferencesProvider>
+          <UpdateChecker />
           <Component {...pageProps} />
         </PreferencesProvider>
       </QueryClientProvider>
