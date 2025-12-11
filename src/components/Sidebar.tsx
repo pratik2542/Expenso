@@ -249,7 +249,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                       className="w-full flex justify-center items-center gap-2 rounded-md border border-transparent bg-primary-600 px-4 py-3 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
                     >
                       <DownloadIcon className="h-5 w-5" />
-                      Download APK (v1.0.0)
+                      Download APK (v1.0.2)
                     </a>
                   </div>
 

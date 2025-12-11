@@ -11,7 +11,8 @@
     "test": "jest",
     "seed": "node ../tools/seed.js",
     "migrate-user-ids": "node --env-file=.env.local scripts/migrate-user-ids.js",
-    "cleanup-old-data": "node --env-file=.env.local scripts/cleanup-old-data.js"
+    "cleanup-old-data": "node --env-file=.env.local scripts/cleanup-old-data.js",
+    "build:android": "./scripts/build-android.sh"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
