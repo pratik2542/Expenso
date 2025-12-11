@@ -170,7 +170,14 @@ Generate one 4-letter code now:`
   }
 }
 
+import { setCorsHeaders } from '@/lib/cors'
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  setCorsHeaders(res)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }

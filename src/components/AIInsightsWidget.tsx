@@ -4,6 +4,7 @@ import { collection, query, where, getDocs, doc, getDoc, setDoc } from 'firebase
 import { db } from '@/lib/firebaseClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { SparklesIcon, RefreshCwIcon, AlertTriangleIcon, CheckCircleIcon, InfoIcon } from 'lucide-react'
+import { getApiUrl } from '@/lib/config'
 
 interface AIInsightsWidgetProps {
   month: number
@@ -159,7 +160,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
     if (!user?.uid || !monthlyData) return
     setIsRefreshing(true)
     try {
-      const res = await fetch('/api/ai/analytics-insights', {
+      const res = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

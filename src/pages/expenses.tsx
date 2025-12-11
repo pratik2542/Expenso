@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { RequireAuth } from '@/components/RequireAuth'
 import AddExpenseModal from '@/components/AddExpenseModal'
 import { usePreferences } from '@/contexts/PreferencesContext'
+import { getApiUrl } from '@/lib/config'
 
 interface Expense {
   id: string
@@ -568,7 +569,7 @@ export default function Expenses() {
                       setDuplicateGroups([])
                       setSelectedDuplicateIds(new Set())
                       try {
-                        const resp = await fetch('/api/ai/detect-duplicates', {
+                        const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ expenses })

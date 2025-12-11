@@ -23,6 +23,7 @@ import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs, orderBy, limit, doc, setDoc } from 'firebase/firestore'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { SparklesIcon } from 'lucide-react'
+import { getApiUrl } from '@/lib/config'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
@@ -307,7 +308,7 @@ export default function Dashboard() {
         
         // If no cached nickname, generate a new one
         console.log('🎲 Generating new nickname for:', userFullName)
-        const response = await fetch('/api/ai/generate-nickname', {
+        const response = await fetch(getApiUrl('/api/ai/generate-nickname'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fullName: userFullName })

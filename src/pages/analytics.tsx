@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useMemo, useState } from 'react'
+import { getApiUrl } from '@/lib/config'
 
 interface Expense {
   id: string
@@ -203,7 +204,7 @@ export default function Analytics() {
     setAiInsightsError(null)
     
     try {
-      const resp = await fetch('/api/ai/analytics-insights', {
+      const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -252,7 +253,7 @@ export default function Analytics() {
     setChatLoading(true)
     
     try {
-      const resp = await fetch('/api/ai/analytics-insights', {
+      const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
