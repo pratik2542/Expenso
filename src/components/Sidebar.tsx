@@ -28,12 +28,16 @@ const navigation = [
   { name: 'Settings', href: '/settings', icon: SettingsIcon },
 ]
 
-export default function Sidebar() {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIsOpen?: (open: boolean) => void }) {
+  const [internalOpen, setInternalOpen] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const { user, signOut } = useAuth()
+
+  // Use props if provided, otherwise internal state
+  const sidebarOpen = isOpen !== undefined ? isOpen : internalOpen
+  const setSidebarOpen = setIsOpen || setInternalOpen
 
   useEffect(() => {
     setMounted(true)
