@@ -600,7 +600,4 @@ export default function Dashboard() {
   )
 }
 
-// Force dynamic rendering to avoid any static caching between servers
-export async function getServerSideProps() {
-  return { props: {} }
-}
+

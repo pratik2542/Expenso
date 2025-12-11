@@ -1059,7 +1059,4 @@ export default function BudgetPage() {
   )
 }
 
-// Force dynamic rendering to avoid static caching
-export async function getServerSideProps() {
-  return { props: {} }
-}
+

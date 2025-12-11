@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Expenso</string>
+    <string name="title_activity_main">Expenso</string>
+    <string name="package_name">com.expenso.app</string>
+    <string name="custom_url_scheme">com.expenso.app</string>
+</resources>

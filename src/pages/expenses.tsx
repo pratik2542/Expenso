@@ -1485,7 +1485,4 @@ export default function Expenses() {
   )
 }
 
-// Force dynamic rendering to avoid static optimization differences across ports
-export async function getServerSideProps() {
-  return { props: {} }
-}
+

@@ -24,7 +24,9 @@ const nextConfig = {
       optimizePackageImports: ['lucide-react', 'firebase', '@tanstack/react-query'],
     },
   
+  output: 'export',
   images: {
+    unoptimized: true,
     domains: [],
     formats: ['image/webp', 'image/avif'],
   },

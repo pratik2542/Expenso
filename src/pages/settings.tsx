@@ -633,7 +633,4 @@ export default function Settings() {
   )
 }
 
-// Force dynamic rendering to avoid static caching
-export async function getServerSideProps() {
-  return { props: {} }
-}
+

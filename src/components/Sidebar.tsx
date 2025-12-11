@@ -10,8 +10,12 @@ import {
   WalletIcon,
   LogOutIcon,
   TagIcon,
-  BarChart3Icon
+  BarChart3Icon,
+  SmartphoneIcon,
+  DownloadIcon
 } from 'lucide-react'
+import { Dialog, Transition } from '@headlessui/react'
+import { Fragment } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { CalcBrand } from '@/components/Logo'
 
@@ -26,6 +30,7 @@ const navigation = [
 
 export default function Sidebar() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showDownloadModal, setShowDownloadModal] = useState(false)
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const { user, signOut } = useAuth()
@@ -100,6 +105,13 @@ export default function Sidebar() {
                     </Link>
                   )
                 })}
+                <button
+                  onClick={() => { setShowDownloadModal(true); setSidebarOpen(false) }}
+                  className="w-full group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                >
+                  <SmartphoneIcon className="mr-3 h-5 w-5 text-gray-400 group-hover:text-gray-500" />
+                  Get Android App
+                </button>
               </nav>
               <div className="mt-auto px-4 py-4 border-t border-gray-100">
                 <button
@@ -140,6 +152,13 @@ export default function Sidebar() {
                   </Link>
                 )
               })}
+              <button
+                onClick={() => setShowDownloadModal(true)}
+                className="w-full group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              >
+                <SmartphoneIcon className="mr-3 h-5 w-5 text-gray-400 group-hover:text-gray-500" />
+                Get Android App
+              </button>
             </nav>
             <div className="mt-auto px-4 py-4 border-t border-gray-100">
               <button
@@ -170,6 +189,81 @@ export default function Sidebar() {
           </div>
         </div>
       </div>
+
+      {/* Download App Modal */}
+      <Transition appear show={showDownloadModal} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setShowDownloadModal(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-25" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
+                <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all">
+                  <Dialog.Title
+                    as="h3"
+                    className="text-lg font-medium leading-6 text-gray-900 flex items-center gap-2"
+                  >
+                    <SmartphoneIcon className="h-6 w-6 text-primary-600" />
+                    Download Android App
+                  </Dialog.Title>
+                  <div className="mt-4">
+                    <p className="text-sm text-gray-500 mb-4">
+                      Get the full Expenso experience on your Android device. Download the APK file and install it manually.
+                    </p>
+                    
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
+                      <h4 className="text-sm font-medium text-gray-900 mb-2">Installation Instructions:</h4>
+                      <ol className="list-decimal list-inside text-xs text-gray-600 space-y-1">
+                        <li>Download the APK file below</li>
+                        <li>Open the file on your Android device</li>
+                        <li>If prompted, allow installation from "Unknown Sources"</li>
+                        <li>Tap "Install" and enjoy!</li>
+                      </ol>
+                    </div>
+
+                    <a
+                      href="/Expenso.apk"
+                      download="Expenso.apk"
+                      className="w-full flex justify-center items-center gap-2 rounded-md border border-transparent bg-primary-600 px-4 py-3 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                    >
+                      <DownloadIcon className="h-5 w-5" />
+                      Download APK (v1.0.0)
+                    </a>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      className="inline-flex justify-center rounded-md border border-transparent bg-gray-100 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2"
+                      onClick={() => setShowDownloadModal(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition>
     </>
   )
 }
