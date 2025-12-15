@@ -9,6 +9,7 @@ import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useMemo, useState } from 'react'
 import { getApiUrl } from '@/lib/config'
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface Expense {
   id: string
@@ -39,7 +40,7 @@ export default function Analytics() {
   const [chatLoading, setChatLoading] = useState(false)
   const [chatScope, setChatScope] = useState<'month' | 'all'>('month') // Toggle for chat data scope
   
-  console.log('AnalyticsPage - User:', user?.uid, 'Loading:', !user)
+
 
   const startOfMonth = useMemo(() => new Date(selectedYear, selectedMonth - 1, 1), [selectedMonth, selectedYear])
   const endOfMonth = useMemo(() => new Date(selectedYear, selectedMonth, 0), [selectedMonth, selectedYear])
@@ -68,7 +69,7 @@ export default function Analytics() {
           ...doc.data()
         })) as Expense[]
       } catch (error) {
-        console.error('Analytics expenses list query failed:', error)
+
         return []
       }
     }
@@ -92,7 +93,7 @@ export default function Analytics() {
           ...doc.data()
         })) as Expense[]
       } catch (error) {
-        console.error('All expenses query failed:', error)
+
         return []
       }
     }
@@ -125,7 +126,7 @@ export default function Analytics() {
           }
         })
       } catch (error) {
-        console.error('All income query failed:', error)
+
         return []
       }
     }
@@ -142,7 +143,7 @@ export default function Analytics() {
     enabled: !!user?.uid,
     queryFn: async () => {
       if (!user?.uid) return 0
-      console.log('Fetching analytics spend for user:', user.uid, 'period:', startISO, 'to', endISO, 'currency:', viewCurrency)
+
       try {
         const expensesRef = collection(db, 'expenses', user.uid, 'items')
         const q = query(
@@ -152,16 +153,12 @@ export default function Analytics() {
           where('currency', '==', viewCurrency)
         )
         const snapshot = await getDocs(q)
-        console.log('Analytics expenses snapshot:', snapshot.docs.length, 'documents')
         const total = snapshot.docs.reduce((acc, doc) => {
           const data = doc.data()
           return acc + Number(data.amount || 0)
         }, 0)
-        console.log('Analytics spend total:', total)
         return total
       } catch (error) {
-        console.error('Analytics spend query failed:', error)
-        // Return 0 if query fails (likely due to missing index)
         return 0
       }
     }
@@ -186,7 +183,7 @@ export default function Analytics() {
         const data = snapshot.docs[0].data()
         return Number(data.amount || 0)
       } catch (error) {
-        console.error('Analytics income query failed:', error)
+
         // Return 0 if query fails (likely due to missing index)
         return 0
       }
@@ -206,14 +203,17 @@ export default function Analytics() {
     try {
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': user?.uid || 'anonymous'
+        },
         body: JSON.stringify({
           expenses: monthExpenses,
           income: { amount: incomeAmt, currency: viewCurrency },
           month: selectedMonth,
           year: selectedYear,
           currency: viewCurrency,
-          format: 'markdown' // Request detailed markdown format for analytics page
+          format: 'markdown'
         })
       })
       
@@ -255,11 +255,14 @@ export default function Analytics() {
     try {
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': user?.uid || 'anonymous'
+        },
         body: JSON.stringify({
           expenses: expensesToUse,
           income: { amount: incomeToUse, currency: viewCurrency },
-          incomeRecords: incomeRecordsToUse, // Pass monthly income breakdown for all-time analysis
+          incomeRecords: incomeRecordsToUse,
           month: selectedMonth,
           year: selectedYear,
           currency: viewCurrency,
@@ -599,19 +602,91 @@ export default function Analytics() {
                         }`}
                       >
                         <div className="whitespace-pre-wrap text-sm">
-                          {msg.content.split('\n').map((line, j) => {
-                            const parts = line.split(/(\*\*[^*]+\*\*)/g)
-                            return (
-                              <p key={j} className={line.startsWith('-') ? 'ml-2' : ''}>
-                                {parts.map((part, k) => {
-                                  if (part.startsWith('**') && part.endsWith('**')) {
-                                    return <strong key={k}>{part.slice(2, -2)}</strong>
-                                  }
-                                  return part
-                                })}
-                              </p>
-                            )
-                          })}
+                          {(() => {
+                            // Check if message contains chart data
+                            const chartMatch = msg.content.match(/```chart-data\s*([\s\S]*?)```/)
+                            if (chartMatch) {
+                              try {
+                                const chartData = JSON.parse(chartMatch[1])
+                                const textContent = msg.content.replace(/```chart-data[\s\S]*?```/, '').trim()
+                                return (
+                                  <>
+                                    {textContent && (
+                                      <div className="mb-4">
+                                        {textContent.split('\n').map((line, j) => {
+                                          const parts = line.split(/(\*\*[^*]+\*\*)/g)
+                                          return (
+                                            <p key={j} className={line.startsWith('-') ? 'ml-2' : ''}>
+                                              {parts.map((part, k) => {
+                                                if (part.startsWith('**') && part.endsWith('**')) {
+                                                  return <strong key={k}>{part.slice(2, -2)}</strong>
+                                                }
+                                                return part
+                                              })}
+                                            </p>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                    <div className="bg-white p-4 rounded border">
+                                      <h4 className="font-semibold mb-2">{chartData.title}</h4>
+                                      <ResponsiveContainer width="100%" height={300}>
+                                        {chartData.type === 'line' ? (
+                                          <LineChart data={chartData.data}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="name" />
+                                            <YAxis />
+                                            <Tooltip />
+                                            <Legend />
+                                            {chartData.dataKeys.map((key: string, idx: number) => (
+                                              <Line key={key} type="monotone" dataKey={key} stroke={idx === 0 ? '#3b82f6' : '#ef4444'} name={chartData.labels[idx]} />
+                                            ))}
+                                          </LineChart>
+                                        ) : chartData.type === 'bar' ? (
+                                          <BarChart data={chartData.data}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="name" />
+                                            <YAxis />
+                                            <Tooltip />
+                                            <Legend />
+                                            {chartData.dataKeys.map((key: string, idx: number) => (
+                                              <Bar key={key} dataKey={key} fill={idx === 0 ? '#3b82f6' : '#ef4444'} name={chartData.labels[idx]} />
+                                            ))}
+                                          </BarChart>
+                                        ) : (
+                                          <PieChart>
+                                            <Pie data={chartData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                                              {chartData.data.map((entry: any, idx: number) => (
+                                                <Cell key={`cell-${idx}`} fill={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]} />
+                                              ))}
+                                            </Pie>
+                                            <Tooltip />
+                                            <Legend />
+                                          </PieChart>
+                                        )}
+                                      </ResponsiveContainer>
+                                    </div>
+                                  </>
+                                )
+                              } catch (e) {
+                                // Silent fail - render as regular text
+                              }
+                            }
+                            // Regular text rendering
+                            return msg.content.split('\n').map((line, j) => {
+                              const parts = line.split(/(\*\*[^*]+\*\*)/g)
+                              return (
+                                <p key={j} className={line.startsWith('-') ? 'ml-2' : ''}>
+                                  {parts.map((part, k) => {
+                                    if (part.startsWith('**') && part.endsWith('**')) {
+                                      return <strong key={k}>{part.slice(2, -2)}</strong>
+                                    }
+                                    return part
+                                  })}
+                                </p>
+                              )
+                            })
+                          })()}
                         </div>
                       </div>
                     </div>

@@ -199,9 +199,6 @@ export default function Auth() {
                   <span className="ml-2">Continue with GitHub</span>
                 </button>
               </div>
-              <div className="mt-4 text-center text-xs text-gray-400">
-                v1.0.2 (Fix Google Auth)
-              </div>
             </div>
             <div className="text-center">
               <span className="text-sm text-gray-600">{isLogin ? "Don't have an account?" : 'Already have an account?'}</span>

@@ -1,8 +1,20 @@
+const { securityHeaders } = require('./next.config.security')
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   compress: true,
   poweredByHeader: false,
+  
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ]
+  },
   eslint: {
     // Temporarily ignore ESLint errors during builds to allow shipping/runtime verification
     ignoreDuringBuilds: true,

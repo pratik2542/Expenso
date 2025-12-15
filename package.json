@@ -1,6 +1,6 @@
 {
   "name": "expenso",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,7 +12,9 @@
     "seed": "node ../tools/seed.js",
     "migrate-user-ids": "node --env-file=.env.local scripts/migrate-user-ids.js",
     "cleanup-old-data": "node --env-file=.env.local scripts/cleanup-old-data.js",
-    "build:android": "./scripts/build-android.sh"
+    "build:android": "./scripts/build-android.sh",
+    "security:check": "./scripts/security-check.sh",
+    "predeploy": "npm run security:check"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",

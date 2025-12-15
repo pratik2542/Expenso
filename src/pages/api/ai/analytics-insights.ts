@@ -1,4 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next'
+import { checkRateLimit, sanitizeInput, validateExpense, sanitizeError } from '@/lib/security'
 
 export const config = {
   maxDuration: 60, // Increase timeout to 60 seconds for AI processing
@@ -110,9 +111,41 @@ async function generateInsights(data: AnalyticsRequest): Promise<{ text: string;
     return acc
   }, {} as Record<string, number>)
 
+  // Calculate monthly breakdown by category (for answering questions like "how much did I spend on groceries in October?")
+  const monthlyCategoryBreakdown = expenses.reduce((acc, e) => {
+    const date = new Date(e.occurred_on)
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const cat = e.category || 'Other'
+    if (!acc[monthKey]) acc[monthKey] = {}
+    acc[monthKey][cat] = (acc[monthKey][cat] || 0) + e.amount
+    return acc
+  }, {} as Record<string, Record<string, number>>)
+
   const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })
   const timeHeader = periodLabel || `Month: ${monthName} ${year}`
   const isAllTime = periodLabel === 'All Time Data'
+  
+  // Build monthly category breakdown section for All Time queries
+  let monthlyCategorySection = ''
+  if (isAllTime && Object.keys(monthlyCategoryBreakdown).length > 0) {
+    monthlyCategorySection = `
+=== MONTHLY SPENDING BY CATEGORY (USE THIS DATA TO ANSWER MONTH-SPECIFIC QUESTIONS) ===
+${Object.entries(monthlyCategoryBreakdown)
+  .sort((a, b) => b[0].localeCompare(a[0])) // Sort by date descending
+  .map(([monthKey, categories]) => {
+    const [yr, mo] = monthKey.split('-')
+    const monthLabel = new Date(parseInt(yr), parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+    const monthTotal = Object.values(categories).reduce((sum, amt) => sum + amt, 0)
+    const categoryList = Object.entries(categories)
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, amt]) => `  ${cat}: ${amt.toFixed(2)} ${currency}`)
+      .join('\n')
+    return `${monthLabel} (Total: ${monthTotal.toFixed(2)} ${currency}):\n${categoryList}`
+  })
+  .join('\n\n')}
+===================================================================================
+`
+  }
   
   // Build income section based on whether we have detailed records or just a total
   let incomeSection = ''
@@ -180,8 +213,8 @@ Currency: ${currency}
 Total Spending: ${totalSpend.toFixed(2)} ${currency}
 ${incomeSection}
 Number of Transactions: ${expenses.length}
-
-Spending by Category:
+${monthlyCategorySection}
+Spending by Category (All Time Totals):
 ${Object.entries(categorySpend)
   .sort((a, b) => b[1] - a[1])
   .map(([cat, amt]) => `- ${cat}: ${amt.toFixed(2)} ${currency} (${((amt / totalSpend) * 100).toFixed(1)}%)`)
@@ -209,11 +242,27 @@ ${expenses
     // User asked a specific question - return markdown
     prompt = `You are a financial analyst. Based on the following expense data, answer the user's question.
 
+DATA START >>>
 ${expensesSummary}
+<<< DATA END
 
 User's Question: ${question}
 
-Provide a helpful, concise answer using markdown formatting. Include specific numbers and percentages where relevant.`
+CRITICAL INSTRUCTIONS:
+1. The "MONTHLY SPENDING BY CATEGORY" section contains EXACT spending amounts for each category in each month.
+2. For the question about groceries in October 2025, look for "October 2025" in the monthly breakdown, then find "Groceries" under it.
+3. DO NOT say the data is not available if it is in the MONTHLY SPENDING BY CATEGORY section.
+4. If the user asks to "generate a graph" or "create a chart", include a special JSON block in your response with the format:
+   \`\`\`chart-data
+   {
+     "type": "line" | "bar" | "pie",
+     "title": "Chart Title",
+     "data": [{"name": "Jan", "value1": 100, "value2": 200}, ...],
+     "dataKeys": ["value1", "value2"],
+     "labels": ["Income", "Expense"]
+   }
+   \`\`\`
+5. Use markdown formatting for the rest of your response.`
   } else if (format === 'markdown') {
     // Analytics page - detailed markdown insights
     prompt = `You are a friendly financial analyst. Analyze the following expense data and provide detailed insights.
@@ -292,7 +341,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     )
 
     if (!response.ok && response.status === 503) {
-      console.warn('Gemini 2.5 Flash overloaded, falling back to 1.5 Flash')
+      // Fallback to 1.5 Flash
       response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
         {
@@ -346,8 +395,6 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     return { text, metrics }
 
   } catch (geminiError) {
-    console.warn('Gemini failed, falling back to Perplexity:', geminiError)
-    
     // Fallback to Perplexity
     try {
       const perplexityText = await callPerplexityForInsights(prompt, useJsonFormat)
@@ -362,8 +409,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
       }
       return { text: perplexityText, metrics }
     } catch (perplexityError) {
-      console.error('Perplexity also failed:', perplexityError)
-      throw geminiError // Throw original error if both fail
+      throw new Error('AI service temporarily unavailable')
     }
   }
 }
@@ -380,18 +426,46 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  // Extract user ID from headers or body for rate limiting
+  const userId = req.headers['x-user-id'] as string || 'anonymous'
+  
+  // Check rate limit (30 requests per minute)
+  if (checkRateLimit(userId, 30, 60000)) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' })
+  }
+
   const { expenses, income, incomeRecords, month, year, currency, question, periodLabel, format } = req.body as AnalyticsRequest
 
+  // Validate inputs
   if (!Array.isArray(expenses)) {
-    return res.status(400).json({ error: 'Missing or invalid expenses array' })
+    return res.status(400).json({ error: 'Invalid request' })
   }
 
   if (!month || !year || !currency) {
-    return res.status(400).json({ error: 'Missing month, year, or currency' })
+    return res.status(400).json({ error: 'Invalid request' })
   }
 
+  // Validate expense data structure
+  const invalidExpenses = expenses.filter(e => !validateExpense(e))
+  if (invalidExpenses.length > 0) {
+    return res.status(400).json({ error: 'Invalid expense data' })
+  }
+
+  // Sanitize question input
+  const sanitizedQuestion = question ? sanitizeInput(question) : undefined
+
   try {
-    const { text, metrics } = await generateInsights({ expenses, income, incomeRecords, month, year, currency, question, periodLabel, format })
+    const { text, metrics } = await generateInsights({ 
+      expenses, 
+      income, 
+      incomeRecords, 
+      month, 
+      year, 
+      currency, 
+      question: sanitizedQuestion, 
+      periodLabel, 
+      format 
+    })
     
     // For JSON format (dashboard widget), validate and correct AI's response if needed
     if (format === 'json' && !question) {
@@ -406,7 +480,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             parsed.status = 'Alert'
             parsed.color = 'red'
             corrected = true
-            console.log('Corrected AI status: User is in deficit, changed to Alert/red')
           }
         } else if (metrics.savingsRate < 10) {
           // Low savings rate - should be Caution/yellow at minimum
@@ -414,7 +487,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             parsed.status = 'Caution'
             parsed.color = 'yellow'
             corrected = true
-            console.log('Corrected AI status: Low savings rate, changed to Caution/yellow')
           }
         }
         
@@ -439,7 +511,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               highlight.text = `${actualRate.toFixed(0)}% savings rate achieved.`
             }
             corrected = true
-            console.log(`Corrected AI savings rate: AI said ${aiPercent}%, actual is ${metrics.savingsRate.toFixed(1)}%`)
           }
         }
         
@@ -450,14 +521,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(200).json({ insights: text })
       } catch (parseError) {
         // If parsing fails, return original text
-        console.warn('Could not parse AI response for validation:', parseError)
         return res.status(200).json({ insights: text })
       }
     }
     
     return res.status(200).json({ insights: text })
   } catch (e: any) {
-    console.error('AI analytics insights error:', e)
-    return res.status(500).json({ error: e.message || 'Failed to generate insights' })
+    return res.status(500).json({ error: sanitizeError(e) })
   }
 }
