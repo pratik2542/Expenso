@@ -255,7 +255,8 @@ export default function Analytics() {
     setChatLoading(true)
     
     try {
-      const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
+      const apiUrl = getApiUrl('/api/ai/analytics-insights')
+      const resp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -273,11 +274,15 @@ export default function Analytics() {
         })
       })
       
-      if (!resp.ok) throw new Error('Failed to get answer')
+      if (!resp.ok) {
+        const errorText = await resp.text()
+        throw new Error(`Server error (${resp.status}): ${errorText}`)
+      }
       const json = await resp.json()
       setChatHistory(prev => [...prev, { role: 'ai', content: json.insights }])
     } catch (e: any) {
-      setChatHistory(prev => [...prev, { role: 'ai', content: `Error: ${e.message || 'Failed to get answer'}` }])
+      const errorMsg = e.message || 'Failed to get answer'
+      setChatHistory(prev => [...prev, { role: 'ai', content: `Sorry, I encountered an error: ${errorMsg}\n\nPlease check your internet connection and try again.` }])
     } finally {
       setChatLoading(false)
     }

@@ -52,12 +52,14 @@ export default function UpdateChecker() {
       const data = await response.json()
       const remoteVersion = data.version
 
-      if (compareVersions(remoteVersion, currentVersion) > 0) {
+      // Only show update if remote version is actually newer
+      const comparison = compareVersions(remoteVersion, currentVersion)
+      if (comparison > 0) {
         setLatestVersion(remoteVersion)
         setShowUpdateModal(true)
       }
     } catch (error) {
-      console.error('Failed to check for updates:', error)
+      // Silent fail - don't show errors for update checks
     }
   }
 
