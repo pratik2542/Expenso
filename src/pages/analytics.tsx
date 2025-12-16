@@ -10,6 +10,8 @@ import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useMemo, useState } from 'react'
 import { getApiUrl } from '@/lib/config'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface Expense {
   id: string
@@ -595,13 +597,13 @@ export default function Analytics() {
                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-lg px-4 py-2 ${
+                        className={`max-w-[85%] rounded-lg px-4 py-3 ${
                           msg.role === 'user'
                             ? 'bg-blue-600 text-white'
-                            : 'bg-white border border-gray-200 text-gray-700'
+                            : 'bg-white border border-gray-200 text-gray-700 shadow-sm'
                         }`}
                       >
-                        <div className="whitespace-pre-wrap text-sm">
+                        <div className="text-sm prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-2 prose-ul:my-2 prose-li:my-0 prose-strong:text-gray-900 prose-table:w-full prose-th:bg-gray-100 prose-th:p-2 prose-th:text-left prose-td:p-2 prose-td:border prose-th:border">
                           {(() => {
                             // Check if message contains chart data
                             const chartMatch = msg.content.match(/```chart-data\s*([\s\S]*?)```/)
@@ -613,23 +615,13 @@ export default function Analytics() {
                                   <>
                                     {textContent && (
                                       <div className="mb-4">
-                                        {textContent.split('\n').map((line, j) => {
-                                          const parts = line.split(/(\*\*[^*]+\*\*)/g)
-                                          return (
-                                            <p key={j} className={line.startsWith('-') ? 'ml-2' : ''}>
-                                              {parts.map((part, k) => {
-                                                if (part.startsWith('**') && part.endsWith('**')) {
-                                                  return <strong key={k}>{part.slice(2, -2)}</strong>
-                                                }
-                                                return part
-                                              })}
-                                            </p>
-                                          )
-                                        })}
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                          {textContent}
+                                        </ReactMarkdown>
                                       </div>
                                     )}
-                                    <div className="bg-white p-4 rounded border">
-                                      <h4 className="font-semibold mb-2">{chartData.title}</h4>
+                                    <div className="bg-white p-4 rounded border mt-4">
+                                      <h4 className="font-semibold mb-2 text-gray-800">{chartData.title}</h4>
                                       <ResponsiveContainer width="100%" height={300}>
                                         {chartData.type === 'line' ? (
                                           <LineChart data={chartData.data}>
@@ -672,20 +664,12 @@ export default function Analytics() {
                                 // Silent fail - render as regular text
                               }
                             }
-                            // Regular text rendering
-                            return msg.content.split('\n').map((line, j) => {
-                              const parts = line.split(/(\*\*[^*]+\*\*)/g)
-                              return (
-                                <p key={j} className={line.startsWith('-') ? 'ml-2' : ''}>
-                                  {parts.map((part, k) => {
-                                    if (part.startsWith('**') && part.endsWith('**')) {
-                                      return <strong key={k}>{part.slice(2, -2)}</strong>
-                                    }
-                                    return part
-                                  })}
-                                </p>
-                              )
-                            })
+                            // Regular text rendering with full markdown support
+                            return (
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {msg.content}
+                              </ReactMarkdown>
+                            )
                           })()}
                         </div>
                       </div>

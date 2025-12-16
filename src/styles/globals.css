@@ -40,3 +40,90 @@ a {
 .label {
   @apply block text-sm font-medium text-gray-700 mb-1;
 }
+/* AI Chat Markdown Styling */
+.prose {
+  color: inherit;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  color: #1f2937;
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+
+.prose p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.6;
+}
+
+.prose strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+.prose ul, .prose ol {
+  padding-left: 1.5em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  font-size: 0.875rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+.prose thead {
+  background: linear-gradient(to bottom, #f9fafb, #f3f4f6);
+}
+
+.prose th {
+  background-color: #f3f4f6;
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
+.prose td {
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+}
+
+.prose tbody tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+.prose tbody tr:hover {
+  background-color: #f3f4f6;
+  transition: background-color 0.15s ease;
+}
+
+.prose code {
+  background-color: #f3f4f6;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: ui-monospace, monospace;
+}
+
+.prose blockquote {
+  border-left: 4px solid #e5e7eb;
+  padding-left: 1rem;
+  font-style: italic;
+  color: #6b7280;
+}
