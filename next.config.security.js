@@ -33,7 +33,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'", // Required for styled components
       "img-src 'self' data: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://firestore.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app",
+      "connect-src 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'"
