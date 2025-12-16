@@ -52,23 +52,81 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
       
       if (!snap.empty) {
         expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        periodLabel = `Month: ${new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })} ${year}`
+      } else {
+        // 2. Try Last 30 Days
+        const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+        const s30 = d30.toISOString().slice(0, 10)
+        q = query(expensesRef, where('occurred_on', '>=', s30), where('currency', '==', currency))
+        snap = await getDocs(q)
+        
+        if (!snap.empty) {
+           expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+           periodLabel = 'Last 30 Days'
+        } else {
+           // 3. Try Last 6 Months
+           const d180 = new Date(); d180.setDate(d180.getDate() - 180);
+           const s180 = d180.toISOString().slice(0, 10)
+           q = query(expensesRef, where('occurred_on', '>=', s180), where('currency', '==', currency))
+           snap = await getDocs(q)
+
+           if (!snap.empty) {
+              expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+              periodLabel = 'Last 6 Months'
+           } else {
+              // 4. Try Last Year
+              const d365 = new Date(); d365.setDate(d365.getDate() - 365);
+              const s365 = d365.toISOString().slice(0, 10)
+              q = query(expensesRef, where('occurred_on', '>=', s365), where('currency', '==', currency))
+              snap = await getDocs(q)
+              
+              if (!snap.empty) {
+                 expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                 periodLabel = 'Last Year'
+              }
+           }
+        }
       }
-      periodLabel = `Month: ${new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })} ${year}`
 
       // Fetch income for the same period as expenses
       const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
       let totalIncome = 0
       
-      // Current month - fetch just that month's income
-      const qInc = query(
-        incomeRef,
-        where('month', '==', month),
-        where('year', '==', year),
-        where('currency', '==', currency)
-      )
-      const incSnap = await getDocs(qInc)
-      if (!incSnap.empty) {
-        totalIncome = Number(incSnap.docs[0].data().amount || 0)
+      if (periodLabel === '' || periodLabel.startsWith('Month:')) {
+        // Current month - fetch just that month's income
+        const qInc = query(
+          incomeRef,
+          where('month', '==', month),
+          where('year', '==', year),
+          where('currency', '==', currency)
+        )
+        const incSnap = await getDocs(qInc)
+        if (!incSnap.empty) {
+          totalIncome = Number(incSnap.docs[0].data().amount || 0)
+        }
+      } else {
+        // For historical periods (30 days, 6 months, 1 year), sum all income in that range
+        let lookbackMonths = 1
+        if (periodLabel === 'Last 30 Days') lookbackMonths = 1
+        else if (periodLabel === 'Last 6 Months') lookbackMonths = 6
+        else if (periodLabel === 'Last Year') lookbackMonths = 12
+        
+        // Get all income records for this currency and sum the relevant months
+        const qInc = query(incomeRef, where('currency', '==', currency))
+        const incSnap = await getDocs(qInc)
+        
+        const now = new Date()
+        incSnap.docs.forEach(doc => {
+          const data = doc.data()
+          const incomeMonth = Number(data.month)
+          const incomeYear = Number(data.year)
+          const incomeDate = new Date(incomeYear, incomeMonth - 1, 1)
+          const monthsAgo = (now.getFullYear() - incomeYear) * 12 + (now.getMonth() + 1 - incomeMonth)
+          
+          if (monthsAgo >= 0 && monthsAgo < lookbackMonths) {
+            totalIncome += Number(data.amount || 0)
+          }
+        })
       }
 
       return { expenses, income: { amount: totalIncome, currency }, periodLabel }
