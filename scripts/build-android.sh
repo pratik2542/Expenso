@@ -19,6 +19,14 @@ npm version patch --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 echo "✅ New version: $VERSION"
 
+# 0.1 Update Android version in build.gradle
+echo "📝 Updating Android version..."
+sed -i '' "s/versionName \".*\"/versionName \"$VERSION\"/" android/app/build.gradle
+# Increment versionCode (simple approach: use timestamp or just increment)
+# We'll just use the patch version number for simplicity or a timestamp
+BUILD_NUM=$(date +%s)
+sed -i '' "s/versionCode .*/versionCode $BUILD_NUM/" android/app/build.gradle
+
 # 1. Update version.json
 echo "📝 Updating version.json..."
 echo "{\"version\": \"$VERSION\", \"build\": $(date +%s), \"releaseDate\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}" > public/version.json

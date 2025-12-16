@@ -255,7 +255,10 @@ export default function Analytics() {
     setChatLoading(true)
     
     try {
-      const apiUrl = getApiUrl('/api/ai/analytics-insights')
+      // Use absolute URL for API calls in native app
+      const baseUrl = 'https://expenso-ex.vercel.app'
+      const apiUrl = `${baseUrl}/api/ai/analytics-insights`
+      
       const resp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 

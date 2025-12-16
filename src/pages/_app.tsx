@@ -8,6 +8,7 @@ import { PreferencesProvider } from '@/contexts/PreferencesContext'
 import { analytics } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
 import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
 import UpdateChecker from '@/components/UpdateChecker'
 
 const queryClient = new QueryClient()
@@ -19,6 +20,15 @@ export default function App({ Component, pageProps }: AppProps) {
     if (Capacitor.isNativePlatform()) {
       import('@codetrix-studio/capacitor-google-auth').then(({ GoogleAuth }) => {
         GoogleAuth.initialize()
+      })
+
+      // Handle back button
+      CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+        if (!canGoBack) {
+          CapacitorApp.exitApp()
+        } else {
+          window.history.back()
+        }
       })
     }
   }, [])
