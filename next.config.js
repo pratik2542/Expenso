@@ -24,10 +24,6 @@ const nextConfig = {
       },
     ]
   },
-  eslint: {
-    // Temporarily ignore ESLint errors during builds to allow shipping/runtime verification
-    ignoreDuringBuilds: true,
-  },
   // Ensure Next includes pdfjs-dist in serverless traces so it's available at runtime on Vercel
   outputFileTracingIncludes: {
     'src/pages/api/ai/parse-statement.ts': [

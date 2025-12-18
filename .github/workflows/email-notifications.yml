@@ -1,0 +1,96 @@
+name: Email Notifications Scheduler
+
+on:
+  schedule:
+    # Weekly reports - Every Monday at 9:00 AM UTC (4:00 AM EST / 1:00 AM PST)
+    - cron: '0 9 * * 1'
+    # Monthly analytics - 1st of every month at 9:00 AM UTC
+    - cron: '0 9 1 * *'
+  
+  # Allow manual triggering from GitHub UI
+  workflow_dispatch:
+    inputs:
+      notification_type:
+        description: 'Type of notification to send'
+        required: true
+        type: choice
+        options:
+          - weekly_reports
+          - monthly_analytics
+          - both
+
+jobs:
+  send-weekly-reports:
+    runs-on: ubuntu-latest
+    # Run only on Monday schedule OR manual trigger with weekly/both
+    if: |
+      (github.event.schedule == '0 9 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && 
+       (github.event.inputs.notification_type == 'weekly_reports' || 
+        github.event.inputs.notification_type == 'both'))
+    
+    steps:
+      - name: Send Weekly Expense Reports
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            https://expenso-ex.vercel.app/api/cron/send-weekly-reports \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Failed to send weekly reports"
+            exit 1
+          fi
+          
+          echo "✅ Weekly reports sent successfully"
+
+  send-monthly-analytics:
+    runs-on: ubuntu-latest
+    # Run only on 1st of month schedule OR manual trigger with analytics/both
+    if: |
+      (github.event.schedule == '0 9 1 * *') ||
+      (github.event_name == 'workflow_dispatch' && 
+       (github.event.inputs.notification_type == 'monthly_analytics' || 
+        github.event.inputs.notification_type == 'both'))
+    
+    steps:
+      - name: Send Monthly Analytics Reports
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            https://expenso-ex.vercel.app/api/cron/send-monthly-analytics \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" != "200" ]; then
+            echo "❌ Failed to send monthly analytics"
+            exit 1
+          fi
+          
+          echo "✅ Monthly analytics sent successfully"
+
+  notify-on-failure:
+    runs-on: ubuntu-latest
+    needs: [send-weekly-reports, send-monthly-analytics]
+    if: failure()
+    
+    steps:
+      - name: Notification on Failure
+        run: |
+          echo "⚠️ Email notification job failed!"
+          echo "Check the logs above for details."
+          echo "Common issues:"
+          echo "- CRON_SECRET not set in GitHub Secrets"
+          echo "- Production API is down"
+          echo "- Email service (Gmail) authentication failed"

@@ -11,7 +11,6 @@ import { usePreferences } from '@/contexts/PreferencesContext'
 export default function Settings() {
   const { user, signOut } = useAuth()
   const { refetch: refetchPrefs, currency: currentPrefCurrency, convertExistingData, updatePrefs } = usePreferences()
-  console.log('Settings page - current preferences:', { currentPrefCurrency, convertExistingData })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -424,7 +423,38 @@ export default function Settings() {
                     }}
                     className="h-4 w-4"
                   />
-                  <span className="text-sm text-gray-800">Weekly reports</span>
+                  <div className="flex-1 flex items-center justify-between">
+                    <span className="text-sm text-gray-800">Weekly expense reports (sent every Monday)</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!user) return;
+                        try {
+                          const token = await user.getIdToken();
+                          const response = await fetch('/api/notifications/send-on-demand', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ type: 'weekly_reports' })
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            alert('Weekly report sent! Check your email.');
+                          } else {
+                            alert(data.message || 'Could not send report. Make sure notifications are enabled.');
+                          }
+                        } catch (e) {
+                          console.error(e);
+                          alert('Failed to send report');
+                        }
+                      }}
+                      className="ml-3 px-3 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
+                    >
+                      Send now
+                    </button>
+                  </div>
                 </label>
 
                 <label className="flex items-center gap-3">
@@ -437,7 +467,38 @@ export default function Settings() {
                     }}
                     className="h-4 w-4"
                   />
-                  <span className="text-sm text-gray-800">Analytics</span>
+                  <div className="flex-1 flex items-center justify-between">
+                    <span className="text-sm text-gray-800">Monthly analytics insights (sent 1st of each month)</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!user) return;
+                        try {
+                          const token = await user.getIdToken();
+                          const response = await fetch('/api/notifications/send-on-demand', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ type: 'analytics' })
+                          });
+                          const data = await response.json();
+                          if (data.success) {
+                            alert('Analytics report sent! Check your email.');
+                          } else {
+                            alert(data.message || 'Could not send report. Make sure notifications are enabled.');
+                          }
+                        } catch (e) {
+                          console.error(e);
+                          alert('Failed to send report');
+                        }
+                      }}
+                      className="ml-3 px-3 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
+                    >
+                      Send now
+                    </button>
+                  </div>
                 </label>
 
                 <label className="flex items-center gap-3">
@@ -450,7 +511,7 @@ export default function Settings() {
                     }}
                     className="h-4 w-4"
                   />
-                  <span className="text-sm text-gray-800">Marketing</span>
+                  <span className="text-sm text-gray-800">Product updates and feature announcements</span>
                 </label>
               </div>
             </div>
@@ -478,7 +539,6 @@ export default function Settings() {
                     onClick={async () => {
                       console.log('Manual refetch button clicked')
                       await refetchPrefs()
-                      console.log('Manual refetch completed')
                     }}
                     className="mt-2 px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600"
                   >
