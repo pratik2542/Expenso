@@ -97,6 +97,16 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
   const analyticsUrl = toAbsoluteUrl(baseUrl, '/analytics');
   const settingsUrl = toAbsoluteUrl(baseUrl, '/settings');
 
+  // Debug logging (will appear in server logs)
+  console.log('[Email Template] Generated URLs:', {
+    baseUrl,
+    dashboardUrl,
+    expensesUrl,
+    budgetUrl,
+    analyticsUrl,
+    settingsUrl
+  });
+
   const html = `
 <!doctype html>
 <html lang="en">
@@ -122,7 +132,7 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0B0F19;border-radius:14px 14px 0 0;">
                   <tr>
                     <td style="padding:18px 20px;">
-                      <a href="${dashboardUrl}" style="color:#FFFFFF;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:800;letter-spacing:0.6px;">
+                      <a href="${dashboardUrl}" target="_blank" rel="noopener noreferrer" style="color:#FFFFFF;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:800;letter-spacing:0.6px;">
                         <img src="${appIconUrl}" width="22" height="22" alt="Expenso" style="display:inline-block;vertical-align:middle;border-radius:6px;margin-right:10px;" onerror="this.onerror=null;this.src='${appIconFallbackUrl}';" />
                         <span style="display:inline-block;vertical-align:middle;">EXPENSO</span>
                       </a>
@@ -171,7 +181,7 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td style="background:#2563EB;border-radius:10px;">
-                      <a href="${cta.url}" style="display:inline-block;padding:12px 16px;color:#FFFFFF;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:800;">
+                      <a href="${cta.url}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 16px;color:#FFFFFF;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;font-weight:800;">
                         ${escapeHtml(cta.text)}
                       </a>
                     </td>
@@ -185,11 +195,11 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
                   <tr>
                     <td style="padding-top:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#6B7280;">
                       Quick links:
-                      <a href="${dashboardUrl}" style="color:#2563EB;text-decoration:underline;margin-left:6px;">Dashboard</a>
-                      <a href="${expensesUrl}" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Expenses</a>
-                      <a href="${budgetUrl}" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Budget</a>
-                      <a href="${analyticsUrl}" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Analytics</a>
-                      <a href="${settingsUrl}" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Settings</a>
+                      <a href="${dashboardUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:6px;">Dashboard</a>
+                      <a href="${expensesUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Expenses</a>
+                      <a href="${budgetUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Budget</a>
+                      <a href="${analyticsUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Analytics</a>
+                      <a href="${settingsUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Settings</a>
                     </td>
                   </tr>
                 </table>
@@ -202,9 +212,9 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
                 <div style="max-width:600px;">
                   <div style="margin-bottom:6px;">You received this email because notifications are enabled in your Expenso account.</div>
                   <div>
-                    <a href="${settingsUrl}" style="color:#6B7280;text-decoration:underline;">Manage preferences</a>
+                    <a href="${settingsUrl}" target="_blank" rel="noopener noreferrer" style="color:#6B7280;text-decoration:underline;">Manage preferences</a>
                     <span style="color:#D1D5DB;"> • </span>
-                    <a href="${settingsUrl}" style="color:#6B7280;text-decoration:underline;">Unsubscribe</a>
+                    <a href="${settingsUrl}" target="_blank" rel="noopener noreferrer" style="color:#6B7280;text-decoration:underline;">Unsubscribe</a>
                   </div>
                   <div style="margin-top:10px;">© ${year} Expenso</div>
                 </div>
