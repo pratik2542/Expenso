@@ -17,14 +17,36 @@ function normalizeBaseUrl(url: string): string {
 }
 
 export function getAppBaseUrl(): string {
+  // Always prefer explicit APP_BASE_URL for production emails
+  if (process.env.APP_BASE_URL) {
+    return normalizeBaseUrl(process.env.APP_BASE_URL);
+  }
+
+  // For NEXT_PUBLIC_API_URL, only use if it's the production domain
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    const apiUrl = normalizeBaseUrl(process.env.NEXT_PUBLIC_API_URL);
+    // Only use if it's NOT a preview deployment URL
+    if (!apiUrl.includes('-pratik2542s-projects.vercel.app')) {
+      return apiUrl;
+    }
+  }
+
+  // Check other env vars
   const fromEnv =
-    process.env.APP_BASE_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+    (process.env.VERCEL_URL && !process.env.VERCEL_URL.includes('git-')
+      ? `https://${process.env.VERCEL_URL}`
+      : '');
 
   const normalized = normalizeBaseUrl(fromEnv);
-  return normalized || 'http://localhost:3000';
+  
+  // If we still have a preview URL, default to production domain
+  if (normalized.includes('-pratik2542s-projects.vercel.app')) {
+    return 'https://expenso-ex.vercel.app';
+  }
+
+  return normalized || 'https://expenso-ex.vercel.app';
 }
 
 function toAbsoluteUrl(baseUrl: string, urlOrPath: string): string {
