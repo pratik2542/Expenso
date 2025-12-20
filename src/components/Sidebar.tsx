@@ -41,6 +41,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
   const [internalOpen, setInternalOpen] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const { user, signOut } = useAuth()
@@ -51,6 +52,11 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
 
   useEffect(() => {
     setMounted(true)
+    // Fetch version info
+    fetch('/version.json')
+      .then(res => res.json())
+      .then(data => setAppVersion(data.version))
+      .catch(() => {})
   }, [])
 
   if (!mounted) {
@@ -356,7 +362,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                       className="w-full flex justify-center items-center gap-2 rounded-md border border-transparent bg-primary-600 px-4 py-3 text-sm font-medium text-white hover:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
                     >
                       <DownloadIcon className="h-5 w-5" />
-                      Download Latest APK
+                      Download APK {appVersion ? `(v${appVersion})` : ''}
                     </a>
                   </div>
 
