@@ -51,7 +51,7 @@ export default function Layout({ children }: LayoutProps) {
     >
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       <main className="lg:pl-64">
-        <div className="px-4 sm:px-6 lg:px-8 py-8">
+        <div className="px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-8">
           {children}
         </div>
       </main>

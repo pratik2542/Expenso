@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Set Java 17 for Android build (required for Gradle)
+export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
+export PATH="$JAVA_HOME/bin:$PATH"
+
 # Configuration
 KEYSTORE_PATH="android/my-release-key.keystore"
 KEYSTORE_ALIAS="alias_name"
