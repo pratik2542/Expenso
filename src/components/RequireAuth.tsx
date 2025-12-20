@@ -8,7 +8,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.replace('/auth')
+      // Store the current path to redirect back after authentication
+      const returnUrl = router.asPath
+      router.replace(`/auth?redirect=${encodeURIComponent(returnUrl)}`)
     }
   }, [loading, user, router])
 

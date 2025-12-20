@@ -31,7 +31,12 @@ export default function Auth() {
     }
   }, [router.query.reset])
 
-  useEffect(() => { if (user && !isRecoveryMode) router.replace('/') }, [user, isRecoveryMode, router])
+  useEffect(() => { 
+    if (user && !isRecoveryMode) {
+      const redirect = router.query.redirect as string
+      router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+    }
+  }, [user, isRecoveryMode, router])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -55,7 +60,10 @@ export default function Auth() {
       setLoading(true)
       const { error } = await updateUserPassword(newPassword)
       setLoading(false)
-      if (error) setError(error); else router.replace('/')
+      if (error) setError(error); else {
+        const redirect = router.query.redirect as string
+        router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+      }
       return
     }
     if (!isLogin && formData.password !== formData.confirmPassword) {
@@ -65,13 +73,19 @@ export default function Auth() {
     if (isLogin) {
       const { error } = await signIn(formData.email, formData.password)
       setLoading(false)
-      if (error) setError(error); else router.replace('/')
+      if (error) setError(error); else {
+        const redirect = router.query.redirect as string
+        router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+      }
     } else {
       const { error, needsVerification } = await signUp(formData.email, formData.password, formData.fullName)
       setLoading(false)
       if (error) setError(error)
       else if (needsVerification) setVerificationNotice(true)
-      else router.replace('/')
+      else {
+        const redirect = router.query.redirect as string
+        router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+      }
     }
   }
 
@@ -163,7 +177,8 @@ export default function Auth() {
                       setError(error)
                       setLoading(false)
                     } else {
-                      router.replace('/')
+                      const redirect = router.query.redirect as string
+                      router.replace(redirect && redirect !== '/auth' ? redirect : '/')
                     }
                   }}
                   disabled={loading}
@@ -187,7 +202,8 @@ export default function Auth() {
                       setError(error)
                       setLoading(false)
                     } else {
-                      router.replace('/')
+                      const redirect = router.query.redirect as string
+                      router.replace(redirect && redirect !== '/auth' ? redirect : '/')
                     }
                   }}
                   disabled={loading}

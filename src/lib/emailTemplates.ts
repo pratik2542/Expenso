@@ -128,6 +128,12 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
     analyticsUrl,
     settingsUrl
   });
+  
+  console.log('[Email Template] URL Construction Test:', {
+    'dashboardUrl === baseUrl + "/"': dashboardUrl === `${baseUrl}/`,
+    'expensesUrl === baseUrl + "/expenses"': expensesUrl === `${baseUrl}/expenses`,
+    'budgetUrl === baseUrl + "/budget"': budgetUrl === `${baseUrl}/budget`,
+  });
 
   const html = `
 <!doctype html>
@@ -217,11 +223,11 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
                   <tr>
                     <td style="padding-top:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#6B7280;">
                       Quick links:
-                      <a href="${baseUrl}/" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:6px;">Dashboard</a>
-                      <a href="${baseUrl}/expenses" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Expenses</a>
-                      <a href="${baseUrl}/budget" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Budget</a>
-                      <a href="${baseUrl}/analytics" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Analytics</a>
-                      <a href="${baseUrl}/settings" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;">Settings</a>
+                      <a href="${dashboardUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:6px;display:inline-block;">Dashboard</a>
+                      <a href="${expensesUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;display:inline-block;">Expenses</a>
+                      <a href="${budgetUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;display:inline-block;">Budget</a>
+                      <a href="${analyticsUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;display:inline-block;">Analytics</a>
+                      <a href="${settingsUrl}" target="_blank" rel="noopener noreferrer" style="color:#2563EB;text-decoration:underline;margin-left:10px;display:inline-block;">Settings</a>
                     </td>
                   </tr>
                 </table>
