@@ -40,6 +40,10 @@ echo "📦 Building Next.js project..."
 export MOBILE_BUILD=true 
 npm run build
 
+# Prevent recursive APK inclusion
+echo "🧹 Removing old APK from build assets..."
+rm -f out/Expenso.apk
+
 # 3. Sync with Capacitor
 echo "🔄 Syncing with Capacitor..."
 npx cap sync
