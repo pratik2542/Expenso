@@ -981,9 +981,9 @@ export default function Expenses() {
                 {!isLoading && sortedExpenses.map((expense) => {
                   const mappedCategory = normalizeCategory(expense.category, definedCategoryNames)
                   const displayText = (() => {
+                    if (expense.merchant) return expense.merchant
                     const clean = String(expense.note || '').replace(/\bTransaction date\b[^;\n]*;\s*\bPosting date\b[^\n]*/gi, '').trim()
                     if (clean) return clean
-                    if (expense.merchant) return expense.merchant
                     if (expense.category) return expense.category
                     return 'No description'
                   })()

@@ -74,7 +74,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const formatCurrency = useMemo(() => {
     return (amount: number) => {
       try {
-        return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount)
+        // Force en-US for CAD to get CA$
+        const locale = currency === 'CAD' ? 'en-US' : undefined
+        return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount)
       } catch {
         return `${currency} ${amount.toFixed(2)}`
       }
@@ -85,7 +87,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return (amount: number, code: string) => {
       if (!code) return amount.toFixed(2)
       try {
-        return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(amount)
+        const locale = code === 'CAD' ? 'en-US' : undefined
+        return new Intl.NumberFormat(locale, { style: 'currency', currency: code }).format(amount)
       } catch {
         return `${code} ${amount.toFixed(2)}`
       }

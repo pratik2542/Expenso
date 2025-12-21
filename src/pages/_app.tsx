@@ -22,10 +22,44 @@ export default function App({ Component, pageProps }: AppProps) {
         GoogleAuth.initialize()
       })
 
-      // Handle back button
+      // Handle back button with double-press to exit
+      let lastBackPress = 0
       CapacitorApp.addListener('backButton', ({ canGoBack }) => {
         if (!canGoBack) {
-          CapacitorApp.exitApp()
+          const now = Date.now()
+          if (now - lastBackPress < 2000) {
+            CapacitorApp.exitApp()
+          } else {
+            lastBackPress = now
+            // Show simple toast
+            const toast = document.createElement('div')
+            toast.innerText = 'Press back again to exit'
+            Object.assign(toast.style, {
+              position: 'fixed',
+              bottom: '80px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(30, 30, 30, 0.9)',
+              color: 'white',
+              padding: '10px 20px',
+              borderRadius: '50px',
+              zIndex: '9999',
+              fontSize: '14px',
+              fontWeight: '500',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              pointerEvents: 'none',
+              transition: 'opacity 0.3s ease'
+            })
+            document.body.appendChild(toast)
+            setTimeout(() => {
+              toast.style.opacity = '0'
+              setTimeout(() => {
+                if (document.body.contains(toast)) {
+                  document.body.removeChild(toast)
+                }
+              }, 300)
+            }, 2000)
+          }
         } else {
           window.history.back()
         }

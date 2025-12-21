@@ -78,7 +78,8 @@ function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, c
   // If user chose not to convert and currencies differ, show in original currency
   if (!convertExistingData && fromCurrency !== prefCurrency) {
     try {
-      return <span>{new Intl.NumberFormat(undefined, { style: 'currency', currency: fromCurrency }).format(amount)}</span>
+      const locale = fromCurrency === 'CAD' ? 'en-US' : undefined
+      return <span>{new Intl.NumberFormat(locale, { style: 'currency', currency: fromCurrency }).format(amount)}</span>
     } catch {
       return <span>{amount} {fromCurrency}</span>
     }
@@ -88,6 +89,9 @@ function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, c
 }
 
 function getCurrencySymbol(currency: string) {
+  // Explicitly handle CAD to ensure it shows as CA$
+  if (currency === 'CAD') return 'CA$'
+  
   try {
     return (0).toLocaleString(undefined, { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).replace(/\d/g, '').trim()
   } catch (e) {
