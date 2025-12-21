@@ -8,7 +8,10 @@ import {
   XAxis, 
   YAxis, 
   CartesianGrid, 
-  Tooltip 
+  Tooltip,
+  ComposedChart,
+  Line,
+  Area
 } from 'recharts'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -120,28 +123,47 @@ export default function Charts({ month, year, currency }: { month: number; year:
   })
 
   // Last 6 months spending trend (ending at selected month) with currency conversion
-  const { data: monthlyData = [] } = useQuery<{ month: string; amount: number }[]>({
+  const { data: monthlyData = [] } = useQuery<{ month: string; spending: number; income: number }[]>({
     queryKey: ['chart-monthly', user?.uid, month, year, viewCurrency],
     enabled: !!user?.uid,
     queryFn: async () => {
       if (!user?.uid) return []
-      const points: { month: string; amount: number }[] = []
+      const points: { month: string; spending: number; income: number }[] = []
       const base = new Date(year, month - 1, 1)
       for (let i = 5; i >= 0; i--) {
         const d = new Date(base.getFullYear(), base.getMonth() - i, 1)
         const start = new Date(d.getFullYear(), d.getMonth(), 1)
         const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+        const currentMonth = d.getMonth() + 1
+        const currentYear = d.getFullYear()
         
+        // Fetch expenses for this month
         const expensesRef = collection(db, 'expenses', user.uid, 'items')
-        const q = query(
+        const expenseQuery = query(
           expensesRef,
           where('occurred_on', '>=', start.toISOString().slice(0,10)),
           where('occurred_on', '<=', end.toISOString().slice(0,10)),
           where('currency', '==', viewCurrency)
         )
-        const snapshot = await getDocs(q)
-        const total = snapshot.docs.reduce((acc, doc) => acc + Number(doc.data().amount || 0), 0)
-        points.push({ month: d.toLocaleString(undefined, { month: 'short' }), amount: total })
+        const expenseSnapshot = await getDocs(expenseQuery)
+        const spendingTotal = expenseSnapshot.docs.reduce((acc, doc) => acc + Number(doc.data().amount || 0), 0)
+        
+        // Fetch income for this month
+        const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
+        const incomeQuery = query(
+          incomeRef,
+          where('month', '==', currentMonth),
+          where('year', '==', currentYear),
+          where('currency', '==', viewCurrency)
+        )
+        const incomeSnapshot = await getDocs(incomeQuery)
+        const incomeTotal = incomeSnapshot.docs.reduce((acc, doc) => acc + Number(doc.data().amount || 0), 0)
+        
+        points.push({ 
+          month: d.toLocaleString(undefined, { month: 'short' }), 
+          spending: spendingTotal,
+          income: incomeTotal
+        })
       }
       return points
     }
@@ -164,12 +186,17 @@ export default function Charts({ month, year, currency }: { month: number; year:
                     outerRadius={100}
                     paddingAngle={5}
                     dataKey="value"
+                    activeIndex={-1}
+                    activeShape={false}
                   >
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
+                  <Tooltip 
+                    formatter={(value, name, props) => [formatCurrencyExplicit(Number(value), viewCurrency), props.payload.name]} 
+                    labelFormatter={() => ''}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -197,27 +224,53 @@ export default function Charts({ month, year, currency }: { month: number; year:
         )}
       </div>
 
-      {/* Monthly Spending Trend */}
+      {/* Monthly Income vs Spending Trend */}
       <div className="card">
-        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 sm:mb-4">Monthly Spending Trend</h3>
-        {monthlyData.some(d => d.amount > 0) ? (
-          <div className="h-56 sm:h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
-                <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2 sm:mb-4">Income vs Spending Trend</h3>
+        {monthlyData.some(d => d.spending > 0 || d.income > 0) ? (
+          <>
+            <div className="h-56 sm:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip 
+                    formatter={(value, name) => [
+                      formatCurrencyExplicit(Number(value), viewCurrency), 
+                      name === 'income' ? 'Income' : 'Spending'
+                    ]} 
+                  />
+                  <Bar dataKey="income" fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.8} name="income" />
+                  <Line 
+                    type="monotone" 
+                    dataKey="spending" 
+                    stroke="#ef4444" 
+                    strokeWidth={2} 
+                    dot={{ fill: '#ef4444', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, fill: '#ef4444' }}
+                    name="spending"
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-3 flex items-center justify-center gap-6 text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded bg-blue-500"></div>
+                <span className="text-gray-600">Income</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                <span className="text-gray-600">Spending</span>
+              </div>
+            </div>
+          </>
         ) : (
           <div className="h-56 sm:h-64 flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
             <svg className="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
-            <p className="text-sm">No spending history found</p>
+            <p className="text-sm">No data found</p>
           </div>
         )}
       </div>

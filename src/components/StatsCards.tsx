@@ -1,4 +1,4 @@
-import { CreditCardIcon, TrendingUpIcon } from 'lucide-react'
+import { CreditCardIcon, TrendingUpIcon, ChevronDownIcon, PencilIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
@@ -63,6 +63,7 @@ export default function StatsCards({
   const viewCurrency = selectedCurrency || incomeCurrency
   const [savingIncome, setSavingIncome] = useState(false)
   const [incomeError, setIncomeError] = useState<string | null>(null)
+  const [isIncomeExpanded, setIsIncomeExpanded] = useState(false)
 
   const { data: spending = { amount: 0, currency: prefCurrency || 'USD' }, isLoading: loadingSpend } = useQuery({
     queryKey: ['monthly-spend-total', user?.uid, selectedStart, selectedEnd, viewCurrency],
@@ -164,13 +165,33 @@ export default function StatsCards({
     }
   }
 
-  const cards: Array<{ name: string; value: string; icon: any }> = []
+  // Compact currency formatter for mobile (e.g., 114.5K instead of 114,483.48)
+  const formatCompact = (amount: number, currency: string) => {
+    const absAmount = Math.abs(amount)
+    const sign = amount < 0 ? '-' : ''
+    let symbol = ''
+    try {
+      symbol = new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(0).replace(/[\d.,\s]/g, '')
+    } catch { symbol = currency + ' ' }
+    
+    if (absAmount >= 1000000) {
+      return `${sign}${symbol}${(absAmount / 1000000).toFixed(1)}M`
+    } else if (absAmount >= 10000) {
+      return `${sign}${symbol}${(absAmount / 1000).toFixed(1)}K`
+    } else if (absAmount >= 1000) {
+      return `${sign}${symbol}${(absAmount / 1000).toFixed(2)}K`
+    }
+    return formatCurrencyExplicit(amount, currency)
+  }
+
+  const cards: Array<{ name: string; value: string; compactValue: string; icon: any }> = []
 
   // Monthly Spending card
   if (!loadingSpend) {
     cards.push({
       name: `Monthly Spending`,
       value: formatCurrencyExplicit(spending.amount, viewCurrency),
+      compactValue: formatCompact(spending.amount, viewCurrency),
       icon: CreditCardIcon,
     })
   }
@@ -181,6 +202,7 @@ export default function StatsCards({
     cards.push({
       name: 'Budget Used',
       value: `${usedPct.toFixed(0)}%`,
+      compactValue: `${usedPct.toFixed(0)}%`,
       icon: TrendingUpIcon,
     })
   }
@@ -195,6 +217,7 @@ export default function StatsCards({
       cards.unshift({
         name: 'Total Balance',
         value: formatCurrencyExplicit(balance, viewCurrency),
+        compactValue: formatCompact(balance, viewCurrency),
         icon: TrendingUpIcon,
       })
       
@@ -205,6 +228,7 @@ export default function StatsCards({
       cards.push({
         name: isDeficit ? 'Deficit Rate' : 'Savings Rate',
         value: `${Math.abs(savingsRate).toFixed(0)}%${isDeficit ? ' over' : ''}`,
+        compactValue: `${Math.abs(savingsRate).toFixed(0)}%${isDeficit ? ' over' : ''}`,
         icon: TrendingUpIcon,
       })
     }
@@ -213,25 +237,17 @@ export default function StatsCards({
   if (cards.length === 0) return null
 
   return (
-    <div className="space-y-3 sm:space-y-4">
-      {/* Monthly Income editor */}
-      <div className="card">
-        {/* Header - always visible */}
-        <div className="text-sm font-medium text-gray-700 mb-2 sm:mb-3">
-          Monthly Income
-          <span className="hidden sm:inline"> ({new Date(selectedYear, selectedMonth - 1, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })})</span>
-        </div>
-        {incomeError && (
-          <div className="text-xs text-red-600 mb-2 sm:mb-3">{incomeError}</div>
-        )}
-        
-        {/* Mobile Layout - Stacked */}
-        <div className="flex flex-col gap-2 sm:hidden">
-          <div className="grid grid-cols-2 gap-2">
+    <div className="space-y-3">
+      {/* Filters + Income Editor */}
+      <div className="card !p-3 lg:!p-5">
+        {/* Mobile Layout */}
+        <div className="lg:hidden space-y-3">
+          {/* Filters - Always visible */}
+          <div className="flex gap-2">
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="input text-sm"
+              className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             >
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'short' })}</option>
@@ -240,14 +256,12 @@ export default function StatsCards({
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="input text-sm"
+              className="w-24 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             >
               {Array.from({ length: 7 }, (_, i) => year - 3 + i).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
             <select
               value={viewCurrency}
               onChange={(e) => {
@@ -255,7 +269,109 @@ export default function StatsCards({
                 if (onSelectedCurrencyChange) onSelectedCurrencyChange(v)
                 setIncomeCurrency(v)
               }}
-              className="input text-sm"
+              className="w-20 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="CAD">CAD</option>
+              <option value="AUD">AUD</option>
+              <option value="INR">INR</option>
+            </select>
+          </div>
+          
+          {/* Income Summary - Collapsible */}
+          <button
+            onClick={() => setIsIncomeExpanded(!isIncomeExpanded)}
+            className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] uppercase tracking-wide text-gray-500">Income</p>
+                <p className="text-base font-bold text-green-600">
+                  {income.amount > 0 ? formatCurrencyExplicit(income.amount, viewCurrency) : 'Tap to set'}
+                </p>
+              </div>
+            </div>
+            <ChevronDownIcon className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isIncomeExpanded ? 'rotate-180' : ''}`} />
+          </button>
+          
+          {/* Income Edit Form - Expanded */}
+          {isIncomeExpanded && (
+            <div className="p-3 bg-gray-50 rounded-xl space-y-3">
+              {incomeError && (
+                <div className="text-xs text-red-600 p-2 bg-red-50 rounded-lg">{incomeError}</div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={incomeAmount}
+                  onChange={(e) => setIncomeAmount(e.target.value)}
+                  className="flex-1 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Enter income amount"
+                />
+                <button
+                  onClick={() => {
+                    saveIncome()
+                  }}
+                  className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-xl transition-colors disabled:opacity-50"
+                  disabled={savingIncome}
+                >
+                  {savingIncome ? '...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* Desktop Layout - Always visible */}
+        <div className="hidden lg:block">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-sm lg:text-base font-semibold text-gray-900">Monthly Income</h3>
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+              {new Date(selectedYear, selectedMonth - 1, 1).toLocaleString(undefined, { month: 'short', year: 'numeric' })}
+            </span>
+          </div>
+          
+          {incomeError && (
+            <div className="text-xs text-red-600 mb-3 p-2 bg-red-50 rounded-lg">{incomeError}</div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              className="input min-w-[140px]"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'long' })}</option>
+              ))}
+            </select>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="input w-24"
+            >
+              {Array.from({ length: 7 }, (_, i) => year - 3 + i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <select
+              value={viewCurrency}
+              onChange={(e) => {
+                const v = e.target.value
+                if (onSelectedCurrencyChange) onSelectedCurrencyChange(v)
+                setIncomeCurrency(v)
+              }}
+              className="input w-24"
             >
               <option value="USD">USD</option>
               <option value="EUR">EUR</option>
@@ -270,97 +386,58 @@ export default function StatsCards({
               step="0.01"
               value={incomeAmount}
               onChange={(e) => setIncomeAmount(e.target.value)}
-              className="input text-sm"
-              placeholder="Amount"
+              className="input w-32"
+              placeholder="0.00"
             />
+            <button
+              onClick={saveIncome}
+              className="btn-primary whitespace-nowrap"
+              disabled={savingIncome}
+            >
+              {savingIncome ? 'Saving…' : 'Save'}
+            </button>
           </div>
-          <button
-            onClick={saveIncome}
-            className="btn-primary w-full"
-            disabled={savingIncome}
-          >
-            {savingIncome ? 'Saving…' : 'Save Income'}
-          </button>
-        </div>
-
-        {/* Desktop Layout - Horizontal */}
-        <div className="hidden sm:flex items-center gap-2">
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            className="input min-w-[140px]"
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'long' })}</option>
-            ))}
-          </select>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="input w-24"
-          >
-            {Array.from({ length: 7 }, (_, i) => year - 3 + i).map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-          <select
-            value={viewCurrency}
-            onChange={(e) => {
-              const v = e.target.value
-              if (onSelectedCurrencyChange) onSelectedCurrencyChange(v)
-              setIncomeCurrency(v)
-            }}
-            className="input w-24"
-          >
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="GBP">GBP</option>
-            <option value="CAD">CAD</option>
-            <option value="AUD">AUD</option>
-            <option value="INR">INR</option>
-          </select>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={incomeAmount}
-            onChange={(e) => setIncomeAmount(e.target.value)}
-            className="input w-32"
-            placeholder="0.00"
-          />
-          <button
-            onClick={saveIncome}
-            className="btn-primary whitespace-nowrap"
-            disabled={savingIncome}
-          >
-            {savingIncome ? 'Saving…' : 'Save'}
-          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stats Cards - Mobile Compact */}
+      <div className="grid grid-cols-3 gap-2 lg:grid-cols-4 lg:gap-4">
       {cards.map((stat) => {
         const IconComponent = stat.icon
         const isDeficitCard = stat.name === 'Deficit Rate' || (stat.name === 'Total Balance' && stat.value.startsWith('-'))
-        const borderColor = isDeficitCard ? 'border-red-500' : 'border-indigo-500'
-        const bgColor = isDeficitCard ? 'bg-red-50' : 'bg-indigo-50'
-        const textColor = isDeficitCard ? 'text-red-600' : 'text-indigo-600'
+        const gradientBg = isDeficitCard 
+          ? 'bg-gradient-to-br from-red-50 to-red-100' 
+          : 'bg-gradient-to-br from-primary-50 to-indigo-100'
+        const iconBg = isDeficitCard ? 'bg-red-500' : 'bg-primary-600'
+        const textColor = isDeficitCard ? 'text-red-600' : 'text-gray-900'
         
         return (
-          <div key={stat.name} className={`card hover:shadow-md transition-shadow duration-200 border-l-4 ${borderColor} px-3 py-3 sm:px-4 sm:py-4`}>
-            <div className="flex items-center">
-              <div className={`flex-shrink-0 p-2 sm:p-3 ${bgColor} rounded-lg`}>
-                <IconComponent className={`h-5 w-5 sm:h-6 sm:w-6 ${textColor}`} />
+          <div 
+            key={stat.name} 
+            className={`relative overflow-hidden rounded-xl ${gradientBg} p-2.5 lg:p-4 shadow-sm`}
+          >
+            {/* Mobile: Compact Vertical Layout */}
+            <div className="flex flex-col lg:hidden">
+              <div className={`w-6 h-6 ${iconBg} rounded-lg flex items-center justify-center mb-1.5 shadow-sm`}>
+                <IconComponent className="h-3 w-3 text-white" />
               </div>
-              <div className="ml-3 sm:ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-xs sm:text-sm font-medium text-gray-500 truncate">{stat.name}</dt>
-                  <dd className="flex items-baseline">
-                    <div className={`text-lg sm:text-2xl font-semibold ${isDeficitCard ? 'text-red-600' : 'text-gray-900'}`}>{stat.value}</div>
-                  </dd>
-                </dl>
+              <p className="text-[9px] font-medium text-gray-500 leading-tight">{stat.name}</p>
+              <p className={`text-sm font-bold ${textColor} tracking-tight mt-0.5`}>{stat.compactValue}</p>
+            </div>
+            
+            {/* Desktop: Horizontal Layout */}
+            <div className="hidden lg:flex items-center gap-3 h-full">
+              <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center shadow-lg flex-shrink-0`}>
+                <IconComponent className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-gray-500 mb-0.5">{stat.name}</p>
+                <p className={`text-xl font-bold ${textColor} tracking-tight`}>{stat.value}</p>
               </div>
             </div>
+            
+            {/* Decorative circle - smaller on mobile */}
+            <div className={`absolute -right-2 -bottom-2 w-10 h-10 lg:w-16 lg:h-16 ${isDeficitCard ? 'bg-red-200' : 'bg-primary-200'} rounded-full opacity-20`}></div>
           </div>
         )
       })}

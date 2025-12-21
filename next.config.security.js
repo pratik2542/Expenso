@@ -34,6 +34,7 @@ const securityHeaders = [
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "connect-src 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app",
+      "frame-src https://expenso-pdfexcel.vercel.app", // Allow PDF converter iframe
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'"

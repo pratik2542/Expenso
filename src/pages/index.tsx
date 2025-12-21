@@ -349,10 +349,36 @@ export default function Dashboard() {
       </Head>
       <RequireAuth>
       <Layout>
-        <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
-          {/* Welcome Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
-            <div>
+        <div className="max-w-7xl mx-auto space-y-4 lg:space-y-8">
+          {/* Welcome Header - Mobile Optimized */}
+          <div className="lg:flex lg:items-center lg:justify-between">
+            {/* Mobile Header */}
+            <div className="lg:hidden">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Welcome back</p>
+                  <h1 
+                    className="text-xl font-bold text-gray-900 flex items-center gap-2"
+                    onClick={() => setShowRealName(!showRealName)}
+                  >
+                    <span className="text-primary-600">
+                      {loadingNickname ? '...' : (nickname || userFullName?.split(' ')[0] || 'User')}
+                    </span>
+                    <span className="text-2xl">👋</span>
+                  </h1>
+                  {showRealName && (
+                    <p className="text-xs text-gray-500 mt-1">{userFullName || 'User'}</p>
+                  )}
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-500">{new Date().toLocaleDateString(undefined, { weekday: 'short' })}</p>
+                  <p className="text-sm font-medium text-gray-900">{new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Desktop Header */}
+            <div className="hidden lg:block">
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
                 Welcome back,{' '}
                 <span 
@@ -375,8 +401,8 @@ export default function Dashboard() {
               </h1>
               <p className="text-gray-600 mt-1">Here's what's happening with your finances.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm text-gray-500 bg-gray-100 px-2 py-1 sm:px-3 sm:py-1 rounded-full">
+            <div className="hidden lg:flex items-center gap-2">
+              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
                 {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </span>
             </div>
@@ -399,41 +425,60 @@ export default function Dashboard() {
           />
 
         {/* Income History (all months) */}
-        <div className="card">
+        <div className="card !p-4 lg:!p-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Income History</h3>
-            <button className="btn-secondary text-sm" onClick={() => setShowIncomeHistory((s) => !s)}>
+            <h3 className="text-base lg:text-lg font-semibold text-gray-900">Income History</h3>
+            <button 
+              className="px-3 py-1.5 text-sm font-medium text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors" 
+              onClick={() => setShowIncomeHistory((s) => !s)}
+            >
               {showIncomeHistory ? 'Hide' : 'Show'}
             </button>
           </div>
           {showIncomeHistory && (
             <div className="mt-4">
-              {/* Mobile View - Card Layout */}
-              <div className="block sm:hidden space-y-3">
+              {/* Mobile View - Modern Card Layout */}
+              <div className="block lg:hidden space-y-2">
                 {incomeHistory.map((row, idx) => (
-                  <div key={`${row.year}-${row.month}-${idx}`} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-900">
-                        {new Date(row.year, row.month - 1, 1).toLocaleString(undefined, { month: 'long' })} {row.year}
-                      </span>
-                      <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">
-                        {row.currency}
-                      </span>
+                  <div 
+                    key={`${row.year}-${row.month}-${idx}`} 
+                    className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                        <span className="text-green-600 font-bold text-sm">
+                          {new Date(row.year, row.month - 1, 1).toLocaleString(undefined, { month: 'short' }).slice(0, 3)}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {new Date(row.year, row.month - 1, 1).toLocaleString(undefined, { month: 'long' })}
+                        </p>
+                        <p className="text-xs text-gray-500">{row.year}</p>
+                      </div>
                     </div>
-                    <div className="text-lg font-semibold text-gray-900">
-                      {formatCurrencyExplicit(row.amount, row.currency)}
+                    <div className="text-right">
+                      <p className="text-base font-bold text-green-600">
+                        {formatCurrencyExplicit(row.amount, row.currency)}
+                      </p>
+                      <p className="text-xs text-gray-400">{row.currency}</p>
                     </div>
                   </div>
                 ))}
                 {incomeHistory.length === 0 && (
-                  <div className="text-center py-6 text-sm text-gray-500">
+                  <div className="text-center py-8 text-sm text-gray-500">
+                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
                     No income history found
                   </div>
                 )}
               </div>
 
               {/* Desktop View - Table Layout */}
-              <div className="hidden sm:block overflow-x-auto">
+              <div className="hidden lg:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
@@ -465,43 +510,62 @@ export default function Dashboard() {
         </div>
 
           {/* Recent Expenses */}
-          <div className="card">
+          <div className="card !p-4 lg:!p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Recent Expenses</h2>
-              <Link href="/expenses" className="text-sm font-medium text-primary-600 hover:text-primary-500">View all</Link>
+              <h2 className="text-base lg:text-lg font-semibold text-gray-900">Recent Expenses</h2>
+              <Link href="/expenses" className="text-sm font-medium text-primary-600 hover:text-primary-500 flex items-center gap-1">
+                View all
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
             
-            {/* Mobile View - Card Layout */}
-            <div className="block sm:hidden space-y-3">
+            {/* Mobile View - Modern Card Layout */}
+            <div className="block lg:hidden space-y-2">
               {recentExpenses.map(e => (
-                <div key={e.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-gray-100 transition-colors">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex-1 min-w-0">
+                <div key={e.id} className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white rounded-xl border border-gray-100 active:scale-[0.98] transition-transform">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <span className="text-base font-bold text-red-500">
+                        {e.category?.charAt(0)?.toUpperCase() || '?'}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 truncate">{e.note || 'No note'}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{e.category}</p>
+                      <p className="text-xs text-gray-500">{e.category} · {formatDate(e.occurred_on, { month: 'short', day: 'numeric' })}</p>
                     </div>
-                    <div className="text-right ml-3">
-                      <p className="text-sm font-semibold text-gray-900">
-                        <ConvertedAmount 
-                          amount={e.amount} 
-                          fromCurrency={e.currency} 
-                          prefCurrency={prefCurrency} 
-                          formatCurrency={formatCurrency} 
-                          convertExistingData={convertExistingData}
-                        />
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">{formatDate(e.occurred_on, { month: 'short', day: 'numeric' })}</p>
-                    </div>
+                  </div>
+                  <div className="text-right ml-3 flex-shrink-0">
+                    <p className="text-base font-bold text-gray-900">
+                      <ConvertedAmount 
+                        amount={e.amount} 
+                        fromCurrency={e.currency} 
+                        prefCurrency={prefCurrency} 
+                        formatCurrency={formatCurrency} 
+                        convertExistingData={convertExistingData}
+                      />
+                    </p>
                   </div>
                 </div>
               ))}
               {recentExpenses.length === 0 && (
-                <div className="text-center py-8 text-sm text-gray-500">No recent expenses</div>
+                <div className="text-center py-10">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-gray-500">No recent expenses</p>
+                  <Link href="/expenses" className="text-sm text-primary-600 font-medium mt-2 inline-block">
+                    Add your first expense
+                  </Link>
+                </div>
               )}
             </div>
 
             {/* Desktop View - Table Layout */}
-            <div className="hidden sm:block overflow-x-auto">
+            <div className="hidden lg:block overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -537,60 +601,153 @@ export default function Dashboard() {
           </div>
 
           {/* Charts and Insights */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Spending Trend</h3>
-              <div className="h-64">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+            {/* Monthly Spending Trend */}
+            <div className="card !p-4 lg:!p-6">
+              <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-4">Monthly Spending</h3>
+              <div className="h-52 lg:h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
-                    <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#d1d5db" />
+                    <XAxis 
+                      dataKey="month" 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#6b7280' }}
+                    />
+                    <YAxis 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 11, fill: '#9ca3af' }}
+                      tickFormatter={(value) => value >= 1000 ? `${(value/1000).toFixed(0)}k` : value}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Spent']}
+                      contentStyle={{ 
+                        backgroundColor: '#1f2937', 
+                        border: 'none', 
+                        borderRadius: '12px',
+                        padding: '8px 12px',
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                      }}
+                      labelStyle={{ color: '#9ca3af', fontSize: '12px', marginBottom: '4px' }}
+                      itemStyle={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}
+                    />
+                    <Bar 
+                      dataKey="amount" 
+                      fill="url(#barGradient)" 
+                      radius={[8, 8, 0, 0]}
+                      maxBarSize={50}
+                    />
+                    <defs>
+                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" />
+                        <stop offset="100%" stopColor="#8b5cf6" />
+                      </linearGradient>
+                    </defs>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              {/* Monthly Stats Summary */}
+              {monthlyData.length > 0 && (() => {
+                const amounts = monthlyData.map(d => d.amount).filter(a => a > 0);
+                const total = amounts.reduce((sum, a) => sum + a, 0);
+                const avg = amounts.length > 0 ? total / amounts.length : 0;
+                const maxAmount = Math.max(...amounts, 0);
+                const maxMonth = monthlyData.find(d => d.amount === maxAmount);
+                const currentMonth = monthlyData[monthlyData.length - 1];
+                const prevMonth = monthlyData[monthlyData.length - 2];
+                const change = prevMonth && prevMonth.amount > 0 
+                  ? ((currentMonth?.amount || 0) - prevMonth.amount) / prevMonth.amount * 100 
+                  : 0;
+                
+                return (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Avg/Month</p>
+                        <p className="text-sm font-bold text-indigo-600">
+                          {formatCurrencyExplicit(avg, viewCurrency)}
+                        </p>
+                      </div>
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Highest</p>
+                        <p className="text-sm font-bold text-amber-600">
+                          {maxMonth?.month || '-'}
+                        </p>
+                      </div>
+                      <div className={`bg-gradient-to-br rounded-xl p-3 ${change <= 0 ? 'from-green-50 to-emerald-50' : 'from-red-50 to-rose-50'}`}>
+                        <p className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">vs Last Mo</p>
+                        <p className={`text-sm font-bold ${change <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {change === 0 ? '-' : `${change > 0 ? '+' : ''}${change.toFixed(0)}%`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             
-            <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Category Breakdown (Last 30 Days)</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {categoryData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              {categoryData.length > 0 && (
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  {categoryData.map((category, idx) => (
-                    <div key={category.name} className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: palette[idx % palette.length] }}
-                      ></div>
-                      <span className="text-xs text-gray-600 truncate">{category.name}</span>
-                      <span className="text-xs font-medium text-gray-900">{formatCurrency(category.value)}</span>
-                    </div>
-                  ))}
+            {/* Category Breakdown */}
+            <div className="card !p-4 lg:!p-6">
+              <h3 className="text-base lg:text-lg font-semibold text-gray-900 mb-4">Category Breakdown (Last 30 Days)</h3>
+              {categoryData.length > 0 ? (
+                <>
+                  <div className="h-52 lg:h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={categoryData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="55%"
+                          outerRadius="85%"
+                          paddingAngle={3}
+                          dataKey="value"
+                        >
+                          {categoryData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']}
+                          contentStyle={{ 
+                            backgroundColor: '#1f2937', 
+                            border: 'none', 
+                            borderRadius: '12px',
+                            padding: '8px 12px'
+                          }}
+                          itemStyle={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {/* Category List with Amounts - 2 Column Grid */}
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+                    {categoryData.map((category, idx) => (
+                      <div key={category.name} className="flex items-center gap-1.5">
+                        <div 
+                          className="w-3 h-3 rounded-full flex-shrink-0" 
+                          style={{ backgroundColor: palette[idx % palette.length] }}
+                        />
+                        <span className="text-xs text-gray-700">{category.name}</span>
+                        <span className="text-xs font-semibold text-gray-900 whitespace-nowrap">
+                          {formatCurrencyExplicit(category.value, viewCurrency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-52 lg:h-64 text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-gray-500">No expenses in the last 30 days</p>
                 </div>
-              )}
-              {categoryData.length === 0 && (
-                <div className="text-center py-4 text-sm text-gray-500">No expenses in the last 30 days</div>
               )}
             </div>
           </div>

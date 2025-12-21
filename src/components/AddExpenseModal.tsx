@@ -128,11 +128,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     if (cur === 'INR') return 'Debit Card'
     return ''
   }
+  
   // PDF Converter Modal state
   const [showPdfConverterModal, setShowPdfConverterModal] = useState<boolean>(false)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  
-  // (removed duplicate useAuth declaration)
   
   // Track if we've already initialized the form to prevent constant resets
   const [initialized, setInitialized] = React.useState(false)
@@ -317,16 +316,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     }
   }
 
-  const [converterUrl, setConverterUrl] = useState<string>('')
   const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null)
-
-  const handleSelectPDF = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Just open the converter modal immediately
-    setShowPdfConverterModal(true)
-    setImportError(null)
-    setParsedExpenses([])
-    setImportStatus('')
-  }
 
   const closeConverterModal = () => {
     setShowPdfConverterModal(false)
@@ -337,29 +327,68 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     }
   }
 
+  const openPopupConverter = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const url = `https://expenso-pdfexcel.vercel.app/?embed=1&targetOrigin=${encodeURIComponent(origin)}`
+    const popup = window.open(url, 'PDFConverter', 'width=1100,height=800,resizable=yes,scrollbars=yes')
+    if (!popup) {
+      alert('Popup blocked. Please allow popups for this site.')
+      return
+    }
+    closeConverterModal()
+    
+    // Listen for message from popup
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
+      if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
+        const transactions = event.data.transactions || []
+        if (!Array.isArray(transactions) || transactions.length === 0) {
+          setImportError('No transactions found or processing cancelled.')
+          return
+        }
+        const currencyCounts = transactions.reduce<Record<string, number>>((acc, r) => {
+          const c = (r.currency || '').toUpperCase()
+          if (!c) return acc
+          acc[c] = (acc[c] || 0) + 1
+          return acc
+        }, {})
+        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
+        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
+        const mapped = transactions.map((t: any) => ({
+          amount: Math.abs(t.debit || t.credit || 0),
+          currency: t.currency || 'USD',
+          merchant: t.description || '',
+          payment_method: defaultPM || 'Credit Card',
+          note: '',
+          occurred_on: formatDateToISO(t.date),
+          category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
+        }))
+        setParsedExpenses(mapped)
+        setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
+        setImportError(null)
+        popup.close()
+        window.removeEventListener('message', handleMessage)
+      }
+    }
+    window.addEventListener('message', handleMessage)
+  }
+
   const analyzeSelectedPDF = () => {
-    // Open the PDF converter in a modal
-    setShowPdfConverterModal(true)
+    // Open the PDF converter modal with iframe
     setImportStatus('')
     setImportLoading(false)
     setImportError(null)
-    // Build converter URL with embed hints and target origin
-    if (typeof window !== 'undefined') {
-      const origin = window.location.origin
-      const url = `https://expenso-pdfexcel.vercel.app/?embed=1&targetOrigin=${encodeURIComponent(origin)}`
-      setConverterUrl(url)
-    } else {
-      setConverterUrl('https://expenso-pdfexcel.vercel.app/?embed=1')
+    setShowPdfConverterModal(true)
+    
+    // Setup message listener for iframe communication
+    if (messageHandlerRef.current) {
+      window.removeEventListener('message', messageHandlerRef.current)
     }
     
-    // Listen for message from iframe
     const handleMessage = (event: MessageEvent) => {
-      // Verify the message is from our trusted domain
       if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
-      
       if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
         const transactions = event.data.transactions || []
-        
         if (!Array.isArray(transactions) || transactions.length === 0) {
           setImportError('No transactions found or processing cancelled.')
           return
@@ -390,75 +419,12 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
         setImportError(null)
         // Close modal and cleanup listener
-        closeConverterModal()
-      }
-    }
-    
-    window.addEventListener('message', handleMessage)
-    messageHandlerRef.current = handleMessage
-    
-    // Timeout after 10 minutes
-    const timeoutId = setTimeout(() => {
-      if (messageHandlerRef.current) {
-        window.removeEventListener('message', messageHandlerRef.current)
-        messageHandlerRef.current = null
-      }
-      setImportError('PDF processing took too long. Please try again.')
-      closeConverterModal()
-    }, 10 * 60 * 1000)
-    // Attach to ref so we can clear if needed
-    if (iframeRef.current) (iframeRef.current as any).__timeoutId = timeoutId
-  }
-
-  // Optional fallback: open converter in a popup if iframe cannot communicate
-  const openPopupConverter = () => {
-    // Build URL with same params
-    let url = converterUrl
-    if (!url) {
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
-      url = `https://expenso-pdfexcel.vercel.app/?embed=1&targetOrigin=${encodeURIComponent(origin)}`
-    }
-    const popup = window.open(url, 'PDFConverter', 'width=1100,height=800,resizable=yes,scrollbars=yes')
-    if (!popup) {
-      setImportError('Popup blocked. Please allow popups and try again.')
-      return
-    }
-    // Reuse the same message handler
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
-      if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
-        const transactions = event.data.transactions || []
-        if (!Array.isArray(transactions) || transactions.length === 0) {
-          setImportError('No transactions found or processing cancelled.')
-          return
-        }
-        const currencyCounts = transactions.reduce<Record<string, number>>((acc, r) => {
-          const c = (r.currency || '').toUpperCase()
-          if (!c) return acc
-          acc[c] = (acc[c] || 0) + 1
-          return acc
-        }, {})
-        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
-        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
-        const mapped = transactions.map((t: any) => ({
-          amount: Math.abs(t.debit || t.credit || 0),
-          currency: t.currency || 'USD',
-          merchant: t.description || '',
-          payment_method: defaultPM || 'Credit Card',
-          note: '',
-          occurred_on: formatDateToISO(t.date),
-          category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
-        }))
-        setParsedExpenses(mapped)
-        setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
-        setImportError(null)
-        // Close any modal and popup
         setShowPdfConverterModal(false)
-        try { popup.close() } catch {}
         window.removeEventListener('message', handleMessage)
         messageHandlerRef.current = null
       }
     }
+    
     window.addEventListener('message', handleMessage)
     messageHandlerRef.current = handleMessage
   }
@@ -710,15 +676,6 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                             <div className="flex flex-col gap-2 items-stretch">
                               {/* AI is always used with masking by default; toggle removed for simplicity */}
 
-                              <input 
-                                id="uploadPdfInput" 
-                                type="file" 
-                                accept="application/pdf" 
-                                className="hidden" 
-                                onChange={handleSelectPDF} 
-                                disabled={importLoading}
-                                aria-label="Upload PDF statement"
-                              />
                               <button 
                                 type="button"
                                 className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}
@@ -1164,7 +1121,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
 
     {/* PDF Converter Modal */}
     <Transition.Root show={showPdfConverterModal} as={Fragment}>
-  <Dialog as="div" className="relative z-50" onClose={closeConverterModal}>
+      <Dialog as="div" className="relative z-50" onClose={closeConverterModal}>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -1208,7 +1165,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                     type="button"
                     onClick={openPopupConverter}
                     className="inline-flex items-center rounded-md border border-gray-300 bg-white p-2 sm:px-3 sm:py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-                    title="Open in popup if iframe is blocked"
+                    title="Open in popup if iframe doesn't load"
                   >
                     <ExternalLink className="h-5 w-5 sm:h-4 sm:w-4 sm:mr-2" />
                     <span className="hidden sm:inline">Open in popup</span>
@@ -1225,20 +1182,13 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               </div>
               
               {/* Iframe container - takes up remaining space */}
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden bg-gray-100">
                 <iframe
                   ref={iframeRef}
-                  src={converterUrl || 'https://expenso-pdfexcel.vercel.app/?embed=1'}
+                  src="https://expenso-pdfexcel.vercel.app/?embed=1"
                   className="w-full h-full border-0"
                   title="PDF Converter"
                   allow="clipboard-write"
-                  onLoad={() => {
-                    // Send handshake to child so it knows we're an iframe parent
-                    try {
-                      const origin = window.location.origin
-                      iframeRef.current?.contentWindow?.postMessage({ type: 'EXPENSO_PARENT_HANDSHAKE', origin }, 'https://expenso-pdfexcel.vercel.app')
-                    } catch {}
-                  }}
                 />
               </div>
             </Dialog.Panel>

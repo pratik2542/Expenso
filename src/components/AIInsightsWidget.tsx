@@ -235,19 +235,53 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white">
+      {/* Mobile Header */}
+      <div className="lg:hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 p-4 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+              <SparklesIcon className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-sm">Financial Pulse</h3>
+              {monthlyData?.periodLabel && (
+                <p className="text-[10px] text-white/80">{monthlyData.periodLabel}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {monthlyData?.income.amount > 0 && (
+              <span className="text-[10px] bg-white/20 px-2 py-1 rounded-full">
+                💰 {monthlyData.income.amount.toLocaleString()}
+              </span>
+            )}
+            {insights && (
+              <button 
+                onClick={generateInsights} 
+                disabled={isRefreshing}
+                className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-50"
+                title="Refresh Insights"
+              >
+                <RefreshCwIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop Header */}
+      <div className="hidden lg:block bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
           <div className="flex items-center gap-2 flex-wrap">
             <SparklesIcon className="w-5 h-5" />
             <h3 className="font-semibold">Financial Pulse</h3>
-            {monthlyData.periodLabel && (
+            {monthlyData?.periodLabel && (
               <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full text-white/90">
                 {monthlyData.periodLabel}
               </span>
             )}
-            {/* Debug: Show income being used */}
             <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full text-white/90">
-              Income: {monthlyData.income.amount.toLocaleString()} {monthlyData.income.currency}
+              Income: {monthlyData?.income.amount.toLocaleString()} {monthlyData?.income.currency}
             </span>
           </div>
           {insights && (
@@ -263,25 +297,26 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         </div>
       </div>
 
-      <div className="p-6">
+      {/* Content */}
+      <div className="p-4 lg:p-6">
         {loadingInsights ? (
           <div className="space-y-4 animate-pulse">
             <div className="h-4 bg-gray-100 rounded w-3/4"></div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-              <div className="h-20 bg-gray-50 rounded-lg"></div>
-              <div className="h-20 bg-gray-50 rounded-lg"></div>
-              <div className="h-20 bg-gray-50 rounded-lg"></div>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 lg:gap-3 mt-4">
+              <div className="h-16 lg:h-20 bg-gray-50 rounded-lg"></div>
+              <div className="h-16 lg:h-20 bg-gray-50 rounded-lg"></div>
+              <div className="h-16 lg:h-20 bg-gray-50 rounded-lg"></div>
             </div>
           </div>
         ) : !insights ? (
-          <div className="text-center py-6">
-            <div className="mb-4 text-gray-500 text-sm">
-              Get AI-powered analysis of your spending habits for this period.
+          <div className="text-center py-4 lg:py-6">
+            <div className="mb-3 lg:mb-4 text-gray-500 text-xs lg:text-sm">
+              Get AI-powered analysis of your spending habits.
             </div>
             <button
               onClick={generateInsights}
               disabled={isRefreshing}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25"
             >
               {isRefreshing ? (
                 <>
@@ -298,20 +333,44 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
           </div>
         ) : (
           <div>
-            {/* Header Section */}
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border mb-2 ${getStatusColor(insights.color)}`}>
+            {/* Mobile Status + Title */}
+            <div className="lg:hidden">
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${getStatusColor(insights.color)}`}>
                   {getStatusIcon(insights.status)}
                   {insights.status}
                 </div>
-                <h4 className="text-lg font-bold text-gray-900">{insights.title}</h4>
-                <p className="text-gray-600 text-sm mt-1">{insights.summary}</p>
+              </div>
+              <h4 className="text-base font-bold text-gray-900 mb-1">{insights.title}</h4>
+              <p className="text-gray-600 text-xs leading-relaxed">{insights.summary}</p>
+            </div>
+
+            {/* Desktop Status + Title */}
+            <div className="hidden lg:block">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border mb-2 ${getStatusColor(insights.color)}`}>
+                    {getStatusIcon(insights.status)}
+                    {insights.status}
+                  </div>
+                  <h4 className="text-lg font-bold text-gray-900">{insights.title}</h4>
+                  <p className="text-gray-600 text-sm mt-1">{insights.summary}</p>
+                </div>
               </div>
             </div>
 
-            {/* Highlights Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
+            {/* Mobile Highlights - 2 Column Grid */}
+            <div className="lg:hidden mt-3 grid grid-cols-2 gap-2">
+              {insights.highlights.map((item, idx) => (
+                <div key={idx} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-2.5 border border-gray-100">
+                  <div className="text-lg mb-1">{item.icon}</div>
+                  <p className="text-[10px] font-medium text-gray-700 leading-tight">{item.text}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Highlights Grid */}
+            <div className="hidden lg:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
               {insights.highlights.map((item, idx) => (
                 <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/50 transition-colors">
                   <div className="text-2xl mb-2">{item.icon}</div>
@@ -321,7 +380,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
             </div>
             
             {insights.generatedAt && (
-              <div className="mt-4 text-xs text-gray-400 text-right">
+              <div className="mt-3 lg:mt-4 text-[10px] lg:text-xs text-gray-400 text-right">
                 Updated: {new Date(insights.generatedAt).toLocaleDateString()}
               </div>
             )}

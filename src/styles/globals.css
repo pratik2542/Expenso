@@ -136,3 +136,39 @@ a {
   font-style: italic;
   color: #6b7280;
 }
+
+/* Recharts - Remove focus/selection rectangle on pie chart */
+.recharts-surface {
+  outline: none !important;
+}
+
+.recharts-surface:focus {
+  outline: none !important;
+}
+
+.recharts-wrapper svg {
+  outline: none !important;
+}
+
+.recharts-pie-sector {
+  outline: none !important;
+}
+
+.recharts-sector:focus,
+.recharts-sector:active {
+  outline: none !important;
+}
+
+.recharts-layer:focus,
+.recharts-layer:active {
+  outline: none !important;
+}
+
+/* Hide the selection rectangle completely */
+.recharts-rectangle.recharts-tooltip-cursor {
+  display: none !important;
+}
+
+.recharts-active-shape {
+  display: none !important;
+}

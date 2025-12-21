@@ -313,59 +313,57 @@ export default function Analytics() {
       </Head>
 
       <Layout>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
-            <p className="text-gray-600 mt-2">Insights into your spending patterns and trends</p>
+        <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 lg:py-8">
+          {/* Header - Mobile Optimized */}
+          <div className="mb-4 lg:mb-8">
+            {/* Mobile Header */}
+            <div className="lg:hidden">
+              <h1 className="text-xl font-bold text-gray-900">Analytics</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Spending insights & trends</p>
+            </div>
+            
+            {/* Desktop Header */}
+            <div className="hidden lg:block">
+              <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
+              <p className="text-gray-600 mt-2">Insights into your spending patterns and trends</p>
+            </div>
           </div>
 
-          {/* Period and Currency selection */}
-          <div className="card mb-4 sm:mb-6">
-            {/* Mobile Layout - Stacked with Labels */}
-            <div className="flex flex-col gap-2 sm:gap-4 lg:hidden">
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Month</label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="input w-full"
-                >
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                    <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'long' })}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Year</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="input w-full"
-                  >
-                    {Array.from({ length: 7 }, (_, i) => now.getFullYear() - 3 + i).map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Currency</label>
-                  <select
-                    value={viewCurrency}
-                    onChange={(e) => setViewCurrency(e.target.value)}
-                    className="input w-full"
-                  >
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="CAD">CAD</option>
-                    <option value="AUD">AUD</option>
-                    <option value="INR">INR</option>
-                    <option value="JPY">JPY</option>
-                  </select>
-                </div>
-              </div>
+          {/* Period and Currency selection - Mobile Optimized */}
+          <div className="card !p-3 lg:!p-6 mb-4 lg:mb-6">
+            {/* Mobile Layout - Equal Width Pills */}
+            <div className="grid grid-cols-3 gap-2 lg:hidden">
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'short' })}</option>
+                ))}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500"
+              >
+                {Array.from({ length: 7 }, (_, i) => now.getFullYear() - 3 + i).map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <select
+                value={viewCurrency}
+                onChange={(e) => setViewCurrency(e.target.value)}
+                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="CAD">CAD</option>
+                <option value="AUD">AUD</option>
+                <option value="INR">INR</option>
+                <option value="JPY">JPY</option>
+              </select>
             </div>
 
             {/* Desktop Layout - Horizontal without Labels */}
@@ -405,49 +403,43 @@ export default function Analytics() {
             </div>
           </div>
 
-          {/* Quick Stats */}
-          <div className="space-y-3 sm:space-y-4 lg:space-y-0 lg:grid lg:grid-cols-3 lg:gap-6 mb-6 sm:mb-8">
-            <div className="card">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center min-w-0 flex-1">
-                  <div className="p-2 sm:p-3 rounded-full bg-primary-100 flex-shrink-0">
-                    <DollarSignIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
-                  </div>
-                  <div className="ml-3 sm:ml-4 min-w-0">
-                    <p className="text-sm font-medium text-gray-600">Average Daily Spend</p>
-                    <p className="text-lg lg:text-2xl font-bold text-gray-900">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
-                  </div>
+          {/* Quick Stats - Mobile Optimized */}
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-6 mb-4 lg:mb-8">
+            <div className="bg-gradient-to-br from-primary-50 to-indigo-100 rounded-2xl p-3 lg:p-5 shadow-sm">
+              <div className="flex flex-col lg:flex-row lg:items-center">
+                <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-primary-100 flex-shrink-0">
+                  <DollarSignIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
+                </div>
+                <div className="lg:ml-4">
+                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">Daily Avg</p>
+                  <p className="text-base lg:text-2xl font-bold text-gray-900 mt-0.5">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
                 </div>
               </div>
             </div>
 
-            <div className="card">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center min-w-0 flex-1">
-                  <div className={`p-2 sm:p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100' : 'bg-success-100'}`}>
-                    <TrendingUpIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${isOverspending ? 'text-red-600 rotate-180' : 'text-success-600'}`} />
-                  </div>
-                  <div className="ml-3 sm:ml-4 min-w-0">
-                    <p className="text-sm font-medium text-gray-600">{isOverspending ? 'Deficit' : 'Savings'}</p>
-                    <p className={`text-lg lg:text-2xl font-bold ${isOverspending ? 'text-red-600' : 'text-gray-900'}`}>
-                      {formatCurrencyExplicit(Math.abs(savings), viewCurrency)}
-                    </p>
-                  </div>
+            <div className={`${isOverspending ? 'bg-gradient-to-br from-red-50 to-red-100' : 'bg-gradient-to-br from-green-50 to-emerald-100'} rounded-2xl p-3 lg:p-5 shadow-sm`}>
+              <div className="flex flex-col lg:flex-row lg:items-center">
+                <div className={`hidden lg:block p-2 sm:p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100' : 'bg-success-100'}`}>
+                  <TrendingUpIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${isOverspending ? 'text-red-600 rotate-180' : 'text-success-600'}`} />
+                </div>
+                <div className="lg:ml-4">
+                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">{isOverspending ? 'Deficit' : 'Savings'}</p>
+                  <p className={`text-base lg:text-2xl font-bold mt-0.5 ${isOverspending ? 'text-red-600' : 'text-gray-900'}`}>
+                    {formatCurrencyExplicit(Math.abs(savings), viewCurrency)}
+                  </p>
                 </div>
               </div>
             </div>
 
             {isCurrentMonth && (
-              <div className="card">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center min-w-0 flex-1">
-                    <div className="p-2 sm:p-3 rounded-full bg-warning-100 flex-shrink-0">
-                      <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-warning-700 font-semibold">⏳</span>
-                    </div>
-                    <div className="ml-3 sm:ml-4 min-w-0">
-                      <p className="text-sm font-medium text-gray-600">Days left in month</p>
-                      <p className="text-lg lg:text-2xl font-bold text-gray-900">{daysLeft}</p>
-                    </div>
+              <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl p-3 lg:p-5 shadow-sm">
+                <div className="flex flex-col lg:flex-row lg:items-center">
+                  <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-warning-100 flex-shrink-0">
+                    <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-warning-700 font-semibold">⏳</span>
+                  </div>
+                  <div className="lg:ml-4">
+                    <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">Days Left</p>
+                    <p className="text-base lg:text-2xl font-bold text-gray-900 mt-0.5">{daysLeft} days</p>
                   </div>
                 </div>
               </div>
@@ -458,316 +450,337 @@ export default function Analytics() {
           <Charts month={selectedMonth} year={selectedYear} currency={viewCurrency} />
 
           {/* AI Insights Section */}
-          <div className="mt-8 space-y-6">
+          <div className="mt-6 lg:mt-8 space-y-4 lg:space-y-6">
             {/* AI Generated Insights */}
-            <div className="card">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <SparklesIcon className="w-5 h-5 text-purple-600" />
-                  <h3 className="text-lg font-semibold text-gray-900">AI Spending Insights</h3>
-                </div>
-                <button
-                  onClick={generateAIInsights}
-                  disabled={aiInsightsLoading || monthExpenses.length === 0}
-                  className="btn-secondary inline-flex items-center justify-center gap-2 text-purple-700 border-purple-200 hover:bg-purple-50 disabled:opacity-50 w-full sm:w-auto"
-                >
-                  <RefreshCwIcon className={`w-4 h-4 ${aiInsightsLoading ? 'animate-spin' : ''}`} />
-                  {aiInsightsLoading ? 'Analyzing...' : 'Generate Insights'}
-                </button>
-              </div>
-              
-              {aiInsightsError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
-                  {aiInsightsError}
-                </div>
-              )}
-              
-              {!aiInsights && !aiInsightsLoading && !aiInsightsError && (
-                <div className="text-center py-8 text-gray-500">
-                  <SparklesIcon className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-                  <p>Click "Generate Insights" to get AI-powered analysis of your spending patterns.</p>
-                  <p className="text-sm mt-1">The AI will analyze where you're spending most and provide recommendations.</p>
-                </div>
-              )}
-              
-              {aiInsightsLoading && (
-                <div className="text-center py-8">
-                  <div className="inline-flex items-center gap-2 text-purple-600">
-                    <RefreshCwIcon className="w-5 h-5 animate-spin" />
-                    <span>Analyzing your spending data...</span>
-                  </div>
-                </div>
-              )}
-              
-              {aiInsights && !aiInsightsLoading && (
-                <div className="prose prose-sm max-w-none">
-                  <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-100">
-                    <div className="whitespace-pre-wrap text-gray-700 leading-relaxed">
-                      {aiInsights.split('\n').map((line, i) => {
-                        const trimmed = line.trim()
-                        if (!trimmed) return <div key={i} className="h-2" />
-
-                        // Helper to render bold text
-                        const renderText = (text: string) => {
-                          return text.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
-                            if (part.startsWith('**') && part.endsWith('**')) {
-                              return <strong key={j} className="text-gray-900 font-semibold">{part.slice(2, -2)}</strong>
-                            }
-                            return part
-                          })
-                        }
-
-                        // Headers
-                        if (trimmed.startsWith('###')) {
-                          return <h3 key={i} className="text-lg font-bold text-indigo-900 mt-4 mb-2 flex items-center gap-2">{renderText(trimmed.replace(/^###\s*/, ''))}</h3>
-                        }
-                        if (trimmed.startsWith('##')) {
-                          return <h2 key={i} className="text-xl font-bold text-indigo-900 mt-5 mb-3">{renderText(trimmed.replace(/^##\s*/, ''))}</h2>
-                        }
-
-                        // List items
-                        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-                          return (
-                            <div key={i} className="flex items-start gap-2 mb-2 pl-2">
-                              <span className="text-indigo-400 mt-1.5 flex-shrink-0">•</span>
-                              <div className="text-gray-700">{renderText(trimmed.replace(/^[-*]\s*/, ''))}</div>
-                            </div>
-                          )
-                        }
-
-                        // Numbered lists
-                        if (/^\d+\.\s/.test(trimmed)) {
-                           return (
-                            <div key={i} className="flex items-start gap-2 mb-2 pl-2">
-                              <span className="text-indigo-600 font-medium min-w-[1.5rem] flex-shrink-0">{trimmed.match(/^\d+\./)?.[0]}</span>
-                              <div className="text-gray-700">{renderText(trimmed.replace(/^\d+\.\s*/, ''))}</div>
-                            </div>
-                          )
-                        }
-
-                        return <p key={i} className="mb-2 text-gray-700">{renderText(line)}</p>
-                      })}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              {/* Header - Gradient */}
+              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-3 lg:p-4 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center lg:hidden">
+                      <SparklesIcon className="w-4 h-4" />
+                    </div>
+                    <SparklesIcon className="w-5 h-5 hidden lg:block" />
+                    <div>
+                      <h3 className="text-sm lg:text-lg font-semibold">AI Spending Insights</h3>
+                      <p className="text-[10px] lg:text-xs text-white/80 lg:hidden">
+                        {new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'short', year: 'numeric' })}
+                      </p>
                     </div>
                   </div>
+                  <button
+                    onClick={generateAIInsights}
+                    disabled={aiInsightsLoading || monthExpenses.length === 0}
+                    className="p-2 lg:px-3 lg:py-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    <RefreshCwIcon className={`w-4 h-4 ${aiInsightsLoading ? 'animate-spin' : ''}`} />
+                    <span className="hidden lg:inline text-sm font-medium">{aiInsightsLoading ? 'Analyzing...' : 'Generate'}</span>
+                  </button>
                 </div>
-              )}
+              </div>
+              
+              <div className="p-4 lg:p-6">
+                {aiInsightsError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs lg:text-sm mb-4">
+                    {aiInsightsError}
+                  </div>
+                )}
+                
+                {!aiInsights && !aiInsightsLoading && !aiInsightsError && (
+                  <div className="text-center py-6 lg:py-8 text-gray-500">
+                    <div className="w-12 h-12 lg:w-14 lg:h-14 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <SparklesIcon className="w-6 h-6 lg:w-7 lg:h-7 text-purple-400" />
+                    </div>
+                    <p className="text-sm lg:text-base">Tap to analyze your spending patterns</p>
+                    <p className="text-xs lg:text-sm mt-1 text-gray-400">AI will identify trends and recommendations</p>
+                  </div>
+                )}
+                
+                {aiInsightsLoading && (
+                  <div className="text-center py-6 lg:py-8">
+                    <div className="inline-flex items-center gap-2 text-purple-600">
+                      <RefreshCwIcon className="w-5 h-5 animate-spin" />
+                      <span className="text-sm">Analyzing spending data...</span>
+                    </div>
+                  </div>
+                )}
+                
+                {aiInsights && !aiInsightsLoading && (
+                  <div className="prose prose-sm max-w-none">
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-3 lg:p-4 border border-purple-100">
+                      <div className="whitespace-pre-wrap text-gray-700 leading-relaxed text-xs lg:text-sm">
+                        {aiInsights.split('\n').map((line, i) => {
+                          const trimmed = line.trim()
+                          if (!trimmed) return <div key={i} className="h-2" />
+
+                          // Helper to render bold text
+                          const renderText = (text: string) => {
+                            return text.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
+                              if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={j} className="text-gray-900 font-semibold">{part.slice(2, -2)}</strong>
+                              }
+                              return part
+                            })
+                          }
+
+                          // Headers
+                          if (trimmed.startsWith('###')) {
+                            return <h3 key={i} className="text-base lg:text-lg font-bold text-indigo-900 mt-3 lg:mt-4 mb-2 flex items-center gap-2">{renderText(trimmed.replace(/^###\s*/, ''))}</h3>
+                          }
+                          if (trimmed.startsWith('##')) {
+                            return <h2 key={i} className="text-lg lg:text-xl font-bold text-indigo-900 mt-4 lg:mt-5 mb-2 lg:mb-3">{renderText(trimmed.replace(/^##\s*/, ''))}</h2>
+                          }
+
+                          // List items
+                          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+                            return (
+                              <div key={i} className="flex items-start gap-2 mb-1.5 lg:mb-2 pl-1 lg:pl-2">
+                                <span className="text-indigo-400 mt-1 flex-shrink-0">•</span>
+                                <div className="text-gray-700">{renderText(trimmed.replace(/^[-*]\s*/, ''))}</div>
+                              </div>
+                            )
+                          }
+
+                          // Numbered lists
+                          if (/^\d+\.\s/.test(trimmed)) {
+                             return (
+                              <div key={i} className="flex items-start gap-2 mb-1.5 lg:mb-2 pl-1 lg:pl-2">
+                                <span className="text-indigo-600 font-medium min-w-[1.25rem] lg:min-w-[1.5rem] flex-shrink-0">{trimmed.match(/^\d+\./)?.[0]}</span>
+                                <div className="text-gray-700">{renderText(trimmed.replace(/^\d+\.\s*/, ''))}</div>
+                              </div>
+                            )
+                          }
+
+                          return <p key={i} className="mb-1.5 lg:mb-2 text-gray-700">{renderText(line)}</p>
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Ask AI Section */}
-            <div className="card">
-              <div className="flex flex-col gap-3 mb-4">
-                <div className="flex items-center gap-2">
-                  <SparklesIcon className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-base sm:text-lg font-semibold text-gray-900">Ask AI About Your Finances</h3>
-                </div>
-                {/* Scope Toggle */}
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
-                  <button
-                    onClick={() => setChatScope('month')}
-                    className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      chatScope === 'month' 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    This Month
-                  </button>
-                  <button
-                    onClick={() => setChatScope('all')}
-                    className={`flex-1 sm:flex-none px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      chatScope === 'all' 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    All Time
-                  </button>
-                </div>
-              </div>
-              <p className="text-sm text-gray-600 mb-4">
-                {chatScope === 'all' 
-                  ? `Ask any question about all your ${viewCurrency} finances across all time.`
-                  : `Ask any question about your spending data for ${new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })}.`
-                }
-                {chatScope === 'all' && allExpenses.length > 0 && (
-                  <span className="ml-1 text-blue-600 font-medium">
-                    ({allExpenses.length} transactions, {allTimeIncomeData.length} income records)
-                  </span>
-                )}
-              </p>
-              
-              {/* Chat History */}
-              {chatHistory.length > 0 && (
-                <div className="mb-4 max-h-96 overflow-y-auto space-y-3 border rounded-lg p-3 bg-gray-50">
-                  {chatHistory.map((msg, i) => (
-                    <div
-                      key={i}
-                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-3 lg:p-4 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center lg:hidden">
+                      <SparklesIcon className="w-4 h-4" />
+                    </div>
+                    <SparklesIcon className="w-5 h-5 hidden lg:block" />
+                    <h3 className="text-sm lg:text-lg font-semibold">Ask AI</h3>
+                  </div>
+                  {/* Scope Toggle */}
+                  <div className="flex items-center gap-1 bg-white/20 rounded-lg p-0.5">
+                    <button
+                      onClick={() => setChatScope('month')}
+                      className={`px-2 lg:px-3 py-1 text-[10px] lg:text-xs font-medium rounded-md transition-colors ${
+                        chatScope === 'month' 
+                          ? 'bg-white text-blue-600' 
+                          : 'text-white/80 hover:text-white'
+                      }`}
                     >
-                      <div
-                        className={`max-w-[85%] rounded-lg px-4 py-3 ${
-                          msg.role === 'user'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white border border-gray-200 text-gray-700 shadow-sm'
-                        }`}
-                      >
-                        <div className="text-sm prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-2 prose-ul:my-2 prose-li:my-0 prose-strong:text-gray-900 prose-table:w-full prose-th:bg-gray-100 prose-th:p-2 prose-th:text-left prose-td:p-2 prose-td:border prose-th:border">
-                          {(() => {
-                            // Check if message contains chart data
-                            const chartMatch = msg.content.match(/```chart-data\s*([\s\S]*?)```/)
-                            if (chartMatch) {
-                              try {
-                                const chartData = JSON.parse(chartMatch[1])
-                                const textContent = msg.content.replace(/```chart-data[\s\S]*?```/, '').trim()
-                                return (
-                                  <>
-                                    {textContent && (
-                                      <div className="mb-4">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                          {textContent}
-                                        </ReactMarkdown>
-                                      </div>
-                                    )}
-                                    <div className="bg-white p-4 rounded border mt-4">
-                                      <h4 className="font-semibold mb-2 text-gray-800">{chartData.title}</h4>
-                                      <ResponsiveContainer width="100%" height={300}>
-                                        {chartData.type === 'line' ? (
-                                          <LineChart data={chartData.data}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="name" />
-                                            <YAxis />
-                                            <Tooltip />
-                                            <Legend />
-                                            {chartData.dataKeys.map((key: string, idx: number) => (
-                                              <Line key={key} type="monotone" dataKey={key} stroke={idx === 0 ? '#3b82f6' : '#ef4444'} name={chartData.labels[idx]} />
-                                            ))}
-                                          </LineChart>
-                                        ) : chartData.type === 'bar' ? (
-                                          <BarChart data={chartData.data}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="name" />
-                                            <YAxis />
-                                            <Tooltip />
-                                            <Legend />
-                                            {chartData.dataKeys.map((key: string, idx: number) => (
-                                              <Bar key={key} dataKey={key} fill={idx === 0 ? '#3b82f6' : '#ef4444'} name={chartData.labels[idx]} />
-                                            ))}
-                                          </BarChart>
-                                        ) : (
-                                          <PieChart>
-                                            <Pie data={chartData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
-                                              {chartData.data.map((entry: any, idx: number) => (
-                                                <Cell key={`cell-${idx}`} fill={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]} />
-                                              ))}
-                                            </Pie>
-                                            <Tooltip />
-                                            <Legend />
-                                          </PieChart>
-                                        )}
-                                      </ResponsiveContainer>
-                                    </div>
-                                  </>
-                                )
-                              } catch (e) {
-                                // Silent fail - render as regular text
-                              }
-                            }
-                            // Regular text rendering with full markdown support
-                            return (
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {msg.content}
-                              </ReactMarkdown>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading && (
-                    <div className="flex justify-start">
-                      <div className="bg-white border border-gray-200 rounded-lg px-4 py-2">
-                        <div className="flex items-center gap-2 text-gray-500">
-                          <RefreshCwIcon className="w-4 h-4 animate-spin" />
-                          <span className="text-sm">Thinking...</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                      Month
+                    </button>
+                    <button
+                      onClick={() => setChatScope('all')}
+                      className={`px-2 lg:px-3 py-1 text-[10px] lg:text-xs font-medium rounded-md transition-colors ${
+                        chatScope === 'all' 
+                          ? 'bg-white text-blue-600' 
+                          : 'text-white/80 hover:text-white'
+                      }`}
+                    >
+                      All Time
+                    </button>
+                  </div>
                 </div>
-              )}
-              
-              {/* Question Input */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={userQuestion}
-                  onChange={(e) => setUserQuestion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      askQuestion()
-                    }
-                  }}
-                  placeholder="e.g., What's my biggest spending category?"
-                  className="input flex-1 text-sm"
-                  disabled={chatLoading}
-                />
-                <button
-                  onClick={askQuestion}
-                  disabled={chatLoading || !userQuestion.trim()}
-                  className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-50 w-full sm:w-auto"
-                >
-                  <SendIcon className="w-4 h-4" />
-                  Ask
-                </button>
               </div>
               
-              {/* Example Questions */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="text-xs text-gray-500 w-full sm:w-auto">Try:</span>
-                {(chatScope === 'all' ? [
-                  'What is my saving rate in last 6 months?',
-                  'Which month did I save the most?',
-                  'What\'s my average monthly spending?',
-                  'How are my savings trending?'
-                ] : [
-                  'Where am I spending the most?',
-                  'How can I reduce my expenses?',
-                  'Am I on track with my budget?',
-                  'What are my top 3 merchants?'
-                ]).map((q, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setUserQuestion(q)
+              <div className="p-3 lg:p-4">
+                <p className="text-xs lg:text-sm text-gray-600 mb-3">
+                  {chatScope === 'all' 
+                    ? `Ask about all your ${viewCurrency} finances.`
+                    : `Ask about ${new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'short', year: 'numeric' })} spending.`
+                  }
+                  {chatScope === 'all' && allExpenses.length > 0 && (
+                    <span className="text-blue-600 font-medium">
+                      {' '}({allExpenses.length} transactions)
+                    </span>
+                  )}
+                </p>
+                
+                {/* Chat History */}
+                {chatHistory.length > 0 && (
+                  <div className="mb-3 max-h-72 lg:max-h-96 overflow-y-auto space-y-2 lg:space-y-3 border rounded-xl p-2 lg:p-3 bg-gray-50">
+                    {chatHistory.map((msg, i) => (
+                      <div
+                        key={i}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[90%] lg:max-w-[85%] rounded-xl px-3 py-2 lg:px-4 lg:py-3 ${
+                            msg.role === 'user'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white border border-gray-200 text-gray-700 shadow-sm'
+                          }`}
+                        >
+                          <div className="text-xs lg:text-sm prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-1 lg:prose-p:my-2 prose-ul:my-1 lg:prose-ul:my-2 prose-li:my-0 prose-strong:text-gray-900 prose-table:w-full prose-th:bg-gray-100 prose-th:p-2 prose-th:text-left prose-td:p-2 prose-td:border prose-th:border">
+                            {(() => {
+                              // Check if message contains chart data
+                              const chartMatch = msg.content.match(/```chart-data\s*([\s\S]*?)```/)
+                              if (chartMatch) {
+                                try {
+                                  const chartData = JSON.parse(chartMatch[1])
+                                  const textContent = msg.content.replace(/```chart-data[\s\S]*?```/, '').trim()
+                                  return (
+                                    <>
+                                      {textContent && (
+                                        <div className="mb-3 lg:mb-4">
+                                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                            {textContent}
+                                          </ReactMarkdown>
+                                        </div>
+                                      )}
+                                      <div className="bg-white p-3 lg:p-4 rounded-lg border mt-3 lg:mt-4">
+                                        <h4 className="font-semibold mb-2 text-gray-800 text-xs lg:text-sm">{chartData.title}</h4>
+                                        <ResponsiveContainer width="100%" height={200}>
+                                          {chartData.type === 'line' ? (
+                                            <LineChart data={chartData.data}>
+                                              <CartesianGrid strokeDasharray="3 3" />
+                                              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                                              <YAxis tick={{ fontSize: 10 }} />
+                                              <Tooltip />
+                                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                                              {chartData.dataKeys.map((key: string, idx: number) => (
+                                                <Line key={key} type="monotone" dataKey={key} stroke={idx === 0 ? '#3b82f6' : '#ef4444'} name={chartData.labels[idx]} />
+                                              ))}
+                                            </LineChart>
+                                          ) : chartData.type === 'bar' ? (
+                                            <BarChart data={chartData.data}>
+                                              <CartesianGrid strokeDasharray="3 3" />
+                                              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                                              <YAxis tick={{ fontSize: 10 }} />
+                                              <Tooltip />
+                                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                                              {chartData.dataKeys.map((key: string, idx: number) => (
+                                                <Bar key={key} dataKey={key} fill={idx === 0 ? '#3b82f6' : '#ef4444'} name={chartData.labels[idx]} />
+                                              ))}
+                                            </BarChart>
+                                          ) : (
+                                            <PieChart>
+                                              <Pie data={chartData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>
+                                                {chartData.data.map((entry: any, idx: number) => (
+                                                  <Cell key={`cell-${idx}`} fill={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]} />
+                                                ))}
+                                              </Pie>
+                                              <Tooltip />
+                                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                                            </PieChart>
+                                          )}
+                                        </ResponsiveContainer>
+                                      </div>
+                                    </>
+                                  )
+                                } catch (e) {
+                                  // Silent fail - render as regular text
+                                }
+                              }
+                              // Regular text rendering with full markdown support
+                              return (
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {msg.content}
+                                </ReactMarkdown>
+                              )
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {chatLoading && (
+                      <div className="flex justify-start">
+                        <div className="bg-white border border-gray-200 rounded-xl px-3 py-2">
+                          <div className="flex items-center gap-2 text-gray-500">
+                            <RefreshCwIcon className="w-4 h-4 animate-spin" />
+                            <span className="text-xs">Thinking...</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {/* Question Input */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={userQuestion}
+                    onChange={(e) => setUserQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        askQuestion()
+                      }
                     }}
-                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-600 transition-colors"
+                    placeholder="Ask a question..."
+                    className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    disabled={chatLoading}
+                  />
+                  <button
+                    onClick={askQuestion}
+                    disabled={chatLoading || !userQuestion.trim()}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
-                    {q}
+                    <SendIcon className="w-4 h-4" />
+                    <span className="hidden lg:inline text-sm font-medium">Ask</span>
                   </button>
-                ))}
+                </div>
+                
+                {/* Example Questions - Grid on mobile */}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(chatScope === 'all' ? [
+                    'Saving rate?',
+                    'Best month?',
+                    'Avg spending?',
+                    'Savings trend?'
+                  ] : [
+                    'Top category?',
+                    'Cut expenses?',
+                    'On budget?',
+                    'Top merchants?'
+                  ]).map((q, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setUserQuestion(q)}
+                      className="text-[10px] lg:text-xs px-2 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors text-center"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             {/* Basic Stats Card */}
-            <div className="card">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Summary</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-gray-600">Total Spending</p>
-                  <p className="font-semibold text-lg">{formatCurrencyExplicit(spendTotal, viewCurrency)}</p>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+              <h3 className="text-sm lg:text-lg font-semibold text-gray-900 mb-3 lg:mb-4">Quick Summary</h3>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-4">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Spending</p>
+                  <p className="font-bold text-sm lg:text-lg text-gray-900 mt-0.5">{formatCurrencyExplicit(spendTotal, viewCurrency)}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-gray-600">Income</p>
-                  <p className="font-semibold text-lg">{formatCurrencyExplicit(incomeAmt, viewCurrency)}</p>
+                <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Income</p>
+                  <p className="font-bold text-sm lg:text-lg text-green-600 mt-0.5">{formatCurrencyExplicit(incomeAmt, viewCurrency)}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-gray-600">Daily Average</p>
-                  <p className="font-semibold text-lg">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Daily Avg</p>
+                  <p className="font-bold text-sm lg:text-lg text-blue-600 mt-0.5">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-gray-600">Transactions</p>
-                  <p className="font-semibold text-lg">{monthExpenses.length}</p>
+                <div className="bg-gradient-to-br from-purple-50 to-violet-100 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Transactions</p>
+                  <p className="font-bold text-sm lg:text-lg text-purple-600 mt-0.5">{monthExpenses.length}</p>
                 </div>
               </div>
             </div>

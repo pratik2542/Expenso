@@ -95,6 +95,22 @@ function getCurrencySymbol(currency: string) {
   }
 }
 
+// Format large numbers with K, M abbreviations for mobile
+function formatCompactCurrency(amount: number, currency: string) {
+  const absAmount = Math.abs(amount)
+  const symbol = getCurrencySymbol(currency)
+  const isNegative = amount < 0
+  const sign = isNegative ? '-' : ''
+  
+  if (absAmount >= 1000000) {
+    return `${sign}${symbol}${(absAmount / 1000000).toFixed(1)}M`
+  } else if (absAmount >= 1000) {
+    return `${sign}${symbol}${(absAmount / 1000).toFixed(1)}K`
+  } else {
+    return `${sign}${symbol}${absAmount.toFixed(2)}`
+  }
+}
+
 export default function BudgetPage() {
   const { user } = useAuth()
   const { formatCurrency, currency: prefCurrency, convertExistingData, loading: prefsLoading } = usePreferences()
@@ -535,10 +551,27 @@ export default function BudgetPage() {
 
       <RequireAuth>
         <Layout>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* Header */}
-          <div className="mb-6 sm:mb-8">
-            <div className="flex flex-col gap-3 sm:gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 lg:py-8">
+          {/* Header - Mobile Optimized */}
+          <div className="mb-4 lg:mb-8">
+            {/* Mobile Header */}
+            <div className="lg:hidden">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-xl font-bold text-gray-900">Budget</h1>
+                  <p className="text-sm text-gray-500 mt-0.5">Track spending limits</p>
+                </div>
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="w-11 h-11 bg-primary-600 hover:bg-primary-700 rounded-full flex items-center justify-center shadow-lg"
+                >
+                  <PlusIcon className="w-5 h-5 text-white" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Desktop Header */}
+            <div className="hidden lg:flex lg:items-center lg:justify-between">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Budget</h1>
                 <p className="text-gray-600 mt-1 sm:mt-2 text-sm sm:text-base">Set spending limits and track your progress</p>
@@ -553,18 +586,13 @@ export default function BudgetPage() {
             </div>
           </div>
 
-          {/* Budget Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-            <div className="card">
-              <div className="flex items-center">
-                <div className="p-2 sm:p-3 rounded-full bg-primary-100">
-                  <span className="text-primary-600 font-semibold">
-                    {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
-                  </span>
-                </div>
-                <div className="ml-3 sm:ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Budget</p>
-                  <p className="text-lg sm:text-2xl font-bold text-gray-900">
+          {/* Budget Overview - Redesigned for Mobile */}
+          <div className="space-y-3 lg:grid lg:grid-cols-3 lg:gap-6 lg:space-y-0 mb-4 lg:mb-8">
+            <div className="bg-gradient-to-br from-primary-50 to-indigo-100 rounded-2xl p-4 lg:p-5 shadow-sm">
+              <div className="flex items-center justify-between lg:flex-col lg:items-start">
+                <div>
+                  <p className="text-xs lg:text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">Budget</p>
+                  <p className="text-base lg:text-2xl font-bold text-gray-900">
                     {singleCurrency ? (
                       <ConvertedAmount 
                         amount={totalBudget} 
@@ -576,19 +604,19 @@ export default function BudgetPage() {
                     ) : '—'}
                   </p>
                 </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="flex items-center">
-                <div className="p-2 sm:p-3 rounded-full bg-warning-100">
-                  <span className="text-warning-600 font-semibold">
+                <div className="lg:hidden w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                  <span className="text-primary-600 font-semibold text-sm">
                     {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
                   </span>
                 </div>
-                <div className="ml-3 sm:ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Spent</p>
-                  <p className="text-lg sm:text-2xl font-bold text-gray-900">
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl p-4 lg:p-5 shadow-sm">
+              <div className="flex items-center justify-between lg:flex-col lg:items-start">
+                <div>
+                  <p className="text-xs lg:text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">Spent</p>
+                  <p className="text-base lg:text-2xl font-bold text-gray-900">
                     {singleCurrency ? (
                       <ConvertedAmount 
                         amount={totalSpent} 
@@ -600,19 +628,19 @@ export default function BudgetPage() {
                     ) : '—'}
                   </p>
                 </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="flex items-center">
-                <div className="p-2 sm:p-3 rounded-full bg-success-100">
-                  <span className="text-success-600 font-semibold">
+                <div className="lg:hidden w-10 h-10 rounded-full bg-warning-100 flex items-center justify-center">
+                  <span className="text-warning-600 font-semibold text-sm">
                     {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
                   </span>
                 </div>
-                <div className="ml-3 sm:ml-4">
-                  <p className="text-sm font-medium text-gray-600">Remaining</p>
-                  <p className="text-2xl font-bold text-gray-900">
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-4 lg:p-5 shadow-sm">
+              <div className="flex items-center justify-between lg:flex-col lg:items-start">
+                <div>
+                  <p className="text-xs lg:text-sm font-medium text-gray-500 uppercase tracking-wide mb-1">Left</p>
+                  <p className="text-base lg:text-2xl font-bold text-gray-900">
                     {singleCurrency ? (
                       <ConvertedAmount 
                         amount={totalBudget - totalSpent} 
@@ -624,20 +652,25 @@ export default function BudgetPage() {
                     ) : '—'}
                   </p>
                 </div>
+                <div className="lg:hidden w-10 h-10 rounded-full bg-success-100 flex items-center justify-center">
+                  <span className="text-success-600 font-semibold text-sm">
+                    {prefsLoading ? '...' : getCurrencySymbol(prefCurrency)}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Budgets List */}
-          <div className="card">
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Budgets</h2>
+          {/* Budgets List - Mobile Optimized */}
+          <div className="bg-white rounded-2xl shadow-sm p-4 lg:card lg:!p-6">
+            <h2 className="text-base lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Your Budgets</h2>
             {uniqueBudgetCurrencies.length > 1 && (
-              <div className="mb-6 p-3 rounded border border-gray-200 bg-gray-50 text-sm flex flex-wrap gap-4">
-                <div className="font-medium text-gray-700 w-full">Per-currency totals (converted to {prefCurrency}):</div>
+              <div className="mb-4 lg:mb-6 p-3 rounded-xl border border-gray-200 bg-gray-50 text-sm flex flex-wrap gap-2 lg:gap-4">
+                <div className="font-medium text-gray-700 w-full text-xs lg:text-sm">Per-currency totals:</div>
                 {uniqueBudgetCurrencies.sort().map(code => {
                   const subtotal = budgets.filter(b => b.currency === code).reduce((s,b)=> s + Number(b.amount),0)
                   return (
-                    <div key={code} className="px-2 py-1 bg-white border border-gray-200 rounded shadow-sm text-gray-800">
+                    <div key={code} className="px-2 py-1 bg-white border border-gray-200 rounded-lg shadow-sm text-gray-800 text-xs lg:text-sm">
                       {code}: <ConvertedAmount 
                         amount={subtotal} 
                         fromCurrency={code} 
@@ -648,13 +681,33 @@ export default function BudgetPage() {
                     </div>
                   )
                 })}
-                <div className="text-xs text-gray-500 w-full">Amounts converted using live exchange rates.</div>
               </div>
             )}
             
-            <div className="space-y-6">
-              {loadingBudgets && <div className="text-sm text-gray-500">Loading budgets...</div>}
-              {!loadingBudgets && budgets.length === 0 && <div className="text-sm text-gray-500">No budgets yet. Create one.</div>}
+            <div className="space-y-3 lg:space-y-6">
+              {loadingBudgets && (
+                <div className="text-center py-8">
+                  <div className="w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                  <p className="text-sm text-gray-500">Loading budgets...</p>
+                </div>
+              )}
+              {!loadingBudgets && budgets.length === 0 && (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-base font-medium text-gray-900">No budgets yet</p>
+                  <p className="text-sm text-gray-500 mt-1">Create your first budget to start tracking</p>
+                  <button 
+                    onClick={() => setShowAddForm(true)}
+                    className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-xl text-sm font-medium"
+                  >
+                    Add Budget
+                  </button>
+                </div>
+              )}
                {budgets.map((budget) => {
                 const spent = getSpentForBudget(budget)
                 const percentage = getProgressPercentage(spent, Number(budget.amount))
@@ -662,42 +715,60 @@ export default function BudgetPage() {
                 const isNearLimit = percentage >= 75
                 
                 return (
-                  <div key={budget.id} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
-            <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">
-                          {budget.period === 'yearly'
-                            ? `Year ${budget.year}`
-                            : new Date(budget.year, (budget.month || 1) - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-                        </h3>
-                        <div className="mt-1 flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-1 sm:gap-2 text-sm text-gray-600">
-                          <span>Currency: {budget.currency}</span>
-                          <span className="hidden sm:inline">•</span>
-                          <span>Period: {budget.period || 'monthly'}</span>
-                          <span className="hidden sm:inline">•</span>
-                          <span>Per category: {budget.per_category ? 'Yes' : 'No'}</span>
-                          <span className="hidden sm:inline">•</span>
-                          <span>Rollover: {budget.roll_over ? 'Yes' : 'No'}</span>
-                          {budget.catagory_name && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                              {budget.catagory_name}
-                            </span>
-                          )}
+                  <div key={budget.id} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm">
+                    {/* Mobile Layout */}
+                    <div className="lg:hidden">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {budget.catagory_name && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium bg-indigo-100 text-indigo-700">
+                                {budget.catagory_name}
+                              </span>
+                            )}
+                            {(isOverBudget || isNearLimit) && (
+                              <AlertTriangleIcon className={`w-4 h-4 ${isOverBudget ? 'text-red-500' : 'text-yellow-500'}`} />
+                            )}
+                          </div>
+                          <h3 className="text-sm font-medium text-gray-900">
+                            {budget.period === 'yearly'
+                              ? `Year ${budget.year}`
+                              : new Date(budget.year, (budget.month || 1) - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })}
+                          </h3>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button className="p-1.5 text-gray-400 hover:text-gray-600" onClick={() => openEdit(budget)}>
+                            <EditIcon className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => deleteBudget(budget.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600"
+                          >
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                       
-                      <div className="flex items-center justify-between sm:justify-end gap-2 sm:space-x-2">
-                        {(isOverBudget || isNearLimit) && (
-                          <AlertTriangleIcon className={`w-5 h-5 flex-shrink-0 ${isOverBudget ? 'text-red-500' : 'text-yellow-500'}`} />
-                        )}
-                        <span className="text-base sm:text-lg font-semibold text-gray-900 flex-1 sm:flex-initial">
-                          <ConvertedAmount 
-                            amount={spent} 
-                            fromCurrency={budget.currency} 
-                            prefCurrency={prefCurrency} 
-                            formatCurrency={formatCurrency}
-                            convertExistingData={convertExistingData}
-                          /> / <ConvertedAmount 
+                      {/* Progress Bar */}
+                      <div className="w-full bg-gray-100 rounded-full h-2.5 mb-2">
+                        <div
+                          className={`h-2.5 rounded-full transition-all ${getProgressColor(spent, Number(budget.amount))}`}
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
+                      
+                      {/* Stats */}
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span>
+                          <span className="font-semibold text-gray-900">
+                            <ConvertedAmount 
+                              amount={spent} 
+                              fromCurrency={budget.currency} 
+                              prefCurrency={prefCurrency} 
+                              formatCurrency={formatCurrency}
+                              convertExistingData={convertExistingData}
+                            />
+                          </span> of <ConvertedAmount 
                             amount={Number(budget.amount)} 
                             fromCurrency={budget.currency} 
                             prefCurrency={prefCurrency} 
@@ -705,51 +776,114 @@ export default function BudgetPage() {
                             convertExistingData={convertExistingData}
                           />
                         </span>
-                        <div className="flex space-x-1 flex-shrink-0">
-                          <button className="p-1 text-gray-400 hover:text-gray-600" onClick={() => openEdit(budget)}>
-                            <EditIcon className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => deleteBudget(budget.id)}
-                            className="p-1 text-gray-400 hover:text-red-600"
-                          >
-                            <TrashIcon className="w-4 h-4" />
-                          </button>
+                        <span className={`font-medium ${isOverBudget ? 'text-red-600' : 'text-gray-600'}`}>
+                          {percentage.toFixed(0)}%
+                        </span>
+                      </div>
+                      
+                      {isOverBudget && (
+                        <div className="mt-2 text-xs text-red-600 font-medium bg-red-50 px-2 py-1 rounded-lg">
+                          Over by <ConvertedAmount 
+                            amount={spent - Number(budget.amount)} 
+                            fromCurrency={budget.currency} 
+                            prefCurrency={prefCurrency} 
+                            formatCurrency={formatCurrency}
+                            convertExistingData={convertExistingData}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Desktop Layout */}
+                    <div className="hidden lg:block">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-gray-900">
+                            {budget.period === 'yearly'
+                              ? `Year ${budget.year}`
+                              : new Date(budget.year, (budget.month || 1) - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+                          </h3>
+                          <div className="mt-1 flex flex-col sm:flex-row sm:items-center sm:flex-wrap gap-1 sm:gap-2 text-sm text-gray-600">
+                            <span>Currency: {budget.currency}</span>
+                            <span className="hidden sm:inline">•</span>
+                            <span>Period: {budget.period || 'monthly'}</span>
+                            <span className="hidden sm:inline">•</span>
+                            <span>Per category: {budget.per_category ? 'Yes' : 'No'}</span>
+                            <span className="hidden sm:inline">•</span>
+                            <span>Rollover: {budget.roll_over ? 'Yes' : 'No'}</span>
+                            {budget.catagory_name && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                {budget.catagory_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between sm:justify-end gap-2 sm:space-x-2">
+                          {(isOverBudget || isNearLimit) && (
+                            <AlertTriangleIcon className={`w-5 h-5 flex-shrink-0 ${isOverBudget ? 'text-red-500' : 'text-yellow-500'}`} />
+                          )}
+                          <span className="text-base sm:text-lg font-semibold text-gray-900 flex-1 sm:flex-initial">
+                            <ConvertedAmount 
+                              amount={spent} 
+                              fromCurrency={budget.currency} 
+                              prefCurrency={prefCurrency} 
+                              formatCurrency={formatCurrency}
+                              convertExistingData={convertExistingData}
+                            /> / <ConvertedAmount 
+                              amount={Number(budget.amount)} 
+                              fromCurrency={budget.currency} 
+                              prefCurrency={prefCurrency} 
+                              formatCurrency={formatCurrency}
+                              convertExistingData={convertExistingData}
+                            />
+                          </span>
+                          <div className="flex space-x-1 flex-shrink-0">
+                            <button className="p-1 text-gray-400 hover:text-gray-600" onClick={() => openEdit(budget)}>
+                              <EditIcon className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => deleteBudget(budget.id)}
+                              className="p-1 text-gray-400 hover:text-red-600"
+                            >
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div
-                        className={`h-3 rounded-full transition-all ${getProgressColor(spent, Number(budget.amount))}`}
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
-                    
-                    <div className="flex justify-between text-sm text-gray-600 mt-2">
-                      <span>{percentage.toFixed(1)}% used</span>
-                      <span>
-                        <ConvertedAmount 
-                          amount={Number(budget.amount) - spent} 
-                          fromCurrency={budget.currency} 
-                          prefCurrency={prefCurrency} 
-                          formatCurrency={formatCurrency}
-                          convertExistingData={convertExistingData}
-                        /> remaining
-                      </span>
-                    </div>
-                    
-                    {isOverBudget && (
-                      <div className="mt-2 text-sm text-red-600 font-medium">
-                        Over budget by <ConvertedAmount 
-                          amount={spent - Number(budget.amount)} 
-                          fromCurrency={budget.currency} 
-                          prefCurrency={prefCurrency} 
-                          formatCurrency={formatCurrency}
-                          convertExistingData={convertExistingData}
-                        />
+                      
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div
+                          className={`h-3 rounded-full transition-all ${getProgressColor(spent, Number(budget.amount))}`}
+                          style={{ width: `${percentage}%` }}
+                        ></div>
                       </div>
-                    )}
+                      
+                      <div className="flex justify-between text-sm text-gray-600 mt-2">
+                        <span>{percentage.toFixed(1)}% used</span>
+                        <span>
+                          <ConvertedAmount 
+                            amount={Number(budget.amount) - spent} 
+                            fromCurrency={budget.currency} 
+                            prefCurrency={prefCurrency} 
+                            formatCurrency={formatCurrency}
+                            convertExistingData={convertExistingData}
+                          /> remaining
+                        </span>
+                      </div>
+                      
+                      {isOverBudget && (
+                        <div className="mt-2 text-sm text-red-600 font-medium">
+                          Over budget by <ConvertedAmount 
+                            amount={spent - Number(budget.amount)} 
+                            fromCurrency={budget.currency} 
+                            prefCurrency={prefCurrency} 
+                            formatCurrency={formatCurrency}
+                            convertExistingData={convertExistingData}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })}
