@@ -17,6 +17,8 @@ export default function Settings() {
   const [showCurrencyModal, setShowCurrencyModal] = useState(false)
   const [pendingCurrency, setPendingCurrency] = useState<string | null>(null)
   const [originalCurrency, setOriginalCurrency] = useState<string>('')
+  const [sendingWeekly, setSendingWeekly] = useState(false)
+  const [sendingAnalytics, setSendingAnalytics] = useState(false)
   const [settings, setSettings] = useState({
     full_name: '',
     email: '', // derived from auth user; not persisted here
@@ -494,8 +496,10 @@ export default function Settings() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        disabled={sendingWeekly}
                         onClick={async () => {
                           if (!user) return;
+                          setSendingWeekly(true);
                           try {
                             const token = await user.getIdToken();
                             const response = await fetch('/api/notifications/send-on-demand', {
@@ -515,11 +519,23 @@ export default function Settings() {
                           } catch (e) {
                             console.error(e);
                             alert('Failed to send report');
+                          } finally {
+                            setSendingWeekly(false);
                           }
                         }}
-                        className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium whitespace-nowrap"
+                        className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                       >
-                        Send now
+                        {sendingWeekly ? (
+                          <>
+                            <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Sending...</span>
+                          </>
+                        ) : (
+                          'Send now'
+                        )}
                       </button>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
@@ -550,8 +566,10 @@ export default function Settings() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        disabled={sendingAnalytics}
                         onClick={async () => {
                           if (!user) return;
+                          setSendingAnalytics(true);
                           try {
                             const token = await user.getIdToken();
                             const response = await fetch('/api/notifications/send-on-demand', {
@@ -571,11 +589,23 @@ export default function Settings() {
                           } catch (e) {
                             console.error(e);
                             alert('Failed to send report');
+                          } finally {
+                            setSendingAnalytics(false);
                           }
                         }}
-                        className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium whitespace-nowrap"
+                        className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 font-medium whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                       >
-                        Send now
+                        {sendingAnalytics ? (
+                          <>
+                            <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Sending...</span>
+                          </>
+                        ) : (
+                          'Send now'
+                        )}
                       </button>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input

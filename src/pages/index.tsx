@@ -104,8 +104,15 @@ function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, c
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { formatCurrency, formatCurrencyExplicit, formatDate, currency: prefCurrency, convertExistingData } = usePreferences()
+  const { formatCurrency, formatCurrencyExplicit, formatDate, currency: prefCurrency, convertExistingData, loading: prefsLoading } = usePreferences()
   const [viewCurrency, setViewCurrency] = useState(prefCurrency)
+  
+  // Sync viewCurrency with prefCurrency when it loads from Firebase
+  useEffect(() => {
+    if (!prefsLoading && prefCurrency) {
+      setViewCurrency(prefCurrency)
+    }
+  }, [prefCurrency, prefsLoading])
   
   // Get current month/year for AI insights (controlled by StatsCards selector)
   const now = new Date()

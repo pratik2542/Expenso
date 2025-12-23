@@ -24,16 +24,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Missing subject or message' });
     }
 
-    // Get all users who have marketing notifications enabled
-    const usersSnapshot = await adminDb.collection('user_settings')
-      .where('marketing', '==', true)
-      .where('email_notifications', '==', true)
-      .get();
+    // Get all users to allow soft opt-in (send unless explicitly disabled)
+    const usersSnapshot = await adminDb.collection('user_settings').get();
 
     const results = [];
 
     for (const doc of usersSnapshot.docs) {
       const userId = doc.id;
+      const userData = doc.data();
+
+      // Skip if explicitly disabled
+      if (userData.marketing === false || userData.email_notifications === false) {
+        continue;
+      }
       
       try {
         const result = await sendNotification(userId, 'marketing', {

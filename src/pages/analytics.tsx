@@ -25,6 +25,18 @@ interface Expense {
   attachment?: string
 }
 
+function getCurrencySymbol(currency: string): string {
+  switch (currency) {
+    case 'USD': return '$'
+    case 'CAD': return 'CA$'
+    case 'EUR': return '€'
+    case 'GBP': return '£'
+    case 'INR': return '₹'
+    case 'JPY': return '¥'
+    default: return '$'
+  }
+}
+
 export default function Analytics() {
   const { formatCurrencyExplicit, currency: prefCurrency } = usePreferences()
   const { user } = useAuth()
@@ -408,7 +420,7 @@ export default function Analytics() {
             <div className="bg-gradient-to-br from-primary-50 to-indigo-100 rounded-2xl p-3 lg:p-5 shadow-sm">
               <div className="flex flex-col lg:flex-row lg:items-center">
                 <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-primary-100 flex-shrink-0">
-                  <DollarSignIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
+                  <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-primary-600 font-semibold text-base sm:text-lg">{getCurrencySymbol(viewCurrency)}</span>
                 </div>
                 <div className="lg:ml-4">
                   <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">Daily Avg</p>

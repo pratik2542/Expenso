@@ -7,8 +7,8 @@ android {
         applicationId "com.prtk.expenso"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1766340501
-        versionName "1.0.15"
+        versionCode 1766520663
+        versionName "1.0.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

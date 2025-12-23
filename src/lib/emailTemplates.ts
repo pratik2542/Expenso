@@ -153,20 +153,20 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F5F6F8;">
       <tr>
         <td align="center" style="padding:24px 12px;">
-          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:100%;">
             <!-- Header -->
             <tr>
-              <td style="padding:0 0 12px 0;">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0B0F19;border-radius:14px 14px 0 0;">
+              <td colspan="2" style="background:#0B0F19;border-radius:14px 14px 0 0;padding:18px 20px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
-                    <td style="padding:18px 20px;">
+                    <td style="padding:0;padding-right:12px;width:60%;">
                       <a href="${dashboardUrl}" target="_blank" rel="noopener noreferrer" style="color:#FFFFFF;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:18px;font-weight:800;letter-spacing:0.6px;">
                         <img src="${appIconUrl}" width="22" height="22" alt="Expenso" style="display:inline-block;vertical-align:middle;border-radius:6px;margin-right:10px;" onerror="this.onerror=null;this.src='${appIconFallbackUrl}';" />
                         <span style="display:inline-block;vertical-align:middle;">EXPENSO</span>
                       </a>
                     </td>
-                    <td align="right" style="padding:18px 20px;">
-                      <span style="display:inline-block;padding:6px 10px;border-radius:999px;background:${badge.background};color:${badge.color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">
+                    <td align="right" style="padding:0;width:40%;">
+                      <span style="display:inline-block;padding:6px 10px;border-radius:999px;background:${badge.background};color:${badge.color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;white-space:nowrap;">
                         ${escapeHtml(badge.label)}
                       </span>
                     </td>
@@ -177,28 +177,10 @@ export function buildNotificationEmail(input: BuildEmailInput): { html: string; 
 
             <!-- Body card -->
             <tr>
-              <td style="background:#FFFFFF;border-radius:0 0 14px 14px;box-shadow:0 8px 24px rgba(15,23,42,0.06);padding:24px 20px;">
-                <h1 style="margin:0 0 10px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;line-height:28px;color:#0B1220;">
+              <td colspan="2" style="background:#FFFFFF;border-radius:0 0 14px 14px;box-shadow:0 8px 24px rgba(15,23,42,0.06);padding:24px 20px;">
+                <h1 style="margin:0 0 18px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:22px;line-height:28px;color:#0B1220;">
                   ${escapeHtml(input.subject)}
                 </h1>
-                <p style="margin:0 0 18px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;color:#6B7280;">
-                  ${escapeHtml(preheader)}
-                </p>
-
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:12px;">
-                  <tr>
-                    <td style="padding:16px 16px 6px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#6B7280;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">
-                      Quick summary
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding:0 16px 14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:20px;color:#111827;">
-                      ${escapeHtml(preheader)}
-                    </td>
-                  </tr>
-                </table>
-
-                <div style="height:14px;line-height:14px;font-size:0;">&nbsp;</div>
 
                 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:22px;color:#111827;">
                   ${textToHtmlParagraphs(input.message)}

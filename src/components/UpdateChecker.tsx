@@ -80,7 +80,7 @@ export default function UpdateChecker() {
 
   const handleDownload = () => {
     // Open the website in the system browser to download the APK
-    window.open('https://expenso-ex.vercel.app', '_system')
+    window.open('https://expenso-ex.vercel.app/Expenso.apk', '_system')
     setShowUpdateModal(false)
   }
 

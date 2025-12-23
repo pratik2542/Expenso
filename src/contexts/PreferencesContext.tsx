@@ -30,11 +30,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [currency, setCurrency] = useState(initialCurrency)
   const [timeZone, setTimeZone] = useState(initialTimeZone)
   const [convertExistingData, setConvertExistingData] = useState<boolean>(true)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true) // Start as true until first fetch completes
 
   const fetchPrefs = useCallback(async () => {
     if (!user?.uid) {
       console.log('PreferencesContext: No user UID')
+      setLoading(false)
       return
     }
     setLoading(true)

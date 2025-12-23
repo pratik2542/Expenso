@@ -131,6 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: email,
           preferred_currency: 'CAD',
           convert_existing_data: true,
+          marketing: true, // Default to true for new users
+          email_notifications: true,
           updated_at: serverTimestamp()
         }, { merge: true })
       }

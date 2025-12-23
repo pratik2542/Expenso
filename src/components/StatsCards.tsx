@@ -31,7 +31,7 @@ export default function StatsCards({
   onSelectedYearChange
 }: StatsCardsProps = {}) {
   const { user } = useAuth()
-  const { formatCurrencyExplicit, currency: prefCurrency } = usePreferences()
+  const { formatCurrencyExplicit, currency: prefCurrency, loading: prefsLoading } = usePreferences()
   const now = new Date()
   const { start, end } = startEndOfMonth(now)
   const month = now.getMonth() + 1
@@ -60,6 +60,14 @@ export default function StatsCards({
   // Inline editor state for income and the currency filter for all cards
   const [incomeAmount, setIncomeAmount] = useState('')
   const [incomeCurrency, setIncomeCurrency] = useState(prefCurrency || 'USD')
+  
+  // Sync incomeCurrency with prefCurrency when it loads from Firebase
+  useEffect(() => {
+    if (!prefsLoading && prefCurrency) {
+      setIncomeCurrency(prefCurrency)
+    }
+  }, [prefCurrency, prefsLoading])
+  
   const viewCurrency = selectedCurrency || incomeCurrency
   const [savingIncome, setSavingIncome] = useState(false)
   const [incomeError, setIncomeError] = useState<string | null>(null)

@@ -732,11 +732,11 @@ export default function Expenses() {
               </div>
               
               {/* Filter Pills - Horizontal Scroll */}
-              <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-hide">
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-0.5 px-0.5 -my-0.5 py-0.5">
                 <select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="flex-1 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-0 focus:border-primary-500"
                 >
                   <option value="">All Categories</option>
                   {categories.map((c) => (
@@ -746,7 +746,7 @@ export default function Expenses() {
                 <select
                   value={monthFilter}
                   onChange={(e) => setMonthFilter(e.target.value)}
-                  className="flex-1 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium focus:ring-2 focus:ring-primary-500"
+                  className="flex-1 px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-0 focus:border-primary-500"
                 >
                   <option value="">All Months</option>
                   {availableMonths.map((month) => {
@@ -999,11 +999,18 @@ export default function Expenses() {
                           <h3 className="text-sm font-medium text-gray-900 mb-0.5 line-clamp-2">
                             {displayText.toUpperCase()}
                           </h3>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(expense.occurred_on, { year: 'numeric', month: '2-digit', day: '2-digit' })}
-                            {' '}
-                            {new Date(expense.occurred_on).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm text-gray-500">
+                              {formatDate(expense.occurred_on, { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                              {' '}
+                              {new Date(expense.occurred_on).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </p>
+                            {expense.attachment && (
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                            )}
+                          </div>
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <span className="text-base font-semibold text-gray-900">
@@ -1018,11 +1025,6 @@ export default function Expenses() {
                           <span className={`${categoryBadgeClass(mappedCategory)} text-[10px]`}>
                             {mappedCategory}
                           </span>
-                          {expense.attachment && (
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                            </svg>
-                          )}
                         </div>
                       </div>
                     </div>

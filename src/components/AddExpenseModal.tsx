@@ -1145,16 +1145,6 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
             leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
           >
             <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all w-full h-full sm:w-11/12 sm:h-[85vh] lg:w-5/6 lg:h-[90vh] flex flex-col">
-              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block z-10">
-                <button
-                  type="button"
-                  className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-                  onClick={closeConverterModal}
-                >
-                  <span className="sr-only">Close</span>
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
               
               <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
                 <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900">
@@ -1172,7 +1162,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                   </button>
                   <button
                     type="button"
-                    className="sm:hidden rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 p-1"
+                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 p-1"
                     onClick={closeConverterModal}
                   >
                     <span className="sr-only">Close</span>
