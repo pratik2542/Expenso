@@ -11,7 +11,11 @@ import {
   BarChart3Icon,
   SmartphoneIcon,
   DownloadIcon,
-  MoreHorizontalIcon
+  MoreHorizontalIcon,
+  PlusIcon,
+  FilterIcon,
+  ChevronUpIcon,
+  SparklesIcon
 } from 'lucide-react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
@@ -29,11 +33,10 @@ const navigation = [
   { name: 'Settings', href: '/settings', icon: SettingsIcon },
 ]
 
-// Bottom nav items for mobile (5 items max for good UX)
+// Bottom nav items for mobile (4 items for perfect symmetry with center button)
 const bottomNavItems = [
   { name: 'Home', href: '/', icon: HomeIcon },
   { name: 'Expenses', href: '/expenses', icon: CreditCardIcon },
-  { name: 'Budget', href: '/budget', icon: WalletIcon },
   { name: 'Analytics', href: '/analytics', icon: BarChart3Icon },
 ]
 
@@ -41,6 +44,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
   const [internalOpen, setInternalOpen] = useState(false)
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
+  const [showQuickActions, setShowQuickActions] = useState(false)
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
@@ -86,31 +90,72 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
 
   return (
     <>
-      {/* Mobile Bottom Navigation Bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white border-t border-gray-200 safe-area-bottom">
-        <nav className="flex items-center justify-around h-16 px-2">
-          {bottomNavItems.map((item) => {
-            const isActive = router.pathname === item.href
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors ${
-                  isActive
-                    ? 'text-primary-600'
-                    : 'text-gray-500 active:text-gray-700'
-                }`}
-              >
-                <item.icon className={`h-5 w-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} strokeWidth={isActive ? 2.5 : 2} />
-                <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-primary-600' : 'text-gray-500'}`}>
-                  {item.name}
-                </span>
-                {isActive && (
-                  <div className="absolute top-0 w-12 h-0.5 bg-primary-600 rounded-full" />
-                )}
-              </Link>
-            )
-          })}
+      {/* Mobile Bottom Navigation Bar with Center Quick Actions Button */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
+        {/* Quick Actions Button - Centered and elevated */}
+        <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-10">
+          <button
+            onClick={() => setShowQuickActions(true)}
+            className="w-14 h-14 bg-gradient-to-br from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 flex items-center justify-center ring-4 ring-white"
+          >
+            <ChevronUpIcon className="h-6 w-6" strokeWidth={2.5} />
+          </button>
+        </div>
+        
+        {/* Bottom Nav Bar with notch */}
+        <div className="bg-white border-t border-gray-200 safe-area-bottom relative">
+          {/* Notch cutout effect */}
+          <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-20 h-5 bg-white rounded-t-full"></div>
+          
+          <nav className="flex items-center justify-around h-16 px-2 relative">
+            {bottomNavItems.slice(0, 2).map((item) => {
+              const isActive = router.pathname === item.href
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors ${
+                    isActive
+                      ? 'text-primary-600'
+                      : 'text-gray-500 active:text-gray-700'
+                  }`}
+                >
+                  <item.icon className={`h-5 w-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} strokeWidth={isActive ? 2.5 : 2} />
+                  <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-primary-600' : 'text-gray-500'}`}>
+                    {item.name}
+                  </span>
+                  {isActive && (
+                    <div className="absolute top-0 w-12 h-0.5 bg-primary-600 rounded-full" />
+                  )}
+                </Link>
+              )
+            })}
+            
+            {/* Spacer for center button */}
+            <div className="flex-1"></div>
+            
+            {bottomNavItems.slice(2).map((item) => {
+              const isActive = router.pathname === item.href
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors ${
+                    isActive
+                      ? 'text-primary-600'
+                      : 'text-gray-500 active:text-gray-700'
+                  }`}
+                >
+                  <item.icon className={`h-5 w-5 ${isActive ? 'text-primary-600' : 'text-gray-400'}`} strokeWidth={isActive ? 2.5 : 2} />
+                  <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-primary-600' : 'text-gray-500'}`}>
+                    {item.name}
+                  </span>
+                  {isActive && (
+                    <div className="absolute top-0 w-12 h-0.5 bg-primary-600 rounded-full" />
+                  )}
+                </Link>
+              )
+            })}
           
           {/* More Menu Button */}
           <button
@@ -135,6 +180,154 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
           </button>
         </nav>
       </div>
+      </div>
+
+      {/* Quick Actions Menu Bottom Sheet */}
+      <Transition appear show={showQuickActions} as={Fragment}>
+        <Dialog as="div" className="relative z-[60] lg:hidden" onClose={() => setShowQuickActions(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-200"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-150"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 flex items-end justify-center">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="translate-y-full"
+              enterTo="translate-y-0"
+              leave="ease-in duration-200"
+              leaveFrom="translate-y-0"
+              leaveTo="translate-y-full"
+            >
+              <Dialog.Panel className="w-full max-w-lg bg-white rounded-t-3xl shadow-xl safe-area-bottom">
+                {/* Drag handle */}
+                <div className="flex justify-center pt-3 pb-2">
+                  <div className="w-10 h-1 bg-gray-300 rounded-full" />
+                </div>
+                
+                <div className="px-4 pb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4 px-2">Quick Actions</h3>
+                  
+                  {/* Action Grid */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Add Expense */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/expenses?action=add')
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 hover:from-blue-100 hover:to-blue-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center">
+                        <PlusIcon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">Add Expense</span>
+                    </button>
+
+                    {/* Add Category */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/categories?action=add')
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100 hover:from-purple-100 hover:to-purple-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-purple-500 flex items-center justify-center">
+                        <TagIcon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">Add Category</span>
+                    </button>
+
+                    {/* Filter Expenses */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/expenses?action=filter')
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 hover:from-green-100 hover:to-green-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center">
+                        <FilterIcon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">Filter</span>
+                    </button>
+
+                    {/* AI Insights */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/')
+                        setTimeout(() => {
+                          const aiWidget = document.getElementById('ai-insights')
+                          if (aiWidget) {
+                            aiWidget.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          }
+                        }, 100)
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100 hover:from-amber-100 hover:to-amber-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-amber-500 flex items-center justify-center">
+                        <SparklesIcon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">AI Insights</span>
+                    </button>
+
+                    {/* Budget */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/budget')
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-pink-50 to-pink-100 hover:from-pink-100 hover:to-pink-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-pink-500 flex items-center justify-center">
+                        <WalletIcon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">Budget</span>
+                    </button>
+
+                    {/* Analytics */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/analytics')
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-cyan-50 to-cyan-100 hover:from-cyan-100 hover:to-cyan-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-cyan-500 flex items-center justify-center">
+                        <BarChart3Icon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">Analytics</span>
+                    </button>
+
+                    {/* Export CSV */}
+                    <button
+                      onClick={() => {
+                        setShowQuickActions(false)
+                        router.push('/expenses?action=export')
+                      }}
+                      className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-100 hover:from-emerald-100 hover:to-green-200 active:scale-95 transition-all"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center">
+                        <DownloadIcon className="h-6 w-6 text-white" strokeWidth={2.5} />
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">Export CSV</span>
+                    </button>
+                  </div>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
 
       {/* Mobile More Menu Bottom Sheet */}
       <Transition appear show={showMoreMenu} as={Fragment}>

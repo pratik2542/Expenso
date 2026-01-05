@@ -5,6 +5,7 @@ import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { analytics } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
+import { compressImage, formatBytes } from '@/utils/imageCompression'
 
 interface AddExpenseModalProps {
   open: boolean
@@ -253,22 +254,32 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     }))
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Check file size (limit to 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File is too large. Please select an image under 5MB.')
+    // Check if file is an image
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file.')
       return
     }
 
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64String = reader.result as string
-      setFormData(prev => ({ ...prev, attachment: base64String }))
+    try {
+      // Compress the image before storing
+      // Max dimensions: 1920x1920, quality: 0.8
+      const compressedBase64 = await compressImage(file, 1920, 1920, 0.8)
+      
+      // Check compressed size (shouldn't exceed 5MB after compression)
+      const sizeInBytes = compressedBase64.length * 0.75
+      if (sizeInBytes > 5 * 1024 * 1024) {
+        alert(`Image is still too large after compression (${formatBytes(sizeInBytes)}). Please try a different image.`)
+        return
+      }
+      
+      setFormData(prev => ({ ...prev, attachment: compressedBase64 }))
+    } catch (error: any) {
+      alert('Failed to process image: ' + error.message)
     }
-    reader.readAsDataURL(file)
   }
 
   const selectedCount = useMemo(() => parsedExpenses.filter(p => p.selected !== false).length, [parsedExpenses])

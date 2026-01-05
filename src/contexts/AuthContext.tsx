@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useCallback 
 import { auth, db } from '@/lib/firebaseClient'
 import { analytics } from '@/lib/firebaseClient'
 import { Capacitor } from '@capacitor/core'
+import { initializeDefaultCategories } from '@/lib/defaultCategories'
 // import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth' // Removed static import
 import {
   signInWithEmailAndPassword,
@@ -92,6 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               email: email || '',
               updated_at: serverTimestamp()
             })
+            
+            // Initialize default categories for new user (from Google/GitHub sign-in)
+            await initializeDefaultCategories(firebaseUser.uid)
           }
         } catch (error) {
           console.error('Failed to save user info:', error)
@@ -136,6 +140,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           updated_at: serverTimestamp()
         }, { merge: true })
       }
+      
+      // Initialize default categories for new user
+      await initializeDefaultCategories(userCredential.user.uid)
       
       // Firebase automatically verifies users, no email verification needed
       return { needsVerification: false }

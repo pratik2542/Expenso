@@ -1,13 +1,15 @@
 import Head from 'next/head'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
-import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon } from 'lucide-react'
+import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon, DownloadIcon } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState as useReactState } from 'react';
 import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, orderBy } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { RequireAuth } from '@/components/RequireAuth'
+import { compressImage, formatBytes } from '@/utils/imageCompression'
 import AddExpenseModal from '@/components/AddExpenseModal'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { getApiUrl } from '@/lib/config'
@@ -162,6 +164,7 @@ function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, c
 }
 
 export default function Expenses() {
+  const router = useRouter()
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const { user } = useAuth()
@@ -179,6 +182,30 @@ export default function Expenses() {
   const [uploadingAttachment, setUploadingAttachment] = useState(false)
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null)
   
+  // Handle query parameters from Quick Actions menu
+  useEffect(() => {
+    if (router.query.action === 'add') {
+      setShowAdd(true)
+      // Clean up URL
+      router.replace('/expenses', undefined, { shallow: true })
+    } else if (router.query.action === 'filter') {
+      // Scroll to filters section
+      setTimeout(() => {
+        const filtersSection = document.getElementById('filters-section')
+        if (filtersSection) {
+          filtersSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+      router.replace('/expenses', undefined, { shallow: true })
+    } else if (router.query.action === 'export') {
+      // Trigger CSV export
+      setTimeout(() => {
+        exportToCSV()
+      }, 500)
+      router.replace('/expenses', undefined, { shallow: true })
+    }
+  }, [router.query.action])
+  
   // Helper function to convert amount to preference currency
   const convertToPrefCurrency = async (amount: number, fromCurrency: string): Promise<number> => {
     if (!amount || fromCurrency === prefCurrency) return amount
@@ -191,6 +218,45 @@ export default function Expenses() {
     } catch {
       return amount
     }
+  }
+
+  // CSV Export function
+  const exportToCSV = () => {
+    if (!expenses || expenses.length === 0) {
+      alert('No expenses to export')
+      return
+    }
+
+    // Prepare CSV headers
+    const headers = ['Date', 'Amount', 'Currency', 'Category', 'Merchant', 'Payment Method', 'Note']
+    
+    // Prepare CSV rows
+    const rows = expenses.map(expense => [
+      formatDate(expense.occurred_on),
+      expense.amount.toString(),
+      expense.currency,
+      expense.category || 'Other',
+      expense.merchant || '',
+      expense.payment_method || '',
+      (expense.note || '').replace(/"/g, '""') // Escape quotes in notes
+    ])
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n')
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `expenses_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
   
   const { data: expenses = [], isLoading } = useQuery<Expense[]>({
@@ -440,35 +506,33 @@ export default function Expenses() {
   const handleAttachBill = async (file: File) => {
     if (!user || !attachingToExpense) return
     
-    // Check file size (limit to 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File is too large. Please select an image under 5MB.')
+    // Check if file is an image
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file.')
       return
     }
 
     setUploadingAttachment(true)
     try {
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const base64String = reader.result as string
-        try {
-          const expenseDocRef = doc(db, 'expenses', user.uid, 'items', attachingToExpense.id)
-          await updateDoc(expenseDocRef, { attachment: base64String })
-          queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
-          setAttachingToExpense(null)
-        } catch (error: any) {
-          alert('Failed to attach bill: ' + error.message)
-        } finally {
-          setUploadingAttachment(false)
-        }
-      }
-      reader.onerror = () => {
-        alert('Failed to read file')
+      // Compress the image before storing
+      // Max dimensions: 1920x1920, quality: 0.8
+      const compressedBase64 = await compressImage(file, 1920, 1920, 0.8)
+      
+      // Check compressed size (shouldn't exceed 5MB after compression)
+      const sizeInBytes = compressedBase64.length * 0.75
+      if (sizeInBytes > 5 * 1024 * 1024) {
+        alert(`Image is still too large after compression (${formatBytes(sizeInBytes)}). Please try a different image.`)
         setUploadingAttachment(false)
+        return
       }
-      reader.readAsDataURL(file)
+      
+      const expenseDocRef = doc(db, 'expenses', user.uid, 'items', attachingToExpense.id)
+      await updateDoc(expenseDocRef, { attachment: compressedBase64 })
+      queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
+      setAttachingToExpense(null)
     } catch (error: any) {
       alert('Failed to attach bill: ' + error.message)
+    } finally {
       setUploadingAttachment(false)
     }
   }
@@ -503,6 +567,13 @@ export default function Expenses() {
               
               {/* Mobile Action Buttons */}
               <div className="flex gap-2 mt-3">
+                <button
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 active:from-green-100 active:to-emerald-100 transition-all"
+                  onClick={exportToCSV}
+                >
+                  <DownloadIcon className="w-4 h-4" />
+                  Export
+                </button>
                 <button
                   className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200 active:from-amber-100 active:to-orange-100 transition-all"
                   onClick={() => {
@@ -617,6 +688,14 @@ export default function Expenses() {
                   </button>
                 )}
                 <button
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 border border-green-200 hover:from-green-100 hover:to-emerald-100 transition-all w-full sm:w-auto justify-center"
+                  onClick={exportToCSV}
+                >
+                  <DownloadIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">Export</span>
+                </button>
+                <button
                   className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 text-amber-700 border border-amber-200 hover:from-amber-100 hover:to-orange-100 transition-all w-full sm:w-auto justify-center"
                   onClick={() => {
                     // Find similar expenses in the same month (potential duplicates by mistake)
@@ -716,7 +795,7 @@ export default function Expenses() {
           </div>
 
           {/* Filters and Search - Mobile Optimized */}
-          <div className="bg-white rounded-2xl shadow-sm p-3 lg:card lg:!p-6 mb-4 lg:mb-6">
+          <div id="filters-section" className="bg-white rounded-2xl shadow-sm p-3 lg:card lg:!p-6 mb-4 lg:mb-6">
             {/* Mobile: Compact Search + Filter Row */}
             <div className="lg:hidden space-y-2.5">
               {/* Search Bar */}
