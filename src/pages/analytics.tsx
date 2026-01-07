@@ -215,6 +215,18 @@ export default function Analytics() {
     setAiInsightsError(null)
     
     try {
+      // Optimize payload - only send essential fields
+      const optimizedExpenses = monthExpenses.map(e => ({
+        id: e.id,
+        amount: e.amount,
+        currency: e.currency,
+        merchant: e.merchant,
+        payment_method: e.payment_method,
+        note: e.note?.substring(0, 100),
+        occurred_on: e.occurred_on,
+        category: e.category
+      }))
+      
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
         headers: { 
@@ -222,7 +234,7 @@ export default function Analytics() {
           'X-User-Id': user?.uid || 'anonymous'
         },
         body: JSON.stringify({
-          expenses: monthExpenses,
+          expenses: optimizedExpenses,
           income: { amount: incomeAmt, currency: viewCurrency },
           month: selectedMonth,
           year: selectedYear,
@@ -267,18 +279,26 @@ export default function Analytics() {
     setChatLoading(true)
     
     try {
-      // Use absolute URL for API calls in native app
-      const baseUrl = 'https://expenso-ex.vercel.app'
-      const apiUrl = `${baseUrl}/api/ai/analytics-insights`
+      // Optimize payload - only send essential fields
+      const optimizedExpenses = expensesToUse.map(e => ({
+        id: e.id,
+        amount: e.amount,
+        currency: e.currency,
+        merchant: e.merchant,
+        payment_method: e.payment_method,
+        note: e.note?.substring(0, 100),
+        occurred_on: e.occurred_on,
+        category: e.category
+      }))
       
-      const resp = await fetch(apiUrl, {
+      const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'X-User-Id': user?.uid || 'anonymous'
         },
         body: JSON.stringify({
-          expenses: expensesToUse,
+          expenses: optimizedExpenses,
           income: { amount: incomeToUse, currency: viewCurrency },
           incomeRecords: incomeRecordsToUse,
           month: selectedMonth,
@@ -290,14 +310,23 @@ export default function Analytics() {
       })
       
       if (!resp.ok) {
-        const errorText = await resp.text()
-        throw new Error(`Server error (${resp.status}): ${errorText}`)
+        const errorData = await resp.json().catch(() => ({ error: 'Unknown error' }))
+        const errorMsg = errorData.error || resp.statusText || 'Server error'
+        throw new Error(`${errorMsg} (${resp.status})`)
       }
       const json = await resp.json()
       setChatHistory(prev => [...prev, { role: 'ai', content: json.insights }])
     } catch (e: any) {
       const errorMsg = e.message || 'Failed to get answer'
-      setChatHistory(prev => [...prev, { role: 'ai', content: `Sorry, I encountered an error: ${errorMsg}\n\nPlease check your internet connection and try again.` }])
+      console.error('Ask AI error:', errorMsg)
+      setChatHistory(prev => [...prev, { 
+        role: 'ai', 
+        content: `Sorry, I encountered an error: ${errorMsg}\n\n${
+          errorMsg.includes('413') || errorMsg.includes('Too Large') 
+            ? 'The data is too large to process. Try asking about a specific month instead of "All Time".' 
+            : 'Please check your internet connection and try again.'
+        }` 
+      }])
     } finally {
       setChatLoading(false)
     }

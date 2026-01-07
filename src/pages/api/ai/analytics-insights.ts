@@ -3,6 +3,11 @@ import { checkRateLimit, sanitizeInput, validateExpense, sanitizeError } from '@
 
 export const config = {
   maxDuration: 60, // Increase timeout to 60 seconds for AI processing
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb', // Increase body size limit to 10mb for large expense datasets
+    },
+  },
 };
 
 type Expense = {
@@ -227,12 +232,18 @@ ${Object.entries(merchantSpend)
   .map(([merchant, amt]) => `- ${merchant}: ${amt.toFixed(2)} ${currency}`)
   .join('\n')}
 
-Recent Transactions (last 10):
+${question 
+  ? `All Transactions ${isAllTime ? '(sorted by date)' : `for ${timeHeader} (sorted by date)`}:
+${expenses
+  .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
+  .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+  .join('\n')}` 
+  : `Recent Transactions (last 10):
 ${expenses
   .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
   .slice(0, 10)
   .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
-  .join('\n')}
+  .join('\n')}`}
 `
 
   let prompt: string
@@ -240,7 +251,7 @@ ${expenses
   
   if (question) {
     // User asked a specific question - return markdown
-    prompt = `You are a financial analyst. Based on the following expense data, answer the user's question.
+    prompt = `You are a financial analyst. Based on the following expense data, answer the user's question accurately.
 
 DATA START >>>
 ${expensesSummary}
@@ -249,10 +260,11 @@ ${expensesSummary}
 User's Question: ${question}
 
 CRITICAL INSTRUCTIONS:
-1. The "MONTHLY SPENDING BY CATEGORY" section contains EXACT spending amounts for each category in each month.
-2. For the question about groceries in October 2025, look for "October 2025" in the monthly breakdown, then find "Groceries" under it.
-3. DO NOT say the data is not available if it is in the MONTHLY SPENDING BY CATEGORY section.
-4. If the user asks to "generate a graph" or "create a chart", include a special JSON block in your response with the format:
+1. ALL TRANSACTIONS ${isAllTime ? 'across all time' : `for ${timeHeader}`} are listed in the "All Transactions" section above with their EXACT DATES. Use this to answer date-specific questions.
+2. The "MONTHLY SPENDING BY CATEGORY" section contains EXACT spending amounts for each category in each month.
+3. DO NOT say data is not available if it is clearly provided in the sections above.
+4. For date questions (like "when did I pay rent${isAllTime ? '?' : ' this month?'}"), look in the "All Transactions" section and find the exact transaction with its date.
+5. If the user asks to "generate a graph" or "create a chart", include a special JSON block in your response with the format:
    \`\`\`chart-data
    {
      "type": "line" | "bar" | "pie",
@@ -262,7 +274,8 @@ CRITICAL INSTRUCTIONS:
      "labels": ["Income", "Expense"]
    }
    \`\`\`
-5. Use markdown formatting for the rest of your response.`
+6. Be specific and accurate - use the exact dates, amounts, and merchants from the data provided.
+7. Use markdown formatting for your response.`
   } else if (format === 'markdown') {
     // Analytics page - detailed markdown insights
     prompt = `You are a friendly financial analyst. Analyze the following expense data and provide detailed insights.
@@ -310,8 +323,12 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
 
   // Try Gemini First
   try {
+    console.log('[AI Insights] Trying Gemini API...')
     const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) throw new Error('Missing Gemini API key')
+    if (!apiKey) {
+      console.error('[AI Insights] Missing Gemini API key')
+      throw new Error('Missing Gemini API key')
+    }
 
     const body = {
       contents: [{
@@ -341,6 +358,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     )
 
     if (!response.ok && response.status === 503) {
+      console.log('[AI Insights] Gemini 2.5 overloaded, trying 1.5 Flash...')
       // Fallback to 1.5 Flash
       response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
@@ -354,6 +372,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '')
+      console.error('[AI Insights] Gemini API error:', response.status, errorText)
       throw new Error(`Gemini API error: ${response.status} ${errorText}`)
     }
 
@@ -378,10 +397,11 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     }
     
     if (!text) {
-      console.error('Gemini returned no text. Full response:', JSON.stringify(result, null, 2))
+      console.error('[AI Insights] Gemini returned no text. Full response:', JSON.stringify(result, null, 2))
       throw new Error('No response from Gemini')
     }
     
+    console.log('[AI Insights] Gemini successful')
     const metrics: CalculatedMetrics = {
       totalIncome,
       totalSpend,
@@ -394,10 +414,13 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     
     return { text, metrics }
 
-  } catch (geminiError) {
+  } catch (geminiError: any) {
+    console.error('[AI Insights] Gemini failed:', geminiError.message)
     // Fallback to Perplexity
     try {
+      console.log('[AI Insights] Trying Perplexity API...')
       const perplexityText = await callPerplexityForInsights(prompt, useJsonFormat)
+      console.log('[AI Insights] Perplexity successful')
       const metrics: CalculatedMetrics = {
         totalIncome,
         totalSpend,
@@ -408,7 +431,8 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
         statusColor
       }
       return { text: perplexityText, metrics }
-    } catch (perplexityError) {
+    } catch (perplexityError: any) {
+      console.error('[AI Insights] Perplexity also failed:', perplexityError.message)
       throw new Error('AI service temporarily unavailable')
     }
   }
@@ -455,6 +479,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const sanitizedQuestion = question ? sanitizeInput(question) : undefined
 
   try {
+    console.log('[AI Insights] Starting generation...')
+    console.log('[AI Insights] Expenses count:', expenses.length)
+    console.log('[AI Insights] Period:', { month, year, currency })
+    
     const { text, metrics } = await generateInsights({ 
       expenses, 
       income, 
@@ -466,6 +494,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       periodLabel, 
       format 
     })
+    
+    console.log('[AI Insights] Generation successful')
     
     // For JSON format (dashboard widget), validate and correct AI's response if needed
     if (format === 'json' && !question) {
@@ -527,6 +557,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     return res.status(200).json({ insights: text })
   } catch (e: any) {
+    console.error('[AI Insights] Error:', e.message)
+    console.error('[AI Insights] Stack:', e.stack)
     return res.status(500).json({ error: sanitizeError(e) })
   }
 }

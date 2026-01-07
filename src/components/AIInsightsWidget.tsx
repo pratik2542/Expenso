@@ -160,11 +160,26 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
     if (!user?.uid || !monthlyData) return
     setIsRefreshing(true)
     try {
-      const res = await fetch(getApiUrl('/api/ai/analytics-insights'), {
+      const apiUrl = getApiUrl('/api/ai/analytics-insights')
+      console.log('Fetching insights from:', apiUrl)
+      
+      // Optimize payload - only send essential fields to reduce size
+      const optimizedExpenses = monthlyData.expenses.map(e => ({
+        id: e.id,
+        amount: e.amount,
+        currency: e.currency,
+        merchant: e.merchant,
+        payment_method: e.payment_method,
+        note: e.note?.substring(0, 100), // Limit note length to 100 chars
+        occurred_on: e.occurred_on,
+        category: e.category
+      }))
+      
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          expenses: monthlyData.expenses,
+          expenses: optimizedExpenses,
           income: monthlyData.income,
           month,
           year,
@@ -173,8 +188,16 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         })
       })
       
-      if (!res.ok) throw new Error('Failed to fetch insights')
+      console.log('Response status:', res.status, res.statusText)
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('API Error:', errorData)
+        throw new Error(errorData.error || 'Failed to fetch insights')
+      }
+      
       const json = await res.json()
+      console.log('Response data:', json)
       const parsed = JSON.parse(json.insights)
       
       const insightData: InsightData = {
@@ -191,9 +214,10 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
       // Update Cache
       queryClient.setQueryData(['ai-insights-result', user.uid, month, year, currency, monthlyData.periodLabel], insightData)
       
-    } catch (e) {
+    } catch (e: any) {
       console.error('Generation failed:', e)
-      alert('Failed to generate insights. Please try again.')
+      const errorMessage = e.message || 'Failed to generate insights. Please try again.'
+      alert(`Error: ${errorMessage}`)
     } finally {
       setIsRefreshing(false)
     }

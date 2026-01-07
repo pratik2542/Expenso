@@ -38,6 +38,8 @@ interface RecentExpense {
   category: string
 }
 
+import LandingPage from '@/components/LandingPage'
+
 // Component to display converted currency amount
 function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, convertExistingData }: { 
   amount: number, 
@@ -102,7 +104,7 @@ function ConvertedAmount({ amount, fromCurrency, prefCurrency, formatCurrency, c
   return <span>{formatCurrency(convertedAmount)}</span>
 }
 
-export default function Dashboard() {
+function DashboardContent() {
   const { user } = useAuth()
   const { formatCurrency, formatCurrencyExplicit, formatDate, currency: prefCurrency, convertExistingData, loading: prefsLoading } = usePreferences()
   const [viewCurrency, setViewCurrency] = useState(prefCurrency)
@@ -786,3 +788,23 @@ export default function Dashboard() {
 }
 
 
+
+export default function Home() {
+  const { user, loading } = useAuth()
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      </div>
+    )
+  }
+
+  // If not logged in, show SEO Landing Page
+  if (!user) {
+    return <LandingPage />
+  }
+
+  // If logged in, show Dashboard
+  return <DashboardContent />
+}
