@@ -1,7 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Head from 'next/head'
 import Link from 'next/link'
-import { Brand } from '@/components/Logo'
+import { Brand, CalcBrand } from '@/components/Logo'
 import { 
   SparklesIcon, 
   BarChart3Icon, 
@@ -14,16 +14,30 @@ import {
 } from 'lucide-react'
 
 export default function LandingPage() {
+  const [activeTab, setActiveTab] = useState('dashboard')
+
+  const screenshots = [
+    { id: 'dashboard', label: 'Dashboard', src: '/screenshots/dashboard-desktop.png', alt: 'Expense Manager Dashboard' },
+    { id: 'analytics', label: 'Analytics', src: '/screenshots/analytics-detailed.png', alt: 'Detailed Financial Analytics' },
+    { id: 'expenses', label: 'Expenses', src: '/screenshots/expenses-list.png', alt: 'Expense Tracking List' },
+    { id: 'budget', label: 'Budgeting', src: '/screenshots/budget-overview.png', alt: 'Smart Budgeting' },
+    { id: 'categories', label: 'Categories', src: '/screenshots/categories-management.png', alt: 'Custom Categories' },
+    { id: 'predefined-categories', label: 'Pre-set Categories', src: '/screenshots/predefined-categories.png', alt: 'Available Expense Categories' },
+    { id: 'ai', label: 'AI Insights', src: '/screenshots/ai-insights.png', alt: 'AI Spending Insights' },
+    { id: 'settings', label: 'Settings', src: '/screenshots/settings.png', alt: 'App Settings' },
+    { id: 'mobile', label: 'Mobile App', src: '/screenshots/mobile-download.png', alt: 'Mobile Expense App' },
+  ]
+
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Expenso",
     "applicationCategory": "FinanceApplication",
-    "operatingSystem": "Web, iOS, Android",
+    "operatingSystem": "Web, Android",
     "offers": {
       "@type": "Offer",
       "price": "0",
-      "priceCurrency": "USD"
+      "priceCurrency": "CAD"
     },
     "description": "Expenso is an intelligent AI expense tracker and money manager. Track spending, scan receipts, and manage budgets with ease.",
     "aggregateRating": {
@@ -37,7 +51,7 @@ export default function LandingPage() {
     "@context": "https://schema.org",
     "@type": "WebSite",
     "name": "Expenso AI Expense Tracker",
-    "alternateName": ["Expenso", "Expenso Manager"],
+    "alternateName": ["Expenso", "Expense Manager", "AI Expense Tracker", "Money Manager"],
     "url": "https://expenso-ex.vercel.app/"
   }
 
@@ -77,7 +91,7 @@ export default function LandingPage() {
       {/* Header */}
       <header className="fixed w-full bg-white/80 backdrop-blur-md z-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Brand size={32} />
+          <CalcBrand size={32} />
           <nav className="flex items-center gap-4">
             <Link href="/auth" className="text-gray-600 hover:text-primary-600 font-medium text-sm transition-colors">
               Sign In
@@ -185,15 +199,72 @@ export default function LandingPage() {
               />
               <FeatureCard 
                 icon={<ShieldCheckIcon className="w-6 h-6 text-emerald-500" />}
-                title="Bank-Grade Security"
-                desc="Your financial data is encrypted and secure. We respect your privacy and never sell your data."
+                title="Security"
+                desc="Your financial data will not be used for advertising or sold to third parties."
               />
               <FeatureCard 
                 icon={<SmartphoneIcon className="w-6 h-6 text-purple-500" />}
                 title="Cross Platform"
-                desc="Access your financial data from any device. Seamless sync between web, iOS, and Android."
+                desc="Access your financial data from any device. Seamless sync between web, Android."
               />
             </div>
+          </div>
+        </section>
+
+
+        {/* App Preview / Screenshots */}
+        <section className="py-24 bg-gray-50 overflow-hidden border-t border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold text-gray-900 mb-4">See Expenso in Action</h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                A clean, intuitive interface designed to help you manage your money without the complexity.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 mb-12">
+              {screenshots.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-6 py-2.5 rounded-full text-sm font-medium transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-primary-600 text-white shadow-lg shadow-primary-200 ring-2 ring-primary-100 ring-offset-2'
+                      : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="relative max-w-5xl mx-auto">
+              <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white aspect-[16/10]">
+                {screenshots.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`absolute inset-0 transition-opacity duration-500 ease-in-out flex items-center justify-center bg-gray-50 ${
+                      activeTab === item.id ? 'opacity-100 z-10' : 'opacity-0 z-0'
+                    }`}
+                  >
+                    <img 
+                      src={item.src} 
+                      alt={item.alt}
+                      className="w-full h-full object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                ))}
+              </div>
+              
+              {/* Decorative blobs */}
+              <div className="absolute -top-10 -right-10 w-72 h-72 bg-indigo-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+              <div className="absolute -bottom-10 -left-10 w-72 h-72 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+            </div>
+            
+            <p className="text-center text-gray-400 text-sm mt-8">
+              * Screenshots from the actual application. Some data blurred for privacy.
+            </p>
           </div>
         </section>
 
@@ -217,13 +288,11 @@ export default function LandingPage() {
       <footer className="bg-gray-50 py-12 border-t border-gray-200">
         <div className="max-w-7xl mx-auto px-4 text-center text-gray-500">
           <div className="flex justify-center mb-6">
-            <Brand size={24} />
+            <CalcBrand size={24} />
           </div>
           <p className="mb-4">&copy; {new Date().getFullYear()} Expenso. All rights reserved.</p>
           <div className="flex justify-center gap-6 text-sm">
-            <Link href="/" className="hover:text-primary-600">Privacy Policy</Link>
-            <Link href="/" className="hover:text-primary-600">Terms of Service</Link>
-            <Link href="/" className="hover:text-primary-600">Contact</Link>
+            <a href="mailto:pratikincanada@gmail.com" className="hover:text-primary-600 transition-colors">Contact Support</a>
           </div>
         </div>
       </footer>
