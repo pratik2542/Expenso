@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { sendNotification, NotificationType } from '@/lib/email';
-import { adminAuth } from '@/lib/firebaseAdmin';
+import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 
 /**
  * User-triggered endpoint to send themselves a notification on demand.
@@ -37,14 +37,90 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     weekStart.setDate(weekStart.getDate() - 7);
     const weekRange = `${weekStart.toLocaleDateString()} – ${now.toLocaleDateString()}`;
 
+    let userCurrency = 'CAD';
+    try {
+        const settingsSnap = await adminDb.collection('user_settings').where('user_id', '==', userId).limit(1).get();
+        if(!settingsSnap.empty) {
+            userCurrency = settingsSnap.docs[0].data().currency || 'CAD';
+        }
+    } catch (e) { console.error('Failed to fetch user settings', e); }
+
     switch (type) {
       case 'weekly_reports':
+        // Calculate stats
+        let totalSpent = 0;
+        let prevTotalSpent = 0;
+        let topCategory = 'None';
+        let biggestChange = 'N/A';
+        
+        try {
+            // 1. Fetch expenses for current week
+            const expensesRef = adminDb.collection('expenses').doc(userId).collection('items');
+            
+            const currentWeekQuery = await expensesRef
+            .where('occurred_on', '>=', weekStart.toISOString())
+            .where('occurred_on', '<=', now.toISOString())
+            .get();
+
+            const categoryTotals: Record<string, number> = {};
+
+            currentWeekQuery.docs.forEach(doc => {
+            const exp = doc.data();
+            const amt = Number(exp.amount) || 0;
+            if (exp.currency === userCurrency) {
+                totalSpent += amt;
+                categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
+            }
+            });
+
+            // Find top category
+            let maxCatVal = 0;
+            for (const [cat, val] of Object.entries(categoryTotals)) {
+            if (val > maxCatVal) {
+                maxCatVal = val;
+                topCategory = cat;
+            }
+            }
+
+            // 2. Fetch prev week
+            const prevStart = new Date(weekStart);
+            prevStart.setDate(prevStart.getDate() - 7);
+            const prevEnd = new Date(weekStart);
+
+            const prevWeekQuery = await expensesRef
+            .where('occurred_on', '>=', prevStart.toISOString())
+            .where('occurred_on', '<=', prevEnd.toISOString())
+            .get();
+
+            prevWeekQuery.docs.forEach(doc => {
+                const exp = doc.data();
+                if (exp.currency === userCurrency) {
+                    prevTotalSpent += (Number(exp.amount) || 0);
+                }
+            });
+
+            // Change
+            if (prevTotalSpent > 0) {
+                const change = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
+                biggestChange = `${change > 0 ? '+' : ''}${change.toFixed(1)}%`;
+            } else if (totalSpent > 0) {
+                biggestChange = '+100%';
+            } else {
+                biggestChange = '0%';
+            }
+
+        } catch (err) {
+            console.error('Error calculating stats', err);
+        }
+        
+        const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(totalSpent);
+
         subject = `Your Weekly Expense Summary (${weekRange})`;
         text =
           `Here's your weekly snapshot for ${weekRange}.\n\n` +
-          `• Total spent: (calculated from your data)\n` +
-          `• Top category: (coming soon)\n` +
-          `• Biggest change vs last week: (coming soon)\n\n` +
+          `• Total spent: ${formattedTotal}\n` +
+          `• Top category: ${topCategory}\n` +
+          `• Biggest change vs last week: ${biggestChange}\n\n` +
           `Open Expenso to see the full breakdown.`;
         break;
 

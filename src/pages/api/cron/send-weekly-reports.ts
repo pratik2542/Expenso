@@ -29,17 +29,87 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const rangeLabel = `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
 
     for (const doc of usersSnapshot.docs) {
-      const userId = doc.id; // Assuming doc ID is user ID, or use doc.data().user_id
+      const data = doc.data();
+      const userId = data.user_id; // Use the stored user_id
+      const userCurrency = data.currency || 'CAD'; // Default to CAD if not set
+
+      // Calculate stats
+      let totalSpent = 0;
+      let prevTotalSpent = 0;
+      let topCategory = 'None';
+      let biggestChange = 'N/A';
       
-      // In a real app, generate the actual report content here (totals, top categories, trends).
-      // We intentionally omit `html` so the shared email template builds a production-quality design.
+      try {
+        // 1. Fetch expenses for current week
+        const expensesRef = adminDb.collection('expenses').doc(userId).collection('items');
+        
+        const currentWeekQuery = await expensesRef
+          .where('occurred_on', '>=', start.toISOString())
+          .where('occurred_on', '<=', end.toISOString())
+          .get();
+
+        const categoryTotals: Record<string, number> = {};
+
+        currentWeekQuery.docs.forEach(doc => {
+          const exp = doc.data();
+          const amt = Number(exp.amount) || 0;
+          // Simple sum - in production, we should normalize currency here
+          if (exp.currency === userCurrency) {
+            totalSpent += amt;
+            categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
+          }
+        });
+
+        // Find top category
+        let maxCatVal = 0;
+        for (const [cat, val] of Object.entries(categoryTotals)) {
+          if (val > maxCatVal) {
+            maxCatVal = val;
+            topCategory = cat;
+          }
+        }
+
+        // 2. Fetch expenses for previous week for comparison
+        const prevStart = new Date(start);
+        prevStart.setDate(prevStart.getDate() - 7);
+        const prevEnd = new Date(start); // Start of current week is end of prev week
+
+        const prevWeekQuery = await expensesRef
+          .where('occurred_on', '>=', prevStart.toISOString())
+          .where('occurred_on', '<=', prevEnd.toISOString())
+          .get();
+
+        prevWeekQuery.docs.forEach(doc => {
+            const exp = doc.data();
+            if (exp.currency === userCurrency) {
+                prevTotalSpent += (Number(exp.amount) || 0);
+            }
+        });
+
+        // Calculate change
+        if (prevTotalSpent > 0) {
+            const change = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
+            biggestChange = `${change > 0 ? '+' : ''}${change.toFixed(1)}%`;
+        } else if (totalSpent > 0) {
+            biggestChange = '+100%'; 
+        } else {
+            biggestChange = '0%';
+        }
+        
+      } catch (err) {
+        console.error(`Error calculating stats for user ${userId}:`, err);
+      }
+
+      // Format currency
+      const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(totalSpent);
+
       const reportContent = {
         subject: `Your Weekly Expense Summary (${rangeLabel})`,
         text:
           `Here’s your weekly snapshot for ${rangeLabel}.\n\n` +
-          `• Total spent: (coming soon)\n` +
-          `• Top category: (coming soon)\n` +
-          `• Biggest change vs last week: (coming soon)\n\n` +
+          `• Total spent: ${formattedTotal}\n` +
+          `• Top category: ${topCategory}\n` +
+          `• Biggest change vs last week: ${biggestChange}\n\n` +
           `Open Expenso to see the full breakdown.`
       };
 
