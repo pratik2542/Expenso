@@ -61,6 +61,8 @@ export default function LandingPage() {
         <title>Expenso - AI Expense Tracker</title>
         <meta name="description" content="Expenso is the smart AI expense tracker that helps you master your money. Track daily spending, get AI insights, and manage budgets effortlessly." />
         <meta name="keywords" content="Expenso, AI expense tracker, expense manager, money manager, budget app, finance tracker" />
+        <meta name="robots" content="index, follow" />
+        <meta name="googlebot" content="index, follow" />
         
         {/* Site Name for Search Engines to replace 'Vercel' */}
         <meta property="og:site_name" content="Expenso AI Expense Tracker" />

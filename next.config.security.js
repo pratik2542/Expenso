@@ -29,7 +29,7 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Required for Next.js
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com https://www.googletagmanager.com", // Required for Next.js and Google scripts
       "style-src 'self' 'unsafe-inline'", // Required for styled components
       "img-src 'self' data: https:",
       "font-src 'self' data:",
