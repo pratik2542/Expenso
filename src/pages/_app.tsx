@@ -10,6 +10,7 @@ import { logEvent } from 'firebase/analytics'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import UpdateChecker from '@/components/UpdateChecker'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 
 const queryClient = new QueryClient()
 
@@ -95,6 +96,7 @@ export default function App({ Component, pageProps }: AppProps) {
         <PreferencesProvider>
           <UpdateChecker />
           <Component {...pageProps} />
+          <SpeedInsights />
         </PreferencesProvider>
       </QueryClientProvider>
     </AuthProvider>
