@@ -355,26 +355,26 @@ function DashboardContent() {
       <Head>
         <title>Expenso - AI Expense Tracker & Manager | Smart Personal Finance App</title>
         <meta name="description" content="Expenso is the best AI-powered expense tracker and manager. Track expenses, manage budgets, and get AI insights for your personal finances. Free expense manager app." />
-        <meta name="keywords" content="expenso, expense tracker, expense manager, ai expense tracker, personal finance, budget manager, expense app, money manager, spending tracker, finance app" />
+        <meta name="keywords" content="expenso, expense tracker, expense manager, ai expense tracker, expense ai manager, ai expense manager, personal finance, budget manager, expense app, money manager, spending tracker, finance app" />
         
         {/* Open Graph / Facebook */}
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://expenso-ex.vercel.app/" />
+        <meta property="og:url" content="https://expense-ai-tracker.vercel.app/" />
         <meta property="og:title" content="Expenso - AI Expense Tracker & Manager" />
         <meta property="og:description" content="Smart AI-powered expense tracker and manager. Track expenses, manage budgets, and get insights for better financial decisions." />
-        <meta property="og:image" content="https://expenso-ex.vercel.app/calculatorImg.png" />
+        <meta property="og:image" content="https://expense-ai-tracker.vercel.app/calculatorImg.png" />
         
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
-        <meta property="twitter:url" content="https://expenso-ex.vercel.app/" />
+        <meta property="twitter:url" content="https://expense-ai-tracker.vercel.app/" />
         <meta property="twitter:title" content="Expenso - AI Expense Tracker & Manager" />
         <meta property="twitter:description" content="Smart AI-powered expense tracker and manager. Track expenses, manage budgets, and get insights." />
-        <meta property="twitter:image" content="https://expenso-ex.vercel.app/calculatorImg.png" />
+        <meta property="twitter:image" content="https://expense-ai-tracker.vercel.app/calculatorImg.png" />
         
         {/* Additional SEO */}
         <meta name="robots" content="index, follow" />
         <meta name="author" content="Expenso" />
-        <link rel="canonical" href="https://expenso-ex.vercel.app/" />
+        <link rel="canonical" href="https://expense-ai-tracker.vercel.app/" />
       </Head>
       <RequireAuth>
       <Layout>

@@ -46,7 +46,7 @@ export default function UpdateChecker() {
       // CRITICAL: We need the website URL. 
       // I'll check capacitor.config.ts again to see if there is a server url.
       
-      const response = await fetch('https://expenso-ex.vercel.app/version.json')
+      const response = await fetch('https://expense-ai-tracker.vercel.app/version.json')
       if (!response.ok) return
 
       const data = await response.json()
@@ -80,7 +80,7 @@ export default function UpdateChecker() {
 
   const handleDownload = () => {
     // Open the website in the system browser to download the APK
-    window.open('https://expenso-ex.vercel.app/Expenso.apk', '_system')
+    window.open('https://expense-ai-tracker.vercel.app/Expenso.apk', '_system')
     setShowUpdateModal(false)
   }
 

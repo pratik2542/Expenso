@@ -24,6 +24,21 @@ const nextConfig = {
       },
     ]
   },
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [
+          {
+            type: 'host',
+            value: 'expenso-ex.vercel.app',
+          },
+        ],
+        destination: 'https://expense-ai-tracker.vercel.app/:path*',
+        permanent: true,
+      },
+    ]
+  },
   // Ensure Next includes pdfjs-dist in serverless traces so it's available at runtime on Vercel
   outputFileTracingIncludes: {
     'src/pages/api/ai/parse-statement.ts': [

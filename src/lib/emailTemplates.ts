@@ -43,10 +43,10 @@ export function getAppBaseUrl(): string {
   
   // If we still have a preview URL, default to production domain
   if (normalized.includes('-pratik2542s-projects.vercel.app')) {
-    return 'https://expenso-ex.vercel.app';
+    return 'https://expense-ai-tracker.vercel.app';
   }
 
-  return normalized || 'https://expenso-ex.vercel.app';
+  return normalized || 'https://expense-ai-tracker.vercel.app';
 }
 
 function toAbsoluteUrl(baseUrl: string, urlOrPath: string): string {
