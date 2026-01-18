@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     allowNavigation: [
-      'https://expense-ai-tracker.vercel.app',
+      'https://expense-ai-manager.vercel.app/',
       'https://*.googleapis.com',
       'https://generativelanguage.googleapis.com',
       'https://api.perplexity.ai'

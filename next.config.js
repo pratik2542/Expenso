@@ -34,7 +34,7 @@ const nextConfig = {
             value: 'expenso-ex.vercel.app',
           },
         ],
-        destination: 'https://expense-ai-tracker.vercel.app/:path*',
+        destination: 'https://expense-ai-manager.vercel.app/:path*',
         permanent: true,
       },
     ]

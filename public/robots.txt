@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://expense-ai-tracker.vercel.app/sitemap.xml
+Sitemap: https://expense-ai-manager.vercel.app/sitemap.xml

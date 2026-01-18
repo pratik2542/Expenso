@@ -52,7 +52,7 @@ export default function LandingPage() {
     "@type": "WebSite",
     "name": "Expenso AI Expense Tracker",
     "alternateName": ["Expenso", "Expense Manager", "AI Expense Tracker", "Money Manager"],
-    "url": "https://expense-ai-tracker.vercel.app/"
+    "url": "https://expense-ai-manager.vercel.app/"
   }
 
   return (
@@ -69,18 +69,18 @@ export default function LandingPage() {
         
         {/* Open Graph / Facebook */}
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://expense-ai-tracker.vercel.app/" />
+        <meta property="og:url" content="https://expense-ai-manager.vercel.app/" />
         <meta property="og:title" content="Expenso - AI Expense Tracker" />
         <meta property="og:description" content="Master your money with Expenso. The AI-powered expense tracker for smart financial insights." />
-        <meta property="og:image" content="https://expense-ai-tracker.vercel.app/icon-512.png" />
+        <meta property="og:image" content="https://expense-ai-manager.vercel.app/icon-512.png" />
 
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
         <meta property="twitter:title" content="Expenso - AI Expense Tracker" />
         <meta property="twitter:description" content="Master your money with Expenso. The AI-powered expense tracker." />
-        <meta property="twitter:image" content="https://expense-ai-tracker.vercel.app/icon-512.png" />
+        <meta property="twitter:image" content="https://expense-ai-manager.vercel.app/icon-512.png" />
 
-        <link rel="canonical" href="https://expense-ai-tracker.vercel.app/" />
+        <link rel="canonical" href="https://expense-ai-manager.vercel.app/" />
         <link rel="icon" href="/calculatorImg.png" type="image/png" />
         <link rel="apple-touch-icon" href="/calculatorImg.png" />
 

@@ -359,22 +359,22 @@ function DashboardContent() {
         
         {/* Open Graph / Facebook */}
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://expense-ai-tracker.vercel.app/" />
+        <meta property="og:url" content="https://expense-ai-manager.vercel.app/" />
         <meta property="og:title" content="Expenso - AI Expense Tracker & Manager" />
         <meta property="og:description" content="Smart AI-powered expense tracker and manager. Track expenses, manage budgets, and get insights for better financial decisions." />
-        <meta property="og:image" content="https://expense-ai-tracker.vercel.app/calculatorImg.png" />
+        <meta property="og:image" content="https://expense-ai-manager.vercel.app/calculatorImg.png" />
         
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
-        <meta property="twitter:url" content="https://expense-ai-tracker.vercel.app/" />
+        <meta property="twitter:url" content="https://expense-ai-manager.vercel.app/" />
         <meta property="twitter:title" content="Expenso - AI Expense Tracker & Manager" />
         <meta property="twitter:description" content="Smart AI-powered expense tracker and manager. Track expenses, manage budgets, and get insights." />
-        <meta property="twitter:image" content="https://expense-ai-tracker.vercel.app/calculatorImg.png" />
+        <meta property="twitter:image" content="https://expense-ai-manager.vercel.app/calculatorImg.png" />
         
         {/* Additional SEO */}
         <meta name="robots" content="index, follow" />
         <meta name="author" content="Expenso" />
-        <link rel="canonical" href="https://expense-ai-tracker.vercel.app/" />
+        <link rel="canonical" href="https://expense-ai-manager.vercel.app/" />
       </Head>
       <RequireAuth>
       <Layout>
