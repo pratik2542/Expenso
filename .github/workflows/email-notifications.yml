@@ -32,8 +32,8 @@ jobs:
     steps:
       - name: Send Weekly Expense Reports
         run: |
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            https://expense-ai-manager.vercel.app/api/cron/send-weekly-reports \
+          response=$(curl -s -L -w "\n%{http_code}" -X POST \
+            https://expense-ai-tracker.vercel.app/api/cron/send-weekly-reports \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json")
           
@@ -62,8 +62,8 @@ jobs:
     steps:
       - name: Send Monthly Analytics Reports
         run: |
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            https://expense-ai-manager.vercel.app/api/cron/send-monthly-analytics \
+          response=$(curl -s -L -w "\n%{http_code}" -X POST \
+            https://expense-ai-tracker.vercel.app/api/cron/send-monthly-analytics \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "Content-Type: application/json")
           
