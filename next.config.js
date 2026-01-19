@@ -31,7 +31,7 @@ const nextConfig = {
         has: [
           {
             type: 'host',
-            value: 'expenso-ex.vercel.app',
+            value: 'expense-ai-manager.vercel.app',
           },
         ],
         destination: 'https://expense-ai-manager.vercel.app/:path*',
