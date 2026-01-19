@@ -55,6 +55,45 @@ export default function LandingPage() {
     "url": "https://expense-ai-manager.vercel.app/"
   }
 
+  const faqSchema = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is an AI expense tracker?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "An AI expense tracker automatically categorizes spending, highlights trends, and surfaces insights so you can make faster money decisions."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is Expenso an expense manager app?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Expenso is an expense manager app that lets you track expenses, set budgets, and review analytics in one place."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Can I use Expenso as a budget tracker?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. You can create category budgets and monitor how your monthly spending compares to your targets."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does Expenso support multiple currencies?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Expenso supports multi-currency tracking and conversion for global spending."
+        }
+      }
+    ]
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <Head>
@@ -86,7 +125,7 @@ export default function LandingPage() {
 
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify([structuredData, websiteSchema]) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify([structuredData, websiteSchema, faqSchema]) }}
         />
       </Head>
 
@@ -118,11 +157,11 @@ export default function LandingPage() {
               <span>AI insights that feel personal</span>
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-gray-900 mb-5 leading-tight">
-              A calm, modern <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">AI expense tracker</span>
-              <span className="hidden sm:inline"> for everyday money decisions</span>
+              The <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">expense tracker</span> that feels simple,
+              <span className="hidden sm:inline"> with AI that feels smart</span>
             </h1>
             <p className="max-w-2xl mx-auto text-base sm:text-lg text-gray-600 mb-8 leading-relaxed">
-              Track expenses, stay on budget, and get clear AI insights without a cluttered UI. Built for focus, not noise.
+              Expenso is an AI expense tracker and expense manager app for everyday use. Track expenses, manage budgets, and get clear insights in minutes.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
               <Link 
@@ -217,6 +256,20 @@ export default function LandingPage() {
                 desc="Access your financial data from any device. Seamless sync between web, Android."
               />
             </div>
+            <div className="mt-12 grid md:grid-cols-3 gap-6 text-left">
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Expense Tracker</h3>
+                <p className="text-sm text-gray-600">Log purchases fast, auto-categorize, and review daily spending in seconds.</p>
+              </div>
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Expense Manager</h3>
+                <p className="text-sm text-gray-600">Set budgets, track progress, and keep every category on target.</p>
+              </div>
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">AI Expense Tracker</h3>
+                <p className="text-sm text-gray-600">Get smart insights and plain-language summaries of where your money goes.</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -274,6 +327,34 @@ export default function LandingPage() {
             <p className="text-center text-gray-400 text-xs mt-8">
               * Screenshots from the actual application. Some data blurred for privacy.
             </p>
+          </div>
+        </section>
+
+        {/* FAQ Section */}
+        <section className="py-16 bg-white border-t border-gray-100">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl sm:text-3xl font-semibold text-gray-900 mb-3">FAQ: expense tracker & AI expense manager</h2>
+              <p className="text-base sm:text-lg text-gray-600">Short answers to the most common search questions.</p>
+            </div>
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">What is an AI expense tracker?</h3>
+                <p className="text-sm text-gray-600">It categorizes spending automatically and highlights trends so you can decide faster.</p>
+              </div>
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Is Expenso an expense manager app?</h3>
+                <p className="text-sm text-gray-600">Yes. Track expenses, create budgets, and view analytics in one place.</p>
+              </div>
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Can I use it as a budget tracker?</h3>
+                <p className="text-sm text-gray-600">Yes. Set category limits and monitor progress monthly.</p>
+              </div>
+              <div className="p-5 rounded-xl border border-gray-100 bg-gray-50">
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Does it support multiple currencies?</h3>
+                <p className="text-sm text-gray-600">Yes. Multi-currency tracking with conversion for global spending.</p>
+              </div>
+            </div>
           </div>
         </section>
 
