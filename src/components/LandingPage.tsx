@@ -97,7 +97,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white">
       <Head>
-        <title>Expenso - AI Expense Tracker</title>
+        <title>AI Expense Tracker</title>
         <meta name="description" content="Expenso is the smart AI expense tracker that helps you master your money. Track daily spending, get AI insights, and manage budgets effortlessly." />
         <meta name="keywords" content="Expenso, AI expense tracker, expense manager, expense ai manager, ai expense manager, money manager, budget app, finance tracker" />
         <meta name="robots" content="index, follow" />
@@ -109,13 +109,13 @@ export default function LandingPage() {
         {/* Open Graph / Facebook */}
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://expense-ai-manager.vercel.app/" />
-        <meta property="og:title" content="Expenso - AI Expense Tracker" />
+        <meta property="og:title" content="AI Expense Tracker" />
         <meta property="og:description" content="Master your money with Expenso. The AI-powered expense tracker for smart financial insights." />
         <meta property="og:image" content="https://expense-ai-manager.vercel.app/icon-512.png" />
 
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
-        <meta property="twitter:title" content="Expenso - AI Expense Tracker" />
+        <meta property="twitter:title" content="AI Expense Tracker" />
         <meta property="twitter:description" content="Master your money with Expenso. The AI-powered expense tracker." />
         <meta property="twitter:image" content="https://expense-ai-manager.vercel.app/icon-512.png" />
 

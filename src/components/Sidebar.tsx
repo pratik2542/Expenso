@@ -495,6 +495,11 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                 <LogOutIcon className="h-4 w-4" /> Sign out
               </button>
               {user && <p className="mt-2 text-xs text-gray-400 truncate">{user.email}</p>}
+              {appVersion && (
+                <p className="mt-1 text-[10px] text-gray-300 text-center">
+                  v{appVersion}
+                </p>
+              )}
             </div>
           </div>
         </div>
