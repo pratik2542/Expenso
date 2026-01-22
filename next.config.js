@@ -19,6 +19,14 @@ const nextConfig = {
         ],
       },
       {
+        source: '/version.json',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET' },
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+        ],
+      },
+      {
         source: '/(.*)',
         headers: securityHeaders,
       },

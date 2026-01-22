@@ -46,7 +46,7 @@ export default function UpdateChecker() {
       // CRITICAL: We need the website URL. 
       // I'll check capacitor.config.ts again to see if there is a server url.
       
-      const response = await fetch('https://expense-ai-manager.vercel.app/version.json')
+      const response = await fetch(`https://expense-ai-manager.vercel.app/version.json?t=${Date.now()}`)
       if (!response.ok) return
 
       const data = await response.json()
@@ -59,6 +59,7 @@ export default function UpdateChecker() {
         setShowUpdateModal(true)
       }
     } catch (error) {
+      console.error('Update check failed:', error)
       // Silent fail - don't show errors for update checks
     }
   }
