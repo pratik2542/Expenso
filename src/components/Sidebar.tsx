@@ -544,7 +544,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
             </Transition>
 
             {/* Mobile Header - Simplified */}
-            <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-center border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-4 lg:hidden transition-colors">
+            <div className="sticky top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 items-center justify-center border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md px-4 lg:hidden transition-colors">
                 <div className="flex items-center">
                     <CalcBrand size={26} />
                 </div>
