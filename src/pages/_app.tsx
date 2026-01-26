@@ -27,7 +27,9 @@ export default function App({ Component, pageProps }: AppProps) {
       // Handle back button with double-press to exit
       let lastBackPress = 0
       CapacitorApp.addListener('backButton', ({ canGoBack }) => {
-        if (!canGoBack) {
+        const isExitRoute = window.location.pathname === '/' || window.location.pathname === '/auth'
+
+        if (!canGoBack || isExitRoute) {
           const now = Date.now()
           if (now - lastBackPress < 2000) {
             CapacitorApp.exitApp()

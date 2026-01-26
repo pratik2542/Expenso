@@ -1568,7 +1568,7 @@ export default function Expenses() {
               </div>
 
               {/* Footer */}
-              <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800">
+              <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800 pb-[calc(1rem+env(safe-area-inset-bottom))]">
                 <button
                   onClick={() => setShowFilterModal(false)}
                   className="w-full px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-colors"
