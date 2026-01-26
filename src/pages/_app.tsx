@@ -5,6 +5,7 @@ import type { AppProps } from 'next/app'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { PreferencesProvider } from '@/contexts/PreferencesContext'
+import { EnvironmentProvider } from '@/contexts/EnvironmentContext'
 import { analytics } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
 import { Capacitor } from '@capacitor/core'
@@ -94,9 +95,11 @@ export default function App({ Component, pageProps }: AppProps) {
     <AuthProvider>
       <QueryClientProvider client={queryClient}>
         <PreferencesProvider>
-          <UpdateChecker />
-          <Component {...pageProps} />
-          <SpeedInsights />
+          <EnvironmentProvider>
+            <UpdateChecker />
+            <Component {...pageProps} />
+            <SpeedInsights />
+          </EnvironmentProvider>
         </PreferencesProvider>
       </QueryClientProvider>
     </AuthProvider>

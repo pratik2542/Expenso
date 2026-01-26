@@ -72,8 +72,43 @@ export async function initializeDefaultCategories(userId: string): Promise<void>
  * @returns The icon/emoji for the category
  */
 export function getCategoryIcon(categoryName: string): string {
+  const name = categoryName.toLowerCase()
+  
+  // Income categories with relevant emojis
+  if (name.includes('salary') || name.includes('wage')) return '💰'
+  if (name.includes('business') || name.includes('profit')) return '💼'
+  if (name.includes('investment') || name.includes('dividend') || name.includes('interest')) return '📈'
+  if (name.includes('rental') || name.includes('rent income')) return '🏠'
+  if (name.includes('freelance') || name.includes('consulting')) return '💻'
+  if (name.includes('gift') || name.includes('present')) return '🎁'
+  if (name.includes('refund') || name.includes('cashback')) return '💵'
+  if (name.includes('award') || name.includes('prize') || name.includes('bonus')) return '🏆'
+  if (name.includes('lottery') || name.includes('jackpot')) return '🎰'
+  if (name.includes('sale') || name.includes('selling')) return '🏪'
+  if (name.includes('grant') || name.includes('scholarship')) return '🎓'
+  if (name.includes('coupon') || name.includes('voucher')) return '🎟️'
+  
+  // Check default categories list
   const category = DEFAULT_CATEGORIES.find(
-    c => c.name.toLowerCase() === categoryName.toLowerCase()
+    c => c.name.toLowerCase() === name
   )
-  return category?.icon || '📦'
+  if (category) return category.icon
+  
+  // Fallback for common expense categories
+  if (name.includes('food') || name.includes('dining') || name.includes('restaurant')) return '🍽️'
+  if (name.includes('groceries') || name.includes('grocery')) return '🛒'
+  if (name.includes('shopping') || name.includes('clothes') || name.includes('fashion')) return '🛍️'
+  if (name.includes('transport') || name.includes('car') || name.includes('taxi') || 
+      name.includes('uber') || name.includes('fuel') || name.includes('gas')) return '🚗'
+  if (name.includes('bill') || name.includes('utilities') || name.includes('electricity') ||
+      name.includes('water') || name.includes('internet')) return '📄'
+  if (name.includes('entertainment') || name.includes('movie') || name.includes('games')) return '🎬'
+  if (name.includes('health') || name.includes('medical') || name.includes('doctor') ||
+      name.includes('medicine') || name.includes('hospital')) return '🏥'
+  if (name.includes('travel') || name.includes('vacation') || name.includes('hotel') ||
+      name.includes('flight')) return '✈️'
+  if (name.includes('emi') || name.includes('loan') || name.includes('mortgage')) return '💳'
+  if (name.includes('rent') || name.includes('housing')) return '🏠'
+  
+  return '🏷️'
 }

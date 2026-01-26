@@ -5,6 +5,7 @@ import { db } from '@/lib/firebaseClient'
 import { useAuth } from '@/contexts/AuthContext'
 import { SparklesIcon, RefreshCwIcon, AlertTriangleIcon, CheckCircleIcon, InfoIcon } from 'lucide-react'
 import { getApiUrl } from '@/lib/config'
+import { useEnvironment } from '@/contexts/EnvironmentContext'
 
 interface AIInsightsWidgetProps {
   month: number
@@ -24,24 +25,25 @@ interface InsightData {
 
 export default function AIInsightsWidget({ month, year, currency }: AIInsightsWidgetProps) {
   const { user } = useAuth()
+  const { getCollection, currentEnvironment } = useEnvironment()
   const queryClient = useQueryClient()
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Fetch data for the selected month to send to AI
   const { data: monthlyData, isLoading: loadingData } = useQuery({
-    queryKey: ['ai-insights-data', user?.uid, month, year, currency],
+    queryKey: ['ai-insights-data', user?.uid, month, year, currency, currentEnvironment.id],
     enabled: !!user?.uid,
     queryFn: async () => {
       if (!user?.uid) return null
-      
-      const expensesRef = collection(db, 'expenses', user.uid, 'items')
+
+      const expensesRef = getCollection('expenses')
       let expenses: any[] = []
       let periodLabel = ''
 
       // 1. Try Current Month
       const startMonth = new Date(year, month - 1, 1).toISOString().slice(0, 10)
       const endMonth = new Date(year, month, 0).toISOString().slice(0, 10)
-      
+
       let q = query(
         expensesRef,
         where('occurred_on', '>=', startMonth),
@@ -49,7 +51,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         where('currency', '==', currency)
       )
       let snap = await getDocs(q)
-      
+
       if (!snap.empty) {
         expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         periodLabel = `Month: ${new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })} ${year}`
@@ -59,39 +61,39 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         const s30 = d30.toISOString().slice(0, 10)
         q = query(expensesRef, where('occurred_on', '>=', s30), where('currency', '==', currency))
         snap = await getDocs(q)
-        
-        if (!snap.empty) {
-           expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-           periodLabel = 'Last 30 Days'
-        } else {
-           // 3. Try Last 6 Months
-           const d180 = new Date(); d180.setDate(d180.getDate() - 180);
-           const s180 = d180.toISOString().slice(0, 10)
-           q = query(expensesRef, where('occurred_on', '>=', s180), where('currency', '==', currency))
-           snap = await getDocs(q)
 
-           if (!snap.empty) {
+        if (!snap.empty) {
+          expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          periodLabel = 'Last 30 Days'
+        } else {
+          // 3. Try Last 6 Months
+          const d180 = new Date(); d180.setDate(d180.getDate() - 180);
+          const s180 = d180.toISOString().slice(0, 10)
+          q = query(expensesRef, where('occurred_on', '>=', s180), where('currency', '==', currency))
+          snap = await getDocs(q)
+
+          if (!snap.empty) {
+            expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            periodLabel = 'Last 6 Months'
+          } else {
+            // 4. Try Last Year
+            const d365 = new Date(); d365.setDate(d365.getDate() - 365);
+            const s365 = d365.toISOString().slice(0, 10)
+            q = query(expensesRef, where('occurred_on', '>=', s365), where('currency', '==', currency))
+            snap = await getDocs(q)
+
+            if (!snap.empty) {
               expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-              periodLabel = 'Last 6 Months'
-           } else {
-              // 4. Try Last Year
-              const d365 = new Date(); d365.setDate(d365.getDate() - 365);
-              const s365 = d365.toISOString().slice(0, 10)
-              q = query(expensesRef, where('occurred_on', '>=', s365), where('currency', '==', currency))
-              snap = await getDocs(q)
-              
-              if (!snap.empty) {
-                 expenses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                 periodLabel = 'Last Year'
-              }
-           }
+              periodLabel = 'Last Year'
+            }
+          }
         }
       }
 
       // Fetch income for the same period as expenses
-      const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
+      const incomeRef = getCollection('monthly_income')
       let totalIncome = 0
-      
+
       if (periodLabel === '' || periodLabel.startsWith('Month:')) {
         // Current month - fetch just that month's income
         const qInc = query(
@@ -110,11 +112,11 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         if (periodLabel === 'Last 30 Days') lookbackMonths = 1
         else if (periodLabel === 'Last 6 Months') lookbackMonths = 6
         else if (periodLabel === 'Last Year') lookbackMonths = 12
-        
+
         // Get all income records for this currency and sum the relevant months
         const qInc = query(incomeRef, where('currency', '==', currency))
         const incSnap = await getDocs(qInc)
-        
+
         const now = new Date()
         incSnap.docs.forEach(doc => {
           const data = doc.data()
@@ -122,7 +124,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
           const incomeYear = Number(data.year)
           const incomeDate = new Date(incomeYear, incomeMonth - 1, 1)
           const monthsAgo = (now.getFullYear() - incomeYear) * 12 + (now.getMonth() + 1 - incomeMonth)
-          
+
           if (monthsAgo >= 0 && monthsAgo < lookbackMonths) {
             totalIncome += Number(data.amount || 0)
           }
@@ -135,23 +137,21 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
 
   // Fetch insights (from DB only initially)
   const { data: insights, isLoading: loadingInsights } = useQuery<InsightData | null>({
-    queryKey: ['ai-insights-result', user?.uid, month, year, currency, monthlyData?.periodLabel],
+    queryKey: ['ai-insights-result', user?.uid, month, year, currency, monthlyData?.periodLabel, currentEnvironment.id],
     enabled: !!monthlyData && monthlyData.expenses.length > 0,
     queryFn: async () => {
       if (!user?.uid) return null
       const docId = `${year}-${month}-${currency}`
-      const insightRef = doc(db, 'insights', user.uid, 'items', docId)
+      const insightRef = doc(getCollection('insights'), docId)
       const insightSnap = await getDoc(insightRef)
-      
+
       if (!insightSnap.exists()) return null
-      
+
       const data = insightSnap.data() as InsightData
-      // If the cached insight is for a different period scope (e.g. was 'Last 6 Months' but now we have 'Last 30 Days' data),
-      // ignore the cache so user can regenerate relevant insights.
       if (data.periodLabel !== monthlyData?.periodLabel) {
         return null
       }
-      
+
       return data
     }
   })
@@ -162,7 +162,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
     try {
       const apiUrl = getApiUrl('/api/ai/analytics-insights')
       console.log('Fetching insights from:', apiUrl)
-      
+
       // Optimize payload - only send essential fields to reduce size
       const optimizedExpenses = monthlyData.expenses.map(e => ({
         id: e.id,
@@ -174,7 +174,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         occurred_on: e.occurred_on,
         category: e.category
       }))
-      
+
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -187,33 +187,33 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
           periodLabel: monthlyData.periodLabel
         })
       })
-      
+
       console.log('Response status:', res.status, res.statusText)
-      
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
         console.error('API Error:', errorData)
         throw new Error(errorData.error || 'Failed to fetch insights')
       }
-      
+
       const json = await res.json()
       console.log('Response data:', json)
       const parsed = JSON.parse(json.insights)
-      
+
       const insightData: InsightData = {
         ...parsed,
         generatedAt: new Date().toISOString(),
         periodLabel: monthlyData.periodLabel
       }
-      
+
       // Save to Firestore
       const docId = `${year}-${month}-${currency}`
-      const insightRef = doc(db, 'insights', user.uid, 'items', docId)
+      const insightRef = doc(getCollection('insights'), docId)
       await setDoc(insightRef, insightData)
-      
+
       // Update Cache
-      queryClient.setQueryData(['ai-insights-result', user.uid, month, year, currency, monthlyData.periodLabel], insightData)
-      
+      queryClient.setQueryData(['ai-insights-result', user.uid, month, year, currency, monthlyData.periodLabel, currentEnvironment.id], insightData)
+
     } catch (e: any) {
       console.error('Generation failed:', e)
       const errorMessage = e.message || 'Failed to generate insights. Please try again.'
@@ -223,16 +223,16 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
     }
   }
 
-  if (loadingData) return <div className="animate-pulse h-48 bg-gray-100 rounded-xl"></div>
+  if (loadingData) return <div className="animate-pulse h-48 bg-gray-100 dark:bg-gray-700 rounded-xl"></div>
 
   if (!monthlyData || monthlyData.expenses.length === 0) {
     return (
-      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
+      <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl p-6 border border-indigo-100 dark:border-indigo-800">
         <div className="flex items-center gap-2 mb-2">
-          <SparklesIcon className="w-5 h-5 text-indigo-600" />
-          <h3 className="font-semibold text-indigo-900">AI Financial Insights</h3>
+          <SparklesIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <h3 className="font-semibold text-indigo-900 dark:text-indigo-300">AI Financial Insights</h3>
         </div>
-        <p className="text-sm text-indigo-700">
+        <p className="text-sm text-indigo-700 dark:text-indigo-400">
           No recent expenses found. Add some transactions to unlock AI-powered insights!
         </p>
       </div>
@@ -241,24 +241,24 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
 
   const getStatusColor = (color: string) => {
     switch (color) {
-      case 'green': return 'bg-green-100 text-green-800 border-green-200'
-      case 'yellow': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      case 'red': return 'bg-red-100 text-red-800 border-red-200'
-      default: return 'bg-gray-100 text-gray-800 border-gray-200'
+      case 'green': return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800'
+      case 'yellow': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800'
+      case 'red': return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800'
+      default: return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 border-gray-200 dark:border-gray-600'
     }
   }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Healthy': return <CheckCircleIcon className="w-5 h-5 text-green-600" />
-      case 'Caution': return <InfoIcon className="w-5 h-5 text-yellow-600" />
-      case 'Alert': return <AlertTriangleIcon className="w-5 h-5 text-red-600" />
-      default: return <SparklesIcon className="w-5 h-5 text-indigo-600" />
+      case 'Healthy': return <CheckCircleIcon className="w-5 h-5 text-green-600 dark:text-green-400" />
+      case 'Caution': return <InfoIcon className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+      case 'Alert': return <AlertTriangleIcon className="w-5 h-5 text-red-600 dark:text-red-400" />
+      default: return <SparklesIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
     }
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
       {/* Mobile Header */}
       <div className="lg:hidden bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 p-4 text-white">
         <div className="flex items-center justify-between">
@@ -280,8 +280,8 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
               </span>
             )}
             {insights && (
-              <button 
-                onClick={generateInsights} 
+              <button
+                onClick={generateInsights}
                 disabled={isRefreshing}
                 className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-50"
                 title="Refresh Insights"
@@ -309,8 +309,8 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
             </span>
           </div>
           {insights && (
-            <button 
-              onClick={generateInsights} 
+            <button
+              onClick={generateInsights}
               disabled={isRefreshing}
               className="p-1.5 hover:bg-white/20 rounded-lg transition-colors disabled:opacity-50 self-start sm:self-auto"
               title="Refresh Insights"
@@ -365,8 +365,8 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
                   {insights.status}
                 </div>
               </div>
-              <h4 className="text-base font-bold text-gray-900 mb-1">{insights.title}</h4>
-              <p className="text-gray-600 text-xs leading-relaxed">{insights.summary}</p>
+              <h4 className="text-base font-bold text-gray-900 dark:text-white mb-1">{insights.title}</h4>
+              <p className="text-gray-600 dark:text-gray-400 text-xs leading-relaxed">{insights.summary}</p>
             </div>
 
             {/* Desktop Status + Title */}
@@ -377,8 +377,8 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
                     {getStatusIcon(insights.status)}
                     {insights.status}
                   </div>
-                  <h4 className="text-lg font-bold text-gray-900">{insights.title}</h4>
-                  <p className="text-gray-600 text-sm mt-1">{insights.summary}</p>
+                  <h4 className="text-lg font-bold text-gray-900 dark:text-white">{insights.title}</h4>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">{insights.summary}</p>
                 </div>
               </div>
             </div>
@@ -386,9 +386,9 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
             {/* Mobile Highlights - 2 Column Grid */}
             <div className="lg:hidden mt-3 grid grid-cols-2 gap-2">
               {insights.highlights.map((item, idx) => (
-                <div key={idx} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-2.5 border border-gray-100">
+                <div key={idx} className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-700 dark:to-gray-700 rounded-xl p-2.5 border border-gray-100 dark:border-gray-600">
                   <div className="text-lg mb-1">{item.icon}</div>
-                  <p className="text-[10px] font-medium text-gray-700 leading-tight">{item.text}</p>
+                  <p className="text-[10px] font-medium text-gray-700 dark:text-gray-300 leading-tight">{item.text}</p>
                 </div>
               ))}
             </div>
@@ -396,15 +396,15 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
             {/* Desktop Highlights Grid */}
             <div className="hidden lg:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
               {insights.highlights.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-lg p-3 border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/50 transition-colors">
+                <div key={idx} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-100 dark:border-gray-600 hover:border-indigo-100 dark:hover:border-indigo-800 hover:bg-indigo-50/50 dark:hover:bg-indigo-900/20 transition-colors">
                   <div className="text-2xl mb-2">{item.icon}</div>
-                  <p className="text-xs font-medium text-gray-700 leading-tight">{item.text}</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight">{item.text}</p>
                 </div>
               ))}
             </div>
-            
+
             {insights.generatedAt && (
-              <div className="mt-3 lg:mt-4 text-[10px] lg:text-xs text-gray-400 text-right">
+              <div className="mt-3 lg:mt-4 text-[10px] lg:text-xs text-gray-400 dark:text-gray-500 text-right">
                 Updated: {new Date(insights.generatedAt).toLocaleDateString()}
               </div>
             )}
@@ -414,4 +414,3 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
     </div>
   )
 }
-

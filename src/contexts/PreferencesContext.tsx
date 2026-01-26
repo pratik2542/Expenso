@@ -7,14 +7,15 @@ type Prefs = {
   currency: string
   timeZone: string
   loading: boolean
-  convertExistingData: boolean
   formatCurrency: (amount: number) => string
   formatCurrencyExplicit: (amount: number, code: string) => string
   formatDate: (date?: string | Date | null, opts?: Intl.DateTimeFormatOptions) => string
-  convertAmount: (amount: number, from: string, to?: string) => Promise<{ amount: number; rate: number; from: string; to: string }>
-  formatConverted: (amount: number, from: string, target?: string) => Promise<string>
   refetch: () => Promise<void>
-  updatePrefs: (p: Partial<{ currency: string; convertExistingData: boolean; timeZone: string }>) => void
+  updatePrefs: (p: Partial<{ currency: string; timeZone: string }>) => void
+  defaultEnvName: string
+  hasOnboarded: boolean | null
+  darkMode: boolean
+  toggleDarkMode: () => void
 }
 
 const PreferencesContext = createContext<Prefs | undefined>(undefined)
@@ -22,45 +23,53 @@ const PreferencesContext = createContext<Prefs | undefined>(undefined)
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
 
-  // Initials: do NOT read/write browser storage
+  // Initials
   const initialCurrency = process.env.NEXT_PUBLIC_BASE_CURRENCY || 'USD'
   const initialTimeZone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' }
   })()
   const [currency, setCurrency] = useState(initialCurrency)
   const [timeZone, setTimeZone] = useState(initialTimeZone)
-  const [convertExistingData, setConvertExistingData] = useState<boolean>(true)
-  const [loading, setLoading] = useState(true) // Start as true until first fetch completes
+  const [defaultEnvName, setDefaultEnvName] = useState('Personal')
+  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('darkMode')
+      return saved ? JSON.parse(saved) : false
+    }
+    return false
+  })
 
   const fetchPrefs = useCallback(async () => {
     if (!user?.uid) {
-      console.log('PreferencesContext: No user UID')
       setLoading(false)
       return
     }
     setLoading(true)
-    console.log('PreferencesContext: Fetching for user:', user.uid)
     try {
-      // Query user_settings collection where user_id equals the Firebase UID
       const userSettingsRef = collection(db, 'user_settings')
       const q = query(userSettingsRef, where('user_id', '==', user.uid))
-      console.log('PreferencesContext: Querying collection with user_id:', user.uid)
       const querySnapshot = await getDocs(q)
-      
+
       if (querySnapshot.empty) {
-        console.log('PreferencesContext: No user settings found for user:', user.uid)
+        setHasOnboarded(false)
+        setLoading(false)
         return
       }
 
-      const docSnap = querySnapshot.docs[0] // Get the first matching document
+      const docSnap = querySnapshot.docs[0]
       const data = docSnap.data()
-      console.log('PreferencesContext: Found data:', data)
+
+      setHasOnboarded(data?.onboarded === true)
       const currencyValue = data?.preferred_currency || data?.current_currency || data?.currency || initialCurrency
-      const convertExisting = data?.convert_existing_data
-      
+
       if (currencyValue) setCurrency(currencyValue)
-      if (typeof convertExisting === 'boolean') setConvertExistingData(convertExisting)
-      // timeZone currently not persisted in this context; settings page stores its own value
+      const globalTimeZone = data?.time_zone
+      if (globalTimeZone) setTimeZone(globalTimeZone)
+
+      const envName = data?.default_env_name || 'Personal'
+      setDefaultEnvName(envName)
     } catch (e) {
       console.error('PreferencesContext: fetch exception', e)
     } finally {
@@ -75,7 +84,6 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const formatCurrency = useMemo(() => {
     return (amount: number) => {
       try {
-        // Force en-US for CAD to get CA$
         const locale = currency === 'CAD' ? 'en-US' : undefined
         return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount)
       } catch {
@@ -99,73 +107,92 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const formatDate = useMemo(() => {
     return (date?: string | Date | null, opts?: Intl.DateTimeFormatOptions) => {
       if (!date) return '—'
+
       let d: Date
       if (typeof date === 'string') {
-        // Parse date string as date in the user's selected timezone
-        // If it's in YYYY-MM-DD format, parse it correctly to avoid UTC shift
-        if (/^\d{4}-\d{2}-\d{2}/.test(date)) {
-          // Append time to ensure it's parsed in the user's timezone, not UTC
-          // This prevents the "one day off" bug
-          const dateStr = date.split('T')[0] + 'T12:00:00'
-          d = new Date(dateStr)
-        } else {
-          d = new Date(date)
+        // If it's a simple YYYY-MM-DD string, we want to display exactly those parts
+        // without any timezone shifting.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          const [year, month, day] = date.split('-').map(Number)
+          // Create a UTC date at mid-day to be extra safe from boundary errors
+          d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+
+          return d.toLocaleDateString(undefined, {
+            ...opts,
+            timeZone: 'UTC', // Tells the formatter to use the UTC parts we just set
+            month: opts?.month || 'short',
+            day: opts?.day || 'numeric',
+            year: opts?.year || 'numeric'
+          })
         }
+        d = new Date(date)
       } else {
         d = date
       }
+
       if (!(d instanceof Date) || isNaN(d.getTime())) return '—'
+
       try {
-        // Use the user's selected timezone from settings
-        return d.toLocaleDateString(undefined, { timeZone, month: 'short', day: 'numeric', year: 'numeric', ...opts })
+        return d.toLocaleDateString(undefined, {
+          timeZone,
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          ...opts
+        })
       } catch {
-        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', ...opts })
+        return d.toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          ...opts
+        })
       }
     }
   }, [timeZone])
+
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode((prev: boolean) => {
+      const newValue = !prev
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('darkMode', JSON.stringify(newValue))
+        if (newValue) {
+          document.documentElement.classList.add('dark')
+        } else {
+          document.documentElement.classList.remove('dark')
+        }
+      }
+      return newValue
+    })
+  }, [])
+
+  // Apply dark mode on mount and when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (darkMode) {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
+    }
+  }, [darkMode])
 
   const value: Prefs = {
     currency,
     timeZone,
     loading,
-    convertExistingData,
     formatCurrency,
     formatCurrencyExplicit,
     formatDate,
-    convertAmount: async (amount, from, to = currency) => {
-      if (!amount || from === to) return { amount, rate: 1, from, to }
-      try {
-        const resp = await fetch(`/api/fx/convert?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
-        if (!resp.ok) throw new Error('Rate fetch failed')
-        const json = await resp.json()
-        if (!json.success || !json.rate) throw new Error('Invalid rate response')
-        return { amount: amount * json.rate, rate: json.rate, from, to }
-      } catch {
-        return { amount, rate: 1, from, to }
-      }
-    },
-    formatConverted: async (amount: number, from: string, target: string = currency) => {
-      const { amount: converted } = await (async () => {
-        if (from === target) return { amount, rate: 1 }
-        try {
-          const r = await fetch(`/api/fx/convert?from=${encodeURIComponent(from)}&to=${encodeURIComponent(target)}`)
-          if (!r.ok) return { amount, rate: 1 }
-          const j = await r.json()
-          if (!j.rate) return { amount, rate: 1 }
-          return { amount: amount * j.rate, rate: j.rate }
-        } catch { return { amount, rate: 1 } }
-      })()
-      try {
-        return new Intl.NumberFormat(undefined, { style: 'currency', currency: target }).format(converted)
-      } catch { return `${target} ${converted.toFixed(2)}` }
-    },
     refetch: fetchPrefs,
     updatePrefs: (p) => {
       if (p.currency) setCurrency(p.currency)
-      if (typeof p.convertExistingData === 'boolean') setConvertExistingData(p.convertExistingData)
       if (p.timeZone) setTimeZone(p.timeZone)
-      // No browser storage; state-only here. Persist via settings page to DB.
     },
+    defaultEnvName,
+    hasOnboarded,
+    darkMode,
+    toggleDarkMode,
   }
 
   return (

@@ -1,14 +1,15 @@
 import Head from 'next/head'
 import Layout from '@/components/Layout'
+import React, { useState, useEffect, useMemo } from 'react'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import Charts from '@/components/Charts'
-import { TrendingUpIcon, DollarSignIcon, SparklesIcon, SendIcon, RefreshCwIcon } from 'lucide-react'
+import { TrendingUpIcon, SendIcon, RefreshCwIcon, SparklesIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs } from 'firebase/firestore'
-import { useMemo, useState } from 'react'
 import { getApiUrl } from '@/lib/config'
+import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -23,6 +24,7 @@ interface Expense {
   occurred_on: string
   category: string
   attachment?: string
+  type?: string
 }
 
 function getCurrencySymbol(currency: string): string {
@@ -37,40 +39,100 @@ function getCurrencySymbol(currency: string): string {
   }
 }
 
+type DateRangePreset = 'this-month' | 'last-month' | 'this-year' | 'last-year' | 'all-time' | 'custom'
+
 export default function Analytics() {
   const { formatCurrencyExplicit, currency: prefCurrency } = usePreferences()
   const { user } = useAuth()
   const now = new Date()
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
-  const [viewCurrency, setViewCurrency] = useState(prefCurrency || 'USD')
-  
+  const { getCollection, currentEnvironment } = useEnvironment()
+  const [viewCurrency, setViewCurrency] = useState(currentEnvironment.currency || prefCurrency || 'USD')
+
+  // Date range filter state
+  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>('this-month')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
+
+  // Sync viewCurrency with environment currency when it changes
+  useEffect(() => {
+    if (currentEnvironment.currency) {
+      setViewCurrency(currentEnvironment.currency)
+    }
+  }, [currentEnvironment.currency])
+
   // AI Insights state
   const [aiInsights, setAiInsights] = useState<string | null>(null)
   const [aiInsightsLoading, setAiInsightsLoading] = useState(false)
   const [aiInsightsError, setAiInsightsError] = useState<string | null>(null)
   const [userQuestion, setUserQuestion] = useState('')
-  const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'ai', content: string}>>([])
+  const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'ai', content: string }>>([])
   const [chatLoading, setChatLoading] = useState(false)
-  const [chatScope, setChatScope] = useState<'month' | 'all'>('month') // Toggle for chat data scope
-  
 
+  // Calculate date range based on preset or custom dates
+  const { startISO, endISO, periodLabel } = useMemo(() => {
+    let start: Date
+    let end: Date
+    let label: string
 
-  const startOfMonth = useMemo(() => new Date(selectedYear, selectedMonth - 1, 1), [selectedMonth, selectedYear])
-  const endOfMonth = useMemo(() => new Date(selectedYear, selectedMonth, 0), [selectedMonth, selectedYear])
-  const startISO = useMemo(() => startOfMonth.toISOString().slice(0,10), [startOfMonth])
-  const endISO = useMemo(() => endOfMonth.toISOString().slice(0,10), [endOfMonth])
+    switch (dateRangePreset) {
+      case 'this-month':
+        start = new Date(now.getFullYear(), now.getMonth(), 1)
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        label = start.toLocaleString('default', { month: 'long', year: 'numeric' })
+        break
+      case 'last-month':
+        start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        end = new Date(now.getFullYear(), now.getMonth(), 0)
+        label = start.toLocaleString('default', { month: 'long', year: 'numeric' })
+        break
+      case 'this-year':
+        start = new Date(now.getFullYear(), 0, 1)
+        end = new Date(now.getFullYear(), 11, 31)
+        label = `${now.getFullYear()}`
+        break
+      case 'last-year':
+        start = new Date(now.getFullYear() - 1, 0, 1)
+        end = new Date(now.getFullYear() - 1, 11, 31)
+        label = `${now.getFullYear() - 1}`
+        break
+      case 'custom':
+        if (customStartDate && customEndDate) {
+          start = new Date(customStartDate)
+          end = new Date(customEndDate)
+          label = `${start.toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })}`
+        } else {
+          // Default to this month if custom dates not set
+          start = new Date(now.getFullYear(), now.getMonth(), 1)
+          end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+          label = 'Custom Range'
+        }
+        break
+      case 'all-time':
+      default:
+        // For all-time, use a very old start date
+        start = new Date(2000, 0, 1)
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+        label = 'All Time'
+        break
+    }
+
+    return {
+      startISO: start.toISOString().slice(0, 10),
+      endISO: end.toISOString().slice(0, 10),
+      periodLabel: label
+    }
+  }, [dateRangePreset, customStartDate, customEndDate, now])
 
   // No conversion for Analytics; filter by selected currency only
 
-  // Fetch all expenses for the selected month (for AI insights)
-  const { data: monthExpenses = [] } = useQuery<Expense[]>({
-    queryKey: ['analytics-expenses-list', user?.uid, startISO, endISO, viewCurrency],
+  // Fetch expenses for the selected date range
+  const { data: periodExpenses = [] } = useQuery<Expense[]>({
+    queryKey: ['analytics-expenses-list', user?.uid, startISO, endISO, viewCurrency, currentEnvironment.id],
     enabled: !!user?.uid,
     queryFn: async () => {
       if (!user?.uid) return []
       try {
-        const expensesRef = collection(db, 'expenses', user.uid, 'items')
+        const expensesRef = getCollection('expenses')
         const q = query(
           expensesRef,
           where('occurred_on', '>=', startISO),
@@ -83,166 +145,80 @@ export default function Analytics() {
           ...doc.data()
         })) as Expense[]
       } catch (error) {
-
         return []
       }
     }
   })
 
-  // Fetch ALL expenses for the user (for "All Time" chat scope)
-  const { data: allExpenses = [] } = useQuery<Expense[]>({
-    queryKey: ['analytics-all-expenses', user?.uid, viewCurrency],
-    enabled: !!user?.uid && chatScope === 'all',
-    queryFn: async () => {
-      if (!user?.uid) return []
-      try {
-        const expensesRef = collection(db, 'expenses', user.uid, 'items')
-        const q = query(
-          expensesRef,
-          where('currency', '==', viewCurrency)
-        )
-        const snapshot = await getDocs(q)
-        return snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Expense[]
-      } catch (error) {
+  // Fetch income records for the selected date range (from expenses collection)
+  const periodIncomeTotal = useMemo(() => {
+    return periodExpenses
+      .filter(exp => exp.type === 'income')
+      .reduce((acc, exp) => acc + Math.abs(Number(exp.amount || 0)), 0)
+  }, [periodExpenses])
 
-        return []
-      }
-    }
-  })
-
-  // Fetch all income records for all time (with month/year breakdown)
-  interface IncomeRecord {
-    month: number
-    year: number
-    amount: number
-    currency: string
-  }
-  
-  const { data: allTimeIncomeData = [] } = useQuery<IncomeRecord[]>({
-    queryKey: ['analytics-all-income-detailed', user?.uid, viewCurrency],
-    enabled: !!user?.uid && chatScope === 'all',
-    queryFn: async () => {
-      if (!user?.uid) return []
-      try {
-        const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
-        const q = query(incomeRef, where('currency', '==', viewCurrency))
-        const snapshot = await getDocs(q)
-        return snapshot.docs.map(doc => {
-          const data = doc.data()
-          return {
-            month: data.month,
-            year: data.year,
-            amount: Number(data.amount || 0),
-            currency: data.currency
-          }
-        })
-      } catch (error) {
-
-        return []
-      }
-    }
-  })
-  
-  // Calculate total income for all time
-  const allTimeIncomeTotal = useMemo(() => {
-    return allTimeIncomeData.reduce((acc, inc) => acc + inc.amount, 0)
-  }, [allTimeIncomeData])
-
-  // Total spend for selected month with currency conversion
-  const { data: spendTotal = 0 } = useQuery({
-    queryKey: ['analytics-spend-total', user?.uid, startISO, endISO, viewCurrency],
-    enabled: !!user?.uid,
-    queryFn: async () => {
-      if (!user?.uid) return 0
-
-      try {
-        const expensesRef = collection(db, 'expenses', user.uid, 'items')
-        const q = query(
-          expensesRef,
-          where('occurred_on', '>=', startISO),
-          where('occurred_on', '<=', endISO),
-          where('currency', '==', viewCurrency)
-        )
-        const snapshot = await getDocs(q)
-        const total = snapshot.docs.reduce((acc, doc) => {
-          const data = doc.data()
-          return acc + Number(data.amount || 0)
-        }, 0)
-        return total
-      } catch (error) {
-        return 0
-      }
-    }
-  })
-
-  // Monthly income for selected month with currency conversion
-  const { data: incomeAmt = 0 } = useQuery({
-    queryKey: ['analytics-income', user?.uid, selectedMonth, selectedYear, viewCurrency],
-    enabled: !!user?.uid,
-    queryFn: async () => {
-      if (!user?.uid) return 0
-      try {
-        const incomeRef = collection(db, 'monthly_income', user.uid, 'items')
-        const q = query(
-          incomeRef,
-          where('month', '==', selectedMonth),
-          where('year', '==', selectedYear),
-          where('currency', '==', viewCurrency)
-        )
-        const snapshot = await getDocs(q)
-        if (snapshot.empty) return 0
-        const data = snapshot.docs[0].data()
-        return Number(data.amount || 0)
-      } catch (error) {
-
-        // Return 0 if query fails (likely due to missing index)
-        return 0
-      }
-    }
-  })
+  // Calculate total spending (exclude income records)
+  const spendTotal = useMemo(() => {
+    return periodExpenses
+      .filter(exp => exp.type !== 'income')
+      .reduce((acc, exp) => acc + Math.abs(Number(exp.amount || 0)), 0)
+  }, [periodExpenses])
 
   // Function to generate AI insights
   const generateAIInsights = async () => {
-    if (monthExpenses.length === 0) {
-      setAiInsightsError('No expenses found for this month to analyze')
+    if (periodExpenses.length === 0) {
+      setAiInsightsError('No expenses found for this period to analyze')
       return
     }
-    
+
     setAiInsightsLoading(true)
     setAiInsightsError(null)
-    
+
     try {
-      // Optimize payload - only send essential fields
-      const optimizedExpenses = monthExpenses.map(e => ({
-        id: e.id,
-        amount: e.amount,
-        currency: e.currency,
-        merchant: e.merchant,
-        payment_method: e.payment_method,
-        note: e.note?.substring(0, 100),
-        occurred_on: e.occurred_on,
-        category: e.category
-      }))
-      
+      // Optimize payload - only send essential fields (separate income and expenses)
+      const optimizedExpenses = periodExpenses
+        .filter(e => e.type !== 'income')
+        .map(e => ({
+          id: e.id,
+          amount: e.amount,
+          currency: e.currency,
+          merchant: e.merchant,
+          payment_method: e.payment_method,
+          note: e.note?.substring(0, 100),
+          occurred_on: e.occurred_on,
+          category: e.category
+        }))
+
+      const incomeRecords = periodExpenses
+        .filter(e => e.type === 'income')
+        .map(e => ({
+          id: e.id,
+          amount: e.amount,
+          currency: e.currency,
+          merchant: e.merchant,
+          note: e.note?.substring(0, 100),
+          occurred_on: e.occurred_on,
+          category: e.category
+        }))
+
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'X-User-Id': user?.uid || 'anonymous'
         },
         body: JSON.stringify({
           expenses: optimizedExpenses,
-          income: { amount: incomeAmt, currency: viewCurrency },
-          month: selectedMonth,
-          year: selectedYear,
+          income: { amount: periodIncomeTotal, currency: viewCurrency },
+          incomeRecords,
           currency: viewCurrency,
-          format: 'markdown'
+          month: now.getMonth() + 1,
+          year: now.getFullYear(),
+          format: 'markdown',
+          periodLabel
         })
       })
-      
+
       if (!resp.ok) throw new Error('Failed to generate insights')
       const json = await resp.json()
       setAiInsights(json.insights)
@@ -256,59 +232,67 @@ export default function Analytics() {
   // Function to ask a question
   const askQuestion = async () => {
     if (!userQuestion.trim()) return
-    
-    const expensesToUse = chatScope === 'all' ? allExpenses : monthExpenses
-    const incomeToUse = chatScope === 'all' ? allTimeIncomeTotal : incomeAmt
-    const incomeRecordsToUse = chatScope === 'all' ? allTimeIncomeData : null
-    const periodLabel = chatScope === 'all' 
-      ? 'All Time' 
-      : new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })
-    
-    if (expensesToUse.length === 0) {
-      setChatHistory(prev => [...prev, 
-        { role: 'user', content: userQuestion },
-        { role: 'ai', content: `No expenses found for ${periodLabel} to analyze. Please add some expenses first.` }
+
+    if (periodExpenses.length === 0) {
+      setChatHistory(prev => [...prev,
+      { role: 'user', content: userQuestion },
+      { role: 'ai', content: `No expenses found for ${periodLabel} to analyze. Please add some expenses first.` }
       ])
       setUserQuestion('')
       return
     }
-    
+
     const question = userQuestion.trim()
     setChatHistory(prev => [...prev, { role: 'user', content: question }])
     setUserQuestion('')
     setChatLoading(true)
-    
+
     try {
-      // Optimize payload - only send essential fields
-      const optimizedExpenses = expensesToUse.map(e => ({
-        id: e.id,
-        amount: e.amount,
-        currency: e.currency,
-        merchant: e.merchant,
-        payment_method: e.payment_method,
-        note: e.note?.substring(0, 100),
-        occurred_on: e.occurred_on,
-        category: e.category
-      }))
-      
+      // Optimize payload - only send essential fields (separate income and expenses)
+      const optimizedExpenses = periodExpenses
+        .filter(e => e.type !== 'income')
+        .map(e => ({
+          id: e.id,
+          amount: e.amount,
+          currency: e.currency,
+          merchant: e.merchant,
+          payment_method: e.payment_method,
+          note: e.note?.substring(0, 100),
+          occurred_on: e.occurred_on,
+          category: e.category
+        }))
+
+      const incomeRecords = periodExpenses
+        .filter(e => e.type === 'income')
+        .map(e => ({
+          id: e.id,
+          amount: e.amount,
+          currency: e.currency,
+          merchant: e.merchant,
+          note: e.note?.substring(0, 100),
+          occurred_on: e.occurred_on,
+          category: e.category
+        }))
+
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'X-User-Id': user?.uid || 'anonymous'
         },
         body: JSON.stringify({
           expenses: optimizedExpenses,
-          income: { amount: incomeToUse, currency: viewCurrency },
-          incomeRecords: incomeRecordsToUse,
-          month: selectedMonth,
-          year: selectedYear,
+          income: { amount: periodIncomeTotal, currency: viewCurrency },
+          incomeRecords,
           currency: viewCurrency,
+          month: now.getMonth() + 1,
+          year: now.getFullYear(),
           question,
-          periodLabel: chatScope === 'all' ? 'All Time Data' : undefined
+          chatHistory: chatHistory.map(msg => ({ role: msg.role, content: msg.content })),
+          periodLabel
         })
       })
-      
+
       if (!resp.ok) {
         const errorData = await resp.json().catch(() => ({ error: 'Unknown error' }))
         const errorMsg = errorData.error || resp.statusText || 'Server error'
@@ -319,37 +303,29 @@ export default function Analytics() {
     } catch (e: any) {
       const errorMsg = e.message || 'Failed to get answer'
       console.error('Ask AI error:', errorMsg)
-      setChatHistory(prev => [...prev, { 
-        role: 'ai', 
-        content: `Sorry, I encountered an error: ${errorMsg}\n\n${
-          errorMsg.includes('413') || errorMsg.includes('Too Large') 
-            ? 'The data is too large to process. Try asking about a specific month instead of "All Time".' 
-            : 'Please check your internet connection and try again.'
-        }` 
+      setChatHistory(prev => [...prev, {
+        role: 'ai',
+        content: `Sorry, I encountered an error: ${errorMsg}\n\nPlease check your internet connection and try again.`
       }])
     } finally {
       setChatLoading(false)
     }
   }
 
-  // Average daily spend for the selected month
-  const daysInMonth = useMemo(() => endOfMonth.getDate(), [endOfMonth])
-  const avgDailySpend = useMemo(() => (daysInMonth > 0 ? spendTotal / daysInMonth : 0), [spendTotal, daysInMonth])
-  const savings = useMemo(() => incomeAmt - spendTotal, [incomeAmt, spendTotal])
+  // Calculate stats based on the period
+  const daysInPeriod = useMemo(() => {
+    const start = new Date(startISO)
+    const end = new Date(endISO)
+    return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+  }, [startISO, endISO])
+
+  const avgDailySpend = useMemo(() => (daysInPeriod > 0 ? spendTotal / daysInPeriod : 0), [spendTotal, daysInPeriod])
+  const savings = useMemo(() => periodIncomeTotal - spendTotal, [periodIncomeTotal, spendTotal])
   const isOverspending = useMemo(() => savings < 0, [savings])
-  const isCurrentMonth = useMemo(() => {
-    const d = new Date()
-    return d.getFullYear() === selectedYear && (d.getMonth() + 1) === selectedMonth
-  }, [selectedMonth, selectedYear])
-  const daysLeft = useMemo(() => {
-    if (!isCurrentMonth) return null
-    const today = new Date()
-    return Math.max(0, Math.ceil((endOfMonth.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)))
-  }, [isCurrentMonth, endOfMonth])
   return (
     <>
       <Head>
-  <title>Analytics - Expenso</title>
+        <title>Analytics - Expenso</title>
         <meta name="description" content="Analyze your spending patterns and trends" />
       </Head>
 
@@ -362,140 +338,152 @@ export default function Analytics() {
               <h1 className="text-xl font-bold text-gray-900">Analytics</h1>
               <p className="text-sm text-gray-500 mt-0.5">Spending insights & trends</p>
             </div>
-            
+
             {/* Desktop Header */}
             <div className="hidden lg:block">
-              <h1 className="text-3xl font-bold text-gray-900">Analytics</h1>
-              <p className="text-gray-600 mt-2">Insights into your spending patterns and trends</p>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Analytics</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">Insights into your spending patterns and trends</p>
             </div>
           </div>
 
-          {/* Period and Currency selection - Mobile Optimized */}
-          <div className="card !p-3 lg:!p-6 mb-4 lg:mb-6">
-            {/* Mobile Layout - Equal Width Pills */}
-            <div className="grid grid-cols-3 gap-2 lg:hidden">
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'short' })}</option>
-                ))}
-              </select>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500"
-              >
-                {Array.from({ length: 7 }, (_, i) => now.getFullYear() - 3 + i).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <select
-                value={viewCurrency}
-                onChange={(e) => setViewCurrency(e.target.value)}
-                className="w-full px-2 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-primary-500"
-              >
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="CAD">CAD</option>
-                <option value="AUD">AUD</option>
-                <option value="INR">INR</option>
-                <option value="JPY">JPY</option>
-              </select>
-            </div>
-
-            {/* Desktop Layout - Horizontal without Labels */}
-            <div className="hidden lg:flex items-center gap-3">
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="input min-w-[200px]"
-              >
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={m}>{new Date(2000, m - 1, 1).toLocaleString(undefined, { month: 'long' })}</option>
-                ))}
-              </select>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="input w-28"
-              >
-                {Array.from({ length: 7 }, (_, i) => now.getFullYear() - 3 + i).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <select
-                value={viewCurrency}
-                onChange={(e) => setViewCurrency(e.target.value)}
-                className="input w-32"
-                title="Analytics currency"
-              >
-                <option value="USD">USD</option>
-                <option value="EUR">EUR</option>
-                <option value="GBP">GBP</option>
-                <option value="CAD">CAD</option>
-                <option value="AUD">AUD</option>
-                <option value="INR">INR</option>
-                <option value="JPY">JPY</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Quick Stats - Mobile Optimized */}
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-6 mb-4 lg:mb-8">
-            <div className="bg-gradient-to-br from-primary-50 to-indigo-100 rounded-2xl p-3 lg:p-5 shadow-sm">
-              <div className="flex flex-col lg:flex-row lg:items-center">
-                <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-primary-100 flex-shrink-0">
-                  <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-primary-600 font-semibold text-base sm:text-lg">{getCurrencySymbol(viewCurrency)}</span>
+          {/* Period and Currency selection - Modern Redesign */}
+          <div className="card !p-4 lg:!p-6 mb-4 lg:mb-6 dark:bg-gray-800 dark:border-gray-700">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              {/* Date Range Presets */}
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Time Period</label>
+                <div className="grid grid-cols-3 lg:flex lg:flex-wrap gap-2">
+                  {[
+                    { value: 'this-month' as const, label: 'This Month' },
+                    { value: 'last-month' as const, label: 'Last Month' },
+                    { value: 'this-year' as const, label: 'This Year' },
+                    { value: 'last-year' as const, label: 'Last Year' },
+                    { value: 'all-time' as const, label: 'All Time' },
+                    { value: 'custom' as const, label: 'Custom' },
+                  ].map(preset => (
+                    <button
+                      key={preset.value}
+                      onClick={() => setDateRangePreset(preset.value)}
+                      className={`px-3 lg:px-4 py-2 rounded-xl text-xs lg:text-sm font-medium transition-all ${dateRangePreset === preset.value
+                        ? 'bg-primary-600 text-white shadow-md'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
-                <div className="lg:ml-4">
-                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">Daily Avg</p>
-                  <p className="text-base lg:text-2xl font-bold text-gray-900 mt-0.5">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
+
+                {/* Custom Date Range Inputs */}
+                {dateRangePreset === 'custom' && (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Start Date</label>
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        className="input text-sm w-full dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">End Date</label>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        className="input text-sm w-full dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Currency Display */}
+              <div className="lg:ml-4">
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Currency</label>
+                <div className="px-3 lg:px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 w-full lg:w-32 text-center">
+                  {viewCurrency}
                 </div>
               </div>
             </div>
 
-            <div className={`${isOverspending ? 'bg-gradient-to-br from-red-50 to-red-100' : 'bg-gradient-to-br from-green-50 to-emerald-100'} rounded-2xl p-3 lg:p-5 shadow-sm`}>
+            {/* Period Display */}
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Analyzing:</span>
+                <span className="font-semibold text-gray-900 dark:text-white">{periodLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Stats - Mobile Optimized */}
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-6 mb-4 lg:mb-8">
+            <div className="bg-gradient-to-br from-red-50 to-rose-100 dark:from-red-900/20 dark:to-rose-900/20 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20">
               <div className="flex flex-col lg:flex-row lg:items-center">
-                <div className={`hidden lg:block p-2 sm:p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100' : 'bg-success-100'}`}>
-                  <TrendingUpIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${isOverspending ? 'text-red-600 rotate-180' : 'text-success-600'}`} />
+                <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-red-100 dark:bg-red-900/30 flex-shrink-0">
+                  <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-red-600 dark:text-red-400 font-semibold text-base sm:text-lg">{getCurrencySymbol(viewCurrency)}</span>
                 </div>
                 <div className="lg:ml-4">
-                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">{isOverspending ? 'Deficit' : 'Savings'}</p>
-                  <p className={`text-base lg:text-2xl font-bold mt-0.5 ${isOverspending ? 'text-red-600' : 'text-gray-900'}`}>
-                    {formatCurrencyExplicit(Math.abs(savings), viewCurrency)}
+                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Spending</p>
+                  <p className="text-base lg:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
+                    {spendTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
             </div>
 
-            {isCurrentMonth && (
-              <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-amber-50 to-orange-100 rounded-2xl p-3 lg:p-5 shadow-sm">
-                <div className="flex flex-col lg:flex-row lg:items-center">
-                  <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-warning-100 flex-shrink-0">
-                    <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-warning-700 font-semibold">⏳</span>
-                  </div>
-                  <div className="lg:ml-4">
-                    <p className="text-[10px] lg:text-sm font-medium text-gray-500 uppercase tracking-wide">Days Left</p>
-                    <p className="text-base lg:text-2xl font-bold text-gray-900 mt-0.5">{daysLeft} days</p>
-                  </div>
+            <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20">
+              <div className="flex flex-col lg:flex-row lg:items-center">
+                <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-green-100 dark:bg-green-900/30 flex-shrink-0">
+                  <TrendingUpIcon className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="lg:ml-4">
+                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Income</p>
+                  <p className="text-base lg:text-2xl font-bold text-green-600 dark:text-green-400 mt-0.5">
+                    {periodIncomeTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
               </div>
-            )}
+            </div>
+
+            <div className="bg-gradient-to-br from-primary-50 to-indigo-100 dark:from-primary-900/30 dark:to-indigo-900/30 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20">
+              <div className="flex flex-col lg:flex-row lg:items-center">
+                <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-primary-100 dark:bg-primary-900/30 flex-shrink-0">
+                  <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-base sm:text-lg">📊</span>
+                </div>
+                <div className="lg:ml-4">
+                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Daily Avg</p>
+                  <p className="text-base lg:text-2xl font-bold text-primary-600 dark:text-primary-400 mt-0.5">
+                    {avgDailySpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${isOverspending ? 'bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-900/20' : 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20'} rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20`}>
+              <div className="flex flex-col lg:flex-row lg:items-center">
+                <div className={`hidden lg:block p-2 sm:p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100 dark:bg-red-900/30' : 'bg-success-100 dark:bg-success-900/30'}`}>
+                  <TrendingUpIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${isOverspending ? 'text-red-600 dark:text-red-400 rotate-180' : 'text-success-600 dark:text-success-400'}`} />
+                </div>
+                <div className="lg:ml-4">
+                  <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{isOverspending ? 'Deficit' : 'Savings'}</p>
+                  <p className={`text-base lg:text-2xl font-bold mt-0.5 ${isOverspending ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                    {Math.abs(savings).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Charts */}
-          <Charts month={selectedMonth} year={selectedYear} currency={viewCurrency} />
+          <Charts startDate={startISO} endDate={endISO} currency={viewCurrency} periodLabel={periodLabel} />
 
-          {/* AI Insights Section */}
+          {/* AI Insights Section - Combined */}
           <div className="mt-6 lg:mt-8 space-y-4 lg:space-y-6">
-            {/* AI Generated Insights */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              {/* Header - Gradient */}
-              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-3 lg:p-4 text-white">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 p-3 lg:p-4 text-white">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center lg:hidden">
@@ -503,53 +491,58 @@ export default function Analytics() {
                     </div>
                     <SparklesIcon className="w-5 h-5 hidden lg:block" />
                     <div>
-                      <h3 className="text-sm lg:text-lg font-semibold">AI Spending Insights</h3>
-                      <p className="text-[10px] lg:text-xs text-white/80 lg:hidden">
-                        {new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'short', year: 'numeric' })}
+                      <h3 className="text-sm lg:text-lg font-semibold">AI Assistant</h3>
+                      <p className="text-[10px] lg:text-xs text-white/80">
+                        Insights & analysis for {periodLabel}
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={generateAIInsights}
-                    disabled={aiInsightsLoading || monthExpenses.length === 0}
+                    disabled={aiInsightsLoading || periodExpenses.length === 0}
                     className="p-2 lg:px-3 lg:py-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     <RefreshCwIcon className={`w-4 h-4 ${aiInsightsLoading ? 'animate-spin' : ''}`} />
-                    <span className="hidden lg:inline text-sm font-medium">{aiInsightsLoading ? 'Analyzing...' : 'Generate'}</span>
+                    <span className="hidden lg:inline text-sm font-medium">{aiInsightsLoading ? 'Analyzing...' : 'Auto Insights'}</span>
                   </button>
                 </div>
               </div>
-              
-              <div className="p-4 lg:p-6">
+
+              <div className="p-4 lg:p-6 space-y-4">
+                {/* Auto-generated Insights */}
                 {aiInsightsError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs lg:text-sm mb-4">
+                  <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-700 dark:text-red-400 text-xs lg:text-sm">
                     {aiInsightsError}
                   </div>
                 )}
-                
-                {!aiInsights && !aiInsightsLoading && !aiInsightsError && (
-                  <div className="text-center py-6 lg:py-8 text-gray-500">
-                    <div className="w-12 h-12 lg:w-14 lg:h-14 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <SparklesIcon className="w-6 h-6 lg:w-7 lg:h-7 text-purple-400" />
+
+                {!aiInsights && !aiInsightsLoading && !aiInsightsError && chatHistory.length === 0 && (
+                  <div className="text-center py-6 lg:py-8 text-gray-500 dark:text-gray-400">
+                    <div className="w-12 h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/20 dark:to-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <SparklesIcon className="w-6 h-6 lg:w-7 lg:h-7 text-purple-500 dark:text-purple-400" />
                     </div>
-                    <p className="text-sm lg:text-base">Tap to analyze your spending patterns</p>
-                    <p className="text-xs lg:text-sm mt-1 text-gray-400">AI will identify trends and recommendations</p>
+                    <p className="text-sm lg:text-base font-medium">AI-Powered Financial Analysis</p>
+                    <p className="text-xs lg:text-sm mt-1 text-gray-400 dark:text-gray-500">Generate insights or ask questions about your finances</p>
                   </div>
                 )}
-                
+
                 {aiInsightsLoading && (
                   <div className="text-center py-6 lg:py-8">
-                    <div className="inline-flex items-center gap-2 text-purple-600">
+                    <div className="inline-flex items-center gap-2 text-purple-600 dark:text-purple-400">
                       <RefreshCwIcon className="w-5 h-5 animate-spin" />
                       <span className="text-sm">Analyzing spending data...</span>
                     </div>
                   </div>
                 )}
-                
+
                 {aiInsights && !aiInsightsLoading && (
                   <div className="prose prose-sm max-w-none">
-                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-3 lg:p-4 border border-purple-100">
-                      <div className="whitespace-pre-wrap text-gray-700 leading-relaxed text-xs lg:text-sm">
+                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-xl p-3 lg:p-4 border border-purple-100 dark:border-purple-800">
+                      <div className="flex items-center gap-2 mb-3">
+                        <SparklesIcon className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-300">Auto-Generated Insights</h4>
+                      </div>
+                      <div className="whitespace-pre-wrap text-gray-700 dark:text-gray-300 leading-relaxed text-xs lg:text-sm">
                         {aiInsights.split('\n').map((line, i) => {
                           const trimmed = line.trim()
                           if (!trimmed) return <div key={i} className="h-2" />
@@ -558,116 +551,74 @@ export default function Analytics() {
                           const renderText = (text: string) => {
                             return text.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
                               if (part.startsWith('**') && part.endsWith('**')) {
-                                return <strong key={j} className="text-gray-900 font-semibold">{part.slice(2, -2)}</strong>
+                                return <strong key={j} className="text-gray-900 dark:text-white font-semibold">{part.slice(2, -2)}</strong>
                               }
                               return part
                             })
                           }
 
                           // Headers
-                          if (trimmed.startsWith('###')) {
-                            return <h3 key={i} className="text-base lg:text-lg font-bold text-indigo-900 mt-3 lg:mt-4 mb-2 flex items-center gap-2">{renderText(trimmed.replace(/^###\s*/, ''))}</h3>
+                          if (trimmed.startsWith('# ')) {
+                            return <h2 key={i} className="text-base lg:text-lg font-bold text-indigo-900 dark:text-indigo-300 mt-4 lg:mt-6 mb-3 flex items-center gap-2 border-b border-indigo-100 dark:border-indigo-800/50 pb-1">{renderText(trimmed.replace(/^#\s*/, ''))}</h2>
                           }
-                          if (trimmed.startsWith('##')) {
-                            return <h2 key={i} className="text-lg lg:text-xl font-bold text-indigo-900 mt-4 lg:mt-5 mb-2 lg:mb-3">{renderText(trimmed.replace(/^##\s*/, ''))}</h2>
+                          if (trimmed.startsWith('## ') || trimmed.startsWith('### ')) {
+                            return <h3 key={i} className="text-sm lg:text-base font-bold text-indigo-800 dark:text-indigo-400 mt-3 lg:mt-4 mb-2">{renderText(trimmed.replace(/^###?\s*/, ''))}</h3>
                           }
 
                           // List items
                           if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
                             return (
                               <div key={i} className="flex items-start gap-2 mb-1.5 lg:mb-2 pl-1 lg:pl-2">
-                                <span className="text-indigo-400 mt-1 flex-shrink-0">•</span>
-                                <div className="text-gray-700">{renderText(trimmed.replace(/^[-*]\s*/, ''))}</div>
+                                <span className="text-indigo-400 dark:text-indigo-500 mt-1 flex-shrink-0">•</span>
+                                <div className="text-gray-700 dark:text-gray-300">{renderText(trimmed.replace(/^[-*]\s*/, ''))}</div>
                               </div>
                             )
                           }
 
                           // Numbered lists
                           if (/^\d+\.\s/.test(trimmed)) {
-                             return (
+                            return (
                               <div key={i} className="flex items-start gap-2 mb-1.5 lg:mb-2 pl-1 lg:pl-2">
-                                <span className="text-indigo-600 font-medium min-w-[1.25rem] lg:min-w-[1.5rem] flex-shrink-0">{trimmed.match(/^\d+\./)?.[0]}</span>
-                                <div className="text-gray-700">{renderText(trimmed.replace(/^\d+\.\s*/, ''))}</div>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-medium min-w-[1.25rem] lg:min-w-[1.5rem] flex-shrink-0">{trimmed.match(/^\d+\./)?.[0]}</span>
+                                <div className="text-gray-700 dark:text-gray-300">{renderText(trimmed.replace(/^\d+\.\s*/, ''))}</div>
                               </div>
                             )
                           }
 
-                          return <p key={i} className="mb-1.5 lg:mb-2 text-gray-700">{renderText(line)}</p>
+                          return <p key={i} className="mb-1.5 lg:mb-2 text-gray-700 dark:text-gray-300">{renderText(line)}</p>
                         })}
                       </div>
                     </div>
                   </div>
                 )}
-              </div>
-            </div>
 
-            {/* Ask AI Section */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 p-3 lg:p-4 text-white">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center lg:hidden">
-                      <SparklesIcon className="w-4 h-4" />
+                {/* Divider - only show if there are insights or chat history */}
+                {(aiInsights || chatHistory.length > 0) && (
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
                     </div>
-                    <SparklesIcon className="w-5 h-5 hidden lg:block" />
-                    <h3 className="text-sm lg:text-lg font-semibold">Ask AI</h3>
+                    <div className="relative flex justify-center">
+                      <span className="px-3 text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800">Ask Questions</span>
+                    </div>
                   </div>
-                  {/* Scope Toggle */}
-                  <div className="flex items-center gap-1 bg-white/20 rounded-lg p-0.5">
-                    <button
-                      onClick={() => setChatScope('month')}
-                      className={`px-2 lg:px-3 py-1 text-[10px] lg:text-xs font-medium rounded-md transition-colors ${
-                        chatScope === 'month' 
-                          ? 'bg-white text-blue-600' 
-                          : 'text-white/80 hover:text-white'
-                      }`}
-                    >
-                      Month
-                    </button>
-                    <button
-                      onClick={() => setChatScope('all')}
-                      className={`px-2 lg:px-3 py-1 text-[10px] lg:text-xs font-medium rounded-md transition-colors ${
-                        chatScope === 'all' 
-                          ? 'bg-white text-blue-600' 
-                          : 'text-white/80 hover:text-white'
-                      }`}
-                    >
-                      All Time
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="p-3 lg:p-4">
-                <p className="text-xs lg:text-sm text-gray-600 mb-3">
-                  {chatScope === 'all' 
-                    ? `Ask about all your ${viewCurrency} finances.`
-                    : `Ask about ${new Date(selectedYear, selectedMonth - 1, 1).toLocaleString('default', { month: 'short', year: 'numeric' })} spending.`
-                  }
-                  {chatScope === 'all' && allExpenses.length > 0 && (
-                    <span className="text-blue-600 font-medium">
-                      {' '}({allExpenses.length} transactions)
-                    </span>
-                  )}
-                </p>
-                
+                )}
+
                 {/* Chat History */}
                 {chatHistory.length > 0 && (
-                  <div className="mb-3 max-h-72 lg:max-h-96 overflow-y-auto space-y-2 lg:space-y-3 border rounded-xl p-2 lg:p-3 bg-gray-50">
+                  <div className="max-h-72 lg:max-h-96 overflow-y-auto space-y-2 lg:space-y-3 border border-gray-200 dark:border-gray-700 rounded-xl p-2 lg:p-3 bg-gray-50 dark:bg-gray-800">
                     {chatHistory.map((msg, i) => (
                       <div
                         key={i}
                         className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                       >
                         <div
-                          className={`max-w-[90%] lg:max-w-[85%] rounded-xl px-3 py-2 lg:px-4 lg:py-3 ${
-                            msg.role === 'user'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white border border-gray-200 text-gray-700 shadow-sm'
-                          }`}
+                          className={`max-w-[90%] lg:max-w-[85%] rounded-xl px-3 py-2 lg:px-4 lg:py-3 ${msg.role === 'user'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-100 shadow-sm'
+                            }`}
                         >
-                          <div className="text-xs lg:text-sm prose prose-sm max-w-none prose-headings:font-semibold prose-p:my-1 lg:prose-p:my-2 prose-ul:my-1 lg:prose-ul:my-2 prose-li:my-0 prose-strong:text-gray-900 prose-table:w-full prose-th:bg-gray-100 prose-th:p-2 prose-th:text-left prose-td:p-2 prose-td:border prose-th:border">
+                          <div className="text-xs lg:text-sm prose prose-sm max-w-none prose-strong:text-gray-900 dark:prose-strong:text-white prose-headings:text-gray-900 dark:prose-headings:text-white text-gray-700 dark:text-gray-100 dark:prose-p:text-gray-100 dark:prose-li:text-gray-100">
                             {(() => {
                               // Check if message contains chart data
                               const chartMatch = msg.content.match(/```chart-data\s*([\s\S]*?)```/)
@@ -684,8 +635,8 @@ export default function Analytics() {
                                           </ReactMarkdown>
                                         </div>
                                       )}
-                                      <div className="bg-white p-3 lg:p-4 rounded-lg border mt-3 lg:mt-4">
-                                        <h4 className="font-semibold mb-2 text-gray-800 text-xs lg:text-sm">{chartData.title}</h4>
+                                      <div className="bg-white dark:bg-gray-800 p-3 lg:p-4 rounded-lg border border-gray-200 dark:border-gray-600 mt-3 lg:mt-4">
+                                        <h4 className="font-semibold mb-2 text-gray-800 dark:text-gray-200 text-xs lg:text-sm">{chartData.title}</h4>
                                         <ResponsiveContainer width="100%" height={200}>
                                           {chartData.type === 'line' ? (
                                             <LineChart data={chartData.data}>
@@ -741,8 +692,8 @@ export default function Analytics() {
                     ))}
                     {chatLoading && (
                       <div className="flex justify-start">
-                        <div className="bg-white border border-gray-200 rounded-xl px-3 py-2">
-                          <div className="flex items-center gap-2 text-gray-500">
+                        <div className="bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2">
+                          <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                             <RefreshCwIcon className="w-4 h-4 animate-spin" />
                             <span className="text-xs">Thinking...</span>
                           </div>
@@ -751,77 +702,74 @@ export default function Analytics() {
                     )}
                   </div>
                 )}
-                
+
                 {/* Question Input */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={userQuestion}
-                    onChange={(e) => setUserQuestion(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        askQuestion()
-                      }
-                    }}
-                    placeholder="Ask a question..."
-                    className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    disabled={chatLoading}
-                  />
-                  <button
-                    onClick={askQuestion}
-                    disabled={chatLoading || !userQuestion.trim()}
-                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
-                  >
-                    <SendIcon className="w-4 h-4" />
-                    <span className="hidden lg:inline text-sm font-medium">Ask</span>
-                  </button>
-                </div>
-                
-                {/* Example Questions - Grid on mobile */}
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {(chatScope === 'all' ? [
-                    'Saving rate?',
-                    'Best month?',
-                    'Avg spending?',
-                    'Savings trend?'
-                  ] : [
-                    'Top category?',
-                    'Cut expenses?',
-                    'On budget?',
-                    'Top merchants?'
-                  ]).map((q, i) => (
+                <div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={userQuestion}
+                      onChange={(e) => setUserQuestion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault()
+                          askQuestion()
+                        }
+                      }}
+                      placeholder="Ask a question about your finances..."
+                      className="flex-1 px-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400"
+                      disabled={chatLoading}
+                    />
                     <button
-                      key={i}
-                      onClick={() => setUserQuestion(q)}
-                      className="text-[10px] lg:text-xs px-2 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors text-center"
+                      onClick={askQuestion}
+                      disabled={chatLoading || !userQuestion.trim()}
+                      className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
-                      {q}
+                      <SendIcon className="w-4 h-4" />
+                      <span className="hidden lg:inline text-sm font-medium">Ask</span>
                     </button>
-                  ))}
+                  </div>
+
+                  {/* Example Questions */}
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {[
+                      'Top category?',
+                      'Spending trend?',
+                      'Saving rate?',
+                      'Top merchants?'
+                    ].map((q, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setUserQuestion(q)}
+                        className="text-[10px] lg:text-xs px-2 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300 transition-colors text-center"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Basic Stats Card */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
-              <h3 className="text-sm lg:text-lg font-semibold text-gray-900 mb-3 lg:mb-4">Quick Summary</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 lg:p-6">
+              <h3 className="text-sm lg:text-lg font-semibold text-gray-900 dark:text-white mb-3 lg:mb-4">Quick Summary - {periodLabel}</h3>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 lg:gap-4">
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-3">
-                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Spending</p>
-                  <p className="font-bold text-sm lg:text-lg text-gray-900 mt-0.5">{formatCurrencyExplicit(spendTotal, viewCurrency)}</p>
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-600 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Spending</p>
+                  <p className="font-bold text-sm lg:text-lg text-gray-900 dark:text-white mt-0.5">{formatCurrencyExplicit(spendTotal, viewCurrency)}</p>
                 </div>
-                <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-xl p-3">
-                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Income</p>
-                  <p className="font-bold text-sm lg:text-lg text-green-600 mt-0.5">{formatCurrencyExplicit(incomeAmt, viewCurrency)}</p>
+                <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/30 dark:to-emerald-900/30 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Income</p>
+                  <p className="font-bold text-sm lg:text-lg text-green-600 dark:text-green-400 mt-0.5">{formatCurrencyExplicit(periodIncomeTotal, viewCurrency)}</p>
                 </div>
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-3">
-                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Daily Avg</p>
-                  <p className="font-bold text-sm lg:text-lg text-blue-600 mt-0.5">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-primary-900/30 dark:to-indigo-900/30 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Daily Avg</p>
+                  <p className="font-bold text-sm lg:text-lg text-primary-600 dark:text-primary-400 mt-0.5">{formatCurrencyExplicit(avgDailySpend, viewCurrency)}</p>
                 </div>
-                <div className="bg-gradient-to-br from-purple-50 to-violet-100 rounded-xl p-3">
-                  <p className="text-[10px] lg:text-xs text-gray-500 uppercase tracking-wide">Transactions</p>
-                  <p className="font-bold text-sm lg:text-lg text-purple-600 mt-0.5">{monthExpenses.length}</p>
+                <div className="bg-gradient-to-br from-purple-50 to-violet-100 dark:from-purple-900/30 dark:to-violet-900/30 rounded-xl p-3">
+                  <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Transactions</p>
+                  <p className="font-bold text-sm lg:text-lg text-purple-600 dark:text-purple-400 mt-0.5">{periodExpenses.length}</p>
                 </div>
               </div>
             </div>

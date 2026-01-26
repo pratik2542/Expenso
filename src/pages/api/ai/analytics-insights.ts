@@ -27,6 +27,16 @@ type IncomeData = {
 }
 
 type IncomeRecord = {
+  id: string
+  amount: number
+  currency: string
+  merchant?: string
+  note?: string
+  occurred_on: string
+  category?: string
+}
+
+type MonthlyIncomeRecord = {
   month: number
   year: number
   amount: number
@@ -36,18 +46,42 @@ type IncomeRecord = {
 interface AnalyticsRequest {
   expenses: Expense[]
   income?: IncomeData
-  incomeRecords?: IncomeRecord[] // Monthly income breakdown for all-time analysis
+  incomeRecords?: IncomeRecord[] // Individual income transactions
+  monthlyIncomeRecords?: MonthlyIncomeRecord[] // Monthly income breakdown (for backwards compatibility)
   month: number
   year: number
   currency: string
   question?: string // Optional user question
+  chatHistory?: Array<{ role: 'user' | 'ai', content: string }> // Previous conversation for context
   periodLabel?: string // Optional override for the time period header
   format?: 'json' | 'markdown' // Output format: 'json' for dashboard widget, 'markdown' for analytics page
 }
 
-async function callPerplexityForInsights(prompt: string, isJson: boolean = true): Promise<string> {
+async function callPerplexityForInsights(prompt: string, isJson: boolean = true, conversationHistory?: Array<{ role: string, content: string }>): Promise<string> {
   const apiKey = process.env.PERPLEXITY_API_KEY
   if (!apiKey) throw new Error('Missing Perplexity API key')
+
+  // Build messages array with conversation history
+  const messages: Array<{ role: string, content: string }> = [
+    {
+      role: 'system', content: isJson
+        ? 'You are a high-performance financial intelligence engine. Provide brutal, data-driven accuracy. Return ONLY valid JSON. No conversational filler.'
+        : 'You are a senior financial analyst. Provide concise, high-signal insights using tight markdown. No fluff.'
+    }
+  ]
+
+  // Add conversation history if provided (for follow-up questions)
+  if (conversationHistory && conversationHistory.length > 0) {
+    conversationHistory.forEach(msg => {
+      messages.push({
+        role: msg.role === 'ai' ? 'assistant' : 'user',
+        content: msg.content
+      })
+    })
+  }
+
+  // Add the current prompt
+  messages.push({ role: 'user', content: prompt })
 
   const response = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
@@ -57,10 +91,7 @@ async function callPerplexityForInsights(prompt: string, isJson: boolean = true)
     },
     body: JSON.stringify({
       model: 'sonar',
-      messages: [
-        { role: 'system', content: isJson ? 'You are a helpful financial analyst. Return only JSON.' : 'You are a helpful financial analyst. Use markdown formatting.' },
-        { role: 'user', content: prompt }
-      ],
+      messages,
       temperature: 0.2
     })
   })
@@ -72,12 +103,12 @@ async function callPerplexityForInsights(prompt: string, isJson: boolean = true)
 
   const result = await response.json()
   let text = result.choices[0]?.message?.content || ''
-  
+
   // Clean up markdown code blocks if JSON format
   if (isJson) {
     text = text.replace(/```json/g, '').replace(/```/g, '').trim()
   }
-  
+
   return text
 }
 
@@ -92,8 +123,8 @@ interface CalculatedMetrics {
 }
 
 async function generateInsights(data: AnalyticsRequest): Promise<{ text: string; metrics: CalculatedMetrics }> {
-  const { expenses, income, incomeRecords, month, year, currency, question, periodLabel, format = 'json' } = data
-  
+  const { expenses, income, incomeRecords, monthlyIncomeRecords, month, year, currency, question, chatHistory, periodLabel, format = 'json' } = data
+
   // Calculate some stats
   const totalSpend = expenses.reduce((sum, e) => sum + e.amount, 0)
   const categorySpend = expenses.reduce((acc, e) => {
@@ -101,7 +132,7 @@ async function generateInsights(data: AnalyticsRequest): Promise<{ text: string;
     acc[cat] = (acc[cat] || 0) + e.amount
     return acc
   }, {} as Record<string, number>)
-  
+
   const merchantSpend = expenses.reduce((acc, e) => {
     const merchant = e.merchant || 'Unknown'
     acc[merchant] = (acc[merchant] || 0) + e.amount
@@ -129,63 +160,79 @@ async function generateInsights(data: AnalyticsRequest): Promise<{ text: string;
   const monthName = new Date(year, month - 1, 1).toLocaleString('default', { month: 'long' })
   const timeHeader = periodLabel || `Month: ${monthName} ${year}`
   const isAllTime = periodLabel === 'All Time Data'
-  
+
   // Build monthly category breakdown section for All Time queries
   let monthlyCategorySection = ''
   if (isAllTime && Object.keys(monthlyCategoryBreakdown).length > 0) {
     monthlyCategorySection = `
 === MONTHLY SPENDING BY CATEGORY (USE THIS DATA TO ANSWER MONTH-SPECIFIC QUESTIONS) ===
 ${Object.entries(monthlyCategoryBreakdown)
-  .sort((a, b) => b[0].localeCompare(a[0])) // Sort by date descending
-  .map(([monthKey, categories]) => {
-    const [yr, mo] = monthKey.split('-')
-    const monthLabel = new Date(parseInt(yr), parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })
-    const monthTotal = Object.values(categories).reduce((sum, amt) => sum + amt, 0)
-    const categoryList = Object.entries(categories)
-      .sort((a, b) => b[1] - a[1])
-      .map(([cat, amt]) => `  ${cat}: ${amt.toFixed(2)} ${currency}`)
-      .join('\n')
-    return `${monthLabel} (Total: ${monthTotal.toFixed(2)} ${currency}):\n${categoryList}`
-  })
-  .join('\n\n')}
+        .sort((a, b) => b[0].localeCompare(a[0])) // Sort by date descending
+        .map(([monthKey, categories]) => {
+          const [yr, mo] = monthKey.split('-')
+          const monthLabel = new Date(parseInt(yr), parseInt(mo) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+          const monthTotal = Object.values(categories).reduce((sum, amt) => sum + amt, 0)
+          const categoryList = Object.entries(categories)
+            .sort((a, b) => b[1] - a[1])
+            .map(([cat, amt]) => `  ${cat}: ${amt.toFixed(2)} ${currency}`)
+            .join('\n')
+          return `${monthLabel} (Total: ${monthTotal.toFixed(2)} ${currency}):\n${categoryList}`
+        })
+        .join('\n\n')}
 ===================================================================================
 `
   }
-  
+
   // Build income section based on whether we have detailed records or just a total
   let incomeSection = ''
+  let incomeDetailedSection = ''
+
   if (incomeRecords && incomeRecords.length > 0) {
-    const totalIncome = incomeRecords.reduce((sum, r) => sum + r.amount, 0)
+    const totalIncome = incomeRecords.reduce((sum, r) => sum + Math.abs(r.amount), 0)
+    incomeDetailedSection = `
+Income Records:
+${incomeRecords
+        .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
+        .map(r => `- ${r.occurred_on}: ${Math.abs(r.amount).toFixed(2)} ${r.currency} from ${r.merchant || 'Unknown'} (${r.category || 'Income'})${r.note ? ` - ${r.note}` : ''}`)
+        .join('\n')}
+
+Total Income for Period: ${totalIncome.toFixed(2)} ${currency}
+`
+    incomeSection = `Monthly Income: ${totalIncome.toFixed(2)} ${currency}`
+  } else if (monthlyIncomeRecords && monthlyIncomeRecords.length > 0) {
+    const totalIncome = monthlyIncomeRecords.reduce((sum, r) => sum + r.amount, 0)
     const overallSavingsRate = totalIncome > 0 ? ((totalIncome - totalSpend) / totalIncome * 100) : 0
-    
+
     incomeSection = `Total Income (All Time): ${totalIncome.toFixed(2)} ${currency}
 Overall Savings Rate: ${overallSavingsRate.toFixed(1)}%
 Total Saved: ${(totalIncome - totalSpend).toFixed(2)} ${currency}
 
 Monthly Income Records:
-${incomeRecords
-  .sort((a, b) => (b.year - a.year) || (b.month - a.month))
-  .map(r => {
-    const monthKey = `${r.year}-${String(r.month).padStart(2, '0')}`
-    const expenseForMonth = monthlyExpenseBreakdown[monthKey] || 0
-    const savings = r.amount - expenseForMonth
-    const savingsRate = r.amount > 0 ? ((savings / r.amount) * 100).toFixed(1) : 'N/A'
-    return `- ${new Date(r.year, r.month - 1).toLocaleString('default', { month: 'short', year: 'numeric' })}: Income ${r.amount.toFixed(2)}, Spent ${expenseForMonth.toFixed(2)}, Saved ${savings.toFixed(2)} (${savingsRate}%)`
-  })
-  .join('\n')}`
+${monthlyIncomeRecords
+        .sort((a, b) => (b.year - a.year) || (b.month - a.month))
+        .map(r => {
+          const monthKey = `${r.year}-${String(r.month).padStart(2, '0')}`
+          const expenseForMonth = monthlyExpenseBreakdown[monthKey] || 0
+          const savings = r.amount - expenseForMonth
+          const savingsRate = r.amount > 0 ? ((savings / r.amount) * 100).toFixed(1) : 'N/A'
+          return `- ${new Date(r.year, r.month - 1).toLocaleString('default', { month: 'short', year: 'numeric' })}: Income ${r.amount.toFixed(2)}, Spent ${expenseForMonth.toFixed(2)}, Saved ${savings.toFixed(2)} (${savingsRate}%)`
+        })
+        .join('\n')}`
   } else {
     incomeSection = `Monthly Income: ${income?.amount?.toFixed(2) || 'Not set'} ${currency}`
   }
 
   // Calculate key financial metrics that the AI MUST use (not invent)
-  const totalIncome = incomeRecords 
-    ? incomeRecords.reduce((sum, r) => sum + r.amount, 0) 
-    : (income?.amount || 0)
-  
+  const totalIncome = incomeRecords
+    ? incomeRecords.reduce((sum, r) => sum + Math.abs(r.amount), 0)
+    : monthlyIncomeRecords
+      ? monthlyIncomeRecords.reduce((sum, r) => sum + r.amount, 0)
+      : (income?.amount || 0)
+
   const netSavings = totalIncome - totalSpend
   const savingsRate = totalIncome > 0 ? ((netSavings / totalIncome) * 100) : 0
   const isDeficit = netSavings < 0
-  
+
   // Financial health status based on actual numbers
   let financialStatus = 'Healthy'
   let statusColor = 'green'
@@ -210,45 +257,46 @@ Savings Rate: ${savingsRate.toFixed(1)}% ${isDeficit ? '(NEGATIVE - user is over
 Financial Status: ${financialStatus} (${statusColor})
 =============================================================================
 `
-  
+
   const expensesSummary = `
 ${calculatedMetrics}
 Period: ${timeHeader}
 Currency: ${currency}
 Total Spending: ${totalSpend.toFixed(2)} ${currency}
 ${incomeSection}
+${incomeDetailedSection}
 Number of Transactions: ${expenses.length}
 ${monthlyCategorySection}
 Spending by Category (All Time Totals):
 ${Object.entries(categorySpend)
-  .sort((a, b) => b[1] - a[1])
-  .map(([cat, amt]) => `- ${cat}: ${amt.toFixed(2)} ${currency} (${((amt / totalSpend) * 100).toFixed(1)}%)`)
-  .join('\n')}
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, amt]) => `- ${cat}: ${amt.toFixed(2)} ${currency} (${((amt / totalSpend) * 100).toFixed(1)}%)`)
+      .join('\n')}
 
 Top Merchants/Payees:
 ${Object.entries(merchantSpend)
-  .sort((a, b) => b[1] - a[1])
-  .slice(0, 10)
-  .map(([merchant, amt]) => `- ${merchant}: ${amt.toFixed(2)} ${currency}`)
-  .join('\n')}
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([merchant, amt]) => `- ${merchant}: ${amt.toFixed(2)} ${currency}`)
+      .join('\n')}
 
-${question 
-  ? `All Transactions ${isAllTime ? '(sorted by date)' : `for ${timeHeader} (sorted by date)`}:
+${question
+      ? `All Transactions ${isAllTime ? '(sorted by date)' : `for ${timeHeader} (sorted by date)`}:
 ${expenses
-  .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
-  .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
-  .join('\n')}` 
-  : `Recent Transactions (last 10):
+        .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
+        .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+        .join('\n')}`
+      : `Recent Transactions (last 10):
 ${expenses
-  .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
-  .slice(0, 10)
-  .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
-  .join('\n')}`}
+        .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
+        .slice(0, 10)
+        .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+        .join('\n')}`}
 `
 
   let prompt: string
   const useJsonFormat = format === 'json' && !question
-  
+
   if (question) {
     // User asked a specific question - return markdown
     prompt = `You are a financial analyst. Based on the following expense data, answer the user's question accurately.
@@ -278,47 +326,49 @@ CRITICAL INSTRUCTIONS:
 7. Use markdown formatting for your response.`
   } else if (format === 'markdown') {
     // Analytics page - detailed markdown insights
-    prompt = `You are a friendly financial analyst. Analyze the following expense data and provide detailed insights.
-
+    prompt = `Analyze this financial data and provide a high-signal executive summary.
+ 
 ${expensesSummary}
 
-Please structure your response EXACTLY as follows:
+Response Structure:
 
-### 📊 Key Insights
-(2-3 important observations about spending patterns. Be specific and use **bold text** for emphasis.)
+# 💎 Alpha Insights
+- Concise, data-backed observation on spending velocity or anomalies.
+- Primary efficiency leak identified with exact impact.
 
-### 💸 Top Spending Areas
-(Where the most money is going. Use percentages and specific amounts.)
+# 🎯 Top Vectors
+- List top 3 categories by % impact. format: **Category**: $Amount (% of total)
 
-### 💡 Smart Recommendations
-(2-3 specific, actionable tips to save money or improve financial health.)
+# 🚀 Optimization Strategy
+- One high-impact, actionable move to increase savings rate.
+- Specific merchant or habit to cut for immediate ROI.
 
-### ⚠️ Potential Concerns
-(Any spending patterns that might need attention. If none, say "Looking good! No major concerns this period.")
+# ⚖️ Risk Assessment
+- Critical flag or "Stable" status.
 
-Make the content easy to read, use emojis where appropriate to make it lively, and keep it practical. Use bullet points for lists.`
+Style: Sharp, professional, zero-fluff. Use high-quality professional emojis.`
   } else {
     // Dashboard widget - concise JSON format
-    prompt = `You are a financial analyst. Analyze the provided expense data for the period: ${timeHeader}.
+    prompt = `Analyze the provided expense data for ${timeHeader}.
   
 ${expensesSummary}
 
-Return ONLY a valid JSON object (no markdown formatting, no code blocks) with the following structure:
+Return ONLY a valid JSON object (no markdown, no filler) with this structure:
 {
   "status": "Healthy" | "Caution" | "Alert",
   "color": "green" | "yellow" | "red",
-  "title": "A short, punchy 3-5 word headline about their spending",
-  "summary": "One concise sentence summary of the situation (max 15 words)",
+  "title": "A sharp, data-driven headline (max 4 words)",
+  "summary": "Impactful single-sentence analysis (max 12 words)",
   "highlights": [
-    { "icon": "💰", "text": "Key fact about total spending (max 8 words)" },
-    { "icon": "📈", "text": "Top category insight with percentage (max 8 words)" },
-    { "icon": "🏪", "text": "Top merchant or payee insight (max 8 words)" },
-    { "icon": "📊", "text": "Savings rate or deficit info (max 8 words)" },
-    { "icon": "💡", "text": "One quick actionable tip (max 8 words)" }
+    { "icon": "💵", "text": "Net cash flow status (max 6 words)" },
+    { "icon": "🔥", "text": "Dominant spend vector (max 6 words)" },
+    { "icon": "🏢", "text": "Key merchant insight (max 6 words)" },
+    { "icon": "⚡", "text": "Savings rate efficiency (max 6 words)" },
+    { "icon": "🎯", "text": "One primary actionable move (max 6 words)" }
   ]
 }
 
-IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If spending exceeds income, this is a deficit situation requiring "Alert" status.`
+IMPORTANT: Total income, spending, and savings rate are PROVIDED in PRE-CALCULATED METRICS. Use these EXACT numbers.`
   }
 
   // Try Gemini First
@@ -377,7 +427,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     }
 
     const result = await response.json()
-    
+
     // Gemini 2.5 may have different response structure
     let text = ''
     const candidate = result?.candidates?.[0]
@@ -390,17 +440,17 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
         }
       }
     }
-    
+
     // Clean up markdown code blocks if JSON format
     if (useJsonFormat) {
       text = text.replace(/```json/g, '').replace(/```/g, '').trim()
     }
-    
+
     if (!text) {
       console.error('[AI Insights] Gemini returned no text. Full response:', JSON.stringify(result, null, 2))
       throw new Error('No response from Gemini')
     }
-    
+
     console.log('[AI Insights] Gemini successful')
     const metrics: CalculatedMetrics = {
       totalIncome,
@@ -411,7 +461,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
       financialStatus,
       statusColor
     }
-    
+
     return { text, metrics }
 
   } catch (geminiError: any) {
@@ -419,7 +469,7 @@ IMPORTANT: Base your analysis on the PRE-CALCULATED METRICS section above. If sp
     // Fallback to Perplexity
     try {
       console.log('[AI Insights] Trying Perplexity API...')
-      const perplexityText = await callPerplexityForInsights(prompt, useJsonFormat)
+      const perplexityText = await callPerplexityForInsights(prompt, useJsonFormat, chatHistory)
       console.log('[AI Insights] Perplexity successful')
       const metrics: CalculatedMetrics = {
         totalIncome,
@@ -452,7 +502,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   // Extract user ID from headers or body for rate limiting
   const userId = req.headers['x-user-id'] as string || 'anonymous'
-  
+
   // Check rate limit (30 requests per minute)
   if (checkRateLimit(userId, 30, 60000)) {
     return res.status(429).json({ error: 'Too many requests. Please try again later.' })
@@ -482,27 +532,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log('[AI Insights] Starting generation...')
     console.log('[AI Insights] Expenses count:', expenses.length)
     console.log('[AI Insights] Period:', { month, year, currency })
-    
-    const { text, metrics } = await generateInsights({ 
-      expenses, 
-      income, 
-      incomeRecords, 
-      month, 
-      year, 
-      currency, 
-      question: sanitizedQuestion, 
-      periodLabel, 
-      format 
+
+    const { text, metrics } = await generateInsights({
+      expenses,
+      income,
+      incomeRecords,
+      month,
+      year,
+      currency,
+      question: sanitizedQuestion,
+      periodLabel,
+      format
     })
-    
+
     console.log('[AI Insights] Generation successful')
-    
+
     // For JSON format (dashboard widget), validate and correct AI's response if needed
     if (format === 'json' && !question) {
       try {
         const parsed = JSON.parse(text)
         let corrected = false
-        
+
         // Validate status/color based on actual financial situation
         if (metrics.isDeficit) {
           // User is in deficit - must be Alert/red
@@ -519,20 +569,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             corrected = true
           }
         }
-        
+
         // Validate the savings rate highlight (4th item, index 3)
         if (parsed.highlights && parsed.highlights[3]) {
           const highlight = parsed.highlights[3]
           const highlightText = highlight.text.toLowerCase()
-          
+
           // Extract any percentage from AI's response
           const aiPercentMatch = highlightText.match(/(\d+(?:\.\d+)?)\s*%/)
           const aiPercent = aiPercentMatch ? parseFloat(aiPercentMatch[1]) : null
-          
+
           // Check if AI's percentage is significantly wrong (more than 5% difference)
           const actualRate = Math.abs(metrics.savingsRate)
           const percentDiff = aiPercent !== null ? Math.abs(aiPercent - actualRate) : 999
-          
+
           if (percentDiff > 5 || (metrics.isDeficit && !highlightText.includes('deficit') && !highlightText.includes('over'))) {
             // AI got it wrong - correct it
             if (metrics.isDeficit) {
@@ -543,18 +593,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             corrected = true
           }
         }
-        
+
         if (corrected) {
           return res.status(200).json({ insights: JSON.stringify(parsed), corrected: true })
         }
-        
+
         return res.status(200).json({ insights: text })
       } catch (parseError) {
         // If parsing fails, return original text
         return res.status(200).json({ insights: text })
       }
     }
-    
+
     return res.status(200).json({ insights: text })
   } catch (e: any) {
     console.error('[AI Insights] Error:', e.message)

@@ -1,11 +1,16 @@
-import React, { Fragment, useMemo, useRef, useState } from 'react'
+import React, { Fragment, useMemo, useRef, useState, useEffect } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { X, ExternalLink } from 'lucide-react'
+import { X, ExternalLink, ArrowDownCircle, ArrowUpCircle, Upload, Check, AlertCircle, FileSpreadsheet, FileText } from 'lucide-react'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { analytics } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
 import { compressImage, formatBytes } from '@/utils/imageCompression'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { db } from '@/lib/firebaseClient'
+import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy, runTransaction, getDoc } from 'firebase/firestore'
+import { useEnvironment } from '@/contexts/EnvironmentContext'
+import { Account } from '@/types/models'
 
 interface AddExpenseModalProps {
   open: boolean
@@ -22,12 +27,12 @@ interface AddExpenseModalProps {
     occurred_on: string
     category: string
     attachment?: string
+    type?: 'income' | 'expense' | 'transfer'
+    account_id?: string
+    transferAmount?: number
+    toAccountId?: string
   } | null
 }
-
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { db } from '@/lib/firebaseClient'
-import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy } from 'firebase/firestore'
 
 const CATEGORY_MAP: Record<string, string> = {
   retail: 'Shopping',
@@ -47,6 +52,10 @@ const CATEGORY_MAP: Record<string, string> = {
   utilities: 'Bills & Utilities',
   shopping: 'Shopping',
   other: 'Other',
+  salary: 'Salary',
+  paycheck: 'Salary',
+  income: 'Income',
+  deposit: 'Income'
 }
 
 function normalizeCategory(raw?: string, definedCategories?: string[]): string {
@@ -63,1140 +72,1243 @@ function normalizeCategory(raw?: string, definedCategories?: string[]): string {
 }
 
 function formatDateToISO(dateStr?: string): string {
-  if (!dateStr) return new Date().toISOString().split('T')[0]
-  
-  // If already YYYY-MM-DD, return it
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
+  const now = new Date()
+  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
+  if (!dateStr) return localToday
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
   const d = new Date(dateStr)
   if (!isNaN(d.getTime())) {
-    return d.toISOString().split('T')[0]
+    // If it was a timestamp, convert to local YYYY-MM-DD
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
   }
-  return new Date().toISOString().split('T')[0]
+  return localToday
 }
 
 export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', expense = null }: AddExpenseModalProps) {
   const { user } = useAuth()
+  const { currentEnvironment, getCollection } = useEnvironment()
   const queryClient = useQueryClient()
-  // Load categories for dropdown
+
+  // Load categories
   const { data: categories = [] } = useQuery({
-    queryKey: ['categories', user?.uid],
+    queryKey: ['categories', user?.uid, currentEnvironment.id],
     enabled: !!user?.uid,
     queryFn: async () => {
       if (!user?.uid) return []
-      const categoriesRef = collection(db, 'categories', user.uid, 'items')
+      const categoriesRef = getCollection('categories')
       const q = fbQuery(categoriesRef, orderBy('name', 'asc'))
       const snapshot = await getDocs(q)
       return snapshot.docs.map(doc => ({
         id: doc.id,
-        name: doc.data().name
+        name: doc.data().name,
+        type: doc.data().type || 'expense' // default to expense for backward compatibility
       }))
     }
   })
-  const definedCategoryNames = categories.map((c: any) => c.name)
+
+  // Pre-compute expense and income categories
+  const expenseCategories = useMemo(() =>
+    [...new Set(categories.filter((c: any) => c.type === 'expense').map((c: any) => c.name))],
+    [categories]
+  )
+  const incomeCategories = useMemo(() =>
+    [...new Set(categories.filter((c: any) => c.type === 'income').map((c: any) => c.name))],
+    [categories]
+  )
+
+  // Load Accounts
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['accounts', user?.uid, currentEnvironment.id],
+    enabled: !!user?.uid,
+    queryFn: async () => {
+      if (!user?.uid) return []
+      const accountsRef = getCollection('accounts')
+      const snapshot = await getDocs(accountsRef)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Account[]
+    }
+  })
+
+  // Ensure there's a default "None" or similar if no accounts exist? 
+  // We'll require an account if any exist, effectively.
+
   const { currency: prefCurrency } = usePreferences()
+
   const [formData, setFormData] = useState({
     amount: '',
-    currency: prefCurrency || 'USD',
+    currency: currentEnvironment.currency || prefCurrency || 'USD',
     merchant: '',
-    payment_method: 'Credit Card',
+    payment_method: '', // Will store Account Name for legacy/display
+    account_id: '',
     note: '',
-    occurred_on: new Date().toISOString().split('T')[0],
+    occurred_on: formatDateToISO(),
     category: '',
     attachment: '',
+    type: 'expense' as 'expense' | 'income' | 'transfer',
+    toAccountId: ''
   })
+
+  // Get categories based on transaction type
+  const definedCategoryNames = useMemo(() =>
+    formData.type === 'income' ? incomeCategories : expenseCategories,
+    [formData.type, incomeCategories, expenseCategories]
+  )
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [importLoading, setImportLoading] = useState(false)
-  const [importError, setImportError] = useState<string | null>(null)
-  const [importStatus, setImportStatus] = useState<string>('')
-  const [parsedExpenses, setParsedExpenses] = useState<Array<{
-    amount: number
-    currency: string
-    merchant?: string
-    payment_method?: string
-    note?: string
-    occurred_on: string
-    category?: string
-    selected?: boolean
-  }>>([])
-  const [overrideCurrency, setOverrideCurrency] = useState<string>('')
-  const [overridePaymentMethod, setOverridePaymentMethod] = useState<string>('')
-  const [paymentMethodTouched, setPaymentMethodTouched] = useState<boolean>(false)
-  const defaultPaymentMethodForCurrency = (cur?: string) => {
-    if (!cur) return ''
-    if (cur === 'CAD') return 'Credit Card'
-    if (cur === 'INR') return 'Debit Card'
-    return ''
-  }
-  
-  // PDF Converter Modal state
-  const [showPdfConverterModal, setShowPdfConverterModal] = useState<boolean>(false)
-  const iframeRef = useRef<HTMLIFrameElement | null>(null)
-  
-  // Track if we've already initialized the form to prevent constant resets
-  const [initialized, setInitialized] = React.useState(false)
-  
-  // When opening in edit mode, seed form with existing expense
-  React.useEffect(() => {
-    if (open && !initialized) {
+
+  // Import state
+  const [isImportMode, setIsImportMode] = useState(false)
+  const [importMediaType, setImportMediaType] = useState<'none' | 'pdf' | 'excel'>('none')
+  const [importing, setImporting] = useState(false)
+  const [parsedExpenses, setParsedExpenses] = useState<any[]>([])
+  const [selectedImportIndices, setSelectedImportIndices] = useState<number[]>([])
+  const [importAccount, setImportAccount] = useState('')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [pdfModalOpen, setPdfModalOpen] = useState(false)
+  const [debugStatus, setDebugStatus] = useState<string>('')
+
+  // Initialize form
+  useEffect(() => {
+    if (open) {
       if (mode === 'edit' && expense) {
+        // For transfers, use transferAmount instead of amount
+        const displayAmount = expense.type === 'transfer' && expense.transferAmount
+          ? String(expense.transferAmount)
+          : String(Math.abs(expense.amount ?? 0))
+
         setFormData({
-          amount: String(expense.amount ?? ''),
-          currency: expense.currency || prefCurrency || 'USD',
+          amount: displayAmount,
+          currency: expense.currency || currentEnvironment.currency || 'USD',
           merchant: expense.merchant || '',
-          payment_method: expense.payment_method || 'Credit Card',
+          payment_method: expense.payment_method || '',
+          account_id: expense.account_id || '',
           note: expense.note || '',
-          occurred_on: (expense.occurred_on || new Date().toISOString()).split('T')[0],
+          occurred_on: formatDateToISO(expense.occurred_on),
           category: normalizeCategory(expense.category, definedCategoryNames) || '',
           attachment: expense.attachment || '',
+          type: expense.type || 'expense',
+          toAccountId: expense.toAccountId || ''
         })
-        setError(null)
-      } else if (mode === 'add') {
+      } else {
+        // Default to first account if available
+        const defaultAcc = accounts[0]
         setFormData({
           amount: '',
-          currency: prefCurrency || 'USD',
+          currency: currentEnvironment.currency || 'USD',
           merchant: '',
-          payment_method: 'Credit Card',
+          payment_method: defaultAcc ? defaultAcc.name : 'Cash',
+          account_id: defaultAcc ? defaultAcc.id : '',
           note: '',
-          occurred_on: new Date().toISOString().split('T')[0],
+          occurred_on: formatDateToISO(),
           category: '',
           attachment: '',
+          type: 'expense',
+          toAccountId: ''
         })
-        setParsedExpenses([])
-        setError(null)
       }
-      setInitialized(true)
-    }
-    
-    // Reset initialization flag when modal closes
-    if (!open && initialized) {
-      setInitialized(false)
+      setError(null)
+      setIsImportMode(false)
+      setImportMediaType('none')
       setParsedExpenses([])
-      if (mode !== 'edit') {
-        setFormData({
-          amount: '',
-          currency: prefCurrency || 'USD',
-          merchant: '',
-          payment_method: 'Credit Card',
-          note: '',
-          occurred_on: new Date().toISOString().split('T')[0],
-          category: '',
-          attachment: '',
+      setPdfModalOpen(false)
+      setImportFile(null)
+    }
+  }, [open, mode, expense, accounts, currentEnvironment])
+
+  // Sync currency with environment when it changes (but not during edit mode)
+  useEffect(() => {
+    if (mode !== 'edit' && currentEnvironment.currency) {
+      setFormData(prev => {
+        if (prev.currency !== currentEnvironment.currency) {
+          return { ...prev, currency: currentEnvironment.currency }
+        }
+        return prev
+      })
+    }
+  }, [currentEnvironment.currency, mode])
+
+  // Clear category if it doesn't exist in the new type's categories when switching between income/expense
+  useEffect(() => {
+    if (formData.category && !definedCategoryNames.includes(formData.category) && formData.category !== 'Other') {
+      setFormData(prev => ({ ...prev, category: '' }))
+    }
+  }, [formData.type, definedCategoryNames])
+
+  // Listen for PDF import messages
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Debug logging
+      console.log('Message received:', event.origin, event.data)
+
+      // Relaxed origin verify for debugging
+      // We accept messages from the known tool URL or localhost
+      const allowedOrigins = [
+        'https://expenso-pdfexcel.vercel.app',
+        'http://localhost:3000',
+        window.location.origin // Allow self for testing
+      ]
+
+      const isAllowed = allowedOrigins.some(o => event.origin.includes(o)) || event.origin.includes('vercel.app')
+
+      if (!isAllowed) {
+        console.warn('Ignored message from:', event.origin)
+        return
+      }
+
+      let data = event.data
+
+      // Handle stringified JSON if applicable
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data)
+        } catch (e) {
+          // Not JSON, ignore
+          return
+        }
+      }
+
+      if (data && data.expenses && Array.isArray(data.expenses)) {
+        const msg = `Success! Received ${data.expenses.length} expenses.`
+        setDebugStatus(msg)
+
+        setParsedExpenses(data.expenses.map((e: any, i: number) => ({ ...e, _tempId: i })))
+        setSelectedImportIndices(data.expenses.map((_: any, i: number) => i)) // Select all by default
+
+        // Close modal and show results
+        setPdfModalOpen(false)
+        setIsImportMode(true)
+      }
+      // Handle the PDF tool's format: {type: "TRANSACTIONS_EXTRACTED", transactions: [...]}
+      else if (data && data.type === 'TRANSACTIONS_EXTRACTED' && Array.isArray(data.transactions)) {
+        const msg = `Success! Received ${data.transactions.length} transactions from PDF.`
+        setDebugStatus(msg)
+
+        // Map PDF tool format to our expected format
+        const mappedExpenses = data.transactions.map((txn: any, i: number) => {
+          // Parse amount - positive for expenses, negative for income
+          let amount = parseFloat(txn.amount || txn.debit || txn.credit || 0)
+
+          // If it has a credit field, it's income (negative)
+          if (txn.credit && parseFloat(txn.credit) > 0) {
+            amount = -parseFloat(txn.credit)
+          } else if (txn.debit && parseFloat(txn.debit) > 0) {
+            amount = parseFloat(txn.debit)
+          }
+
+          return {
+            _tempId: i,
+            amount: amount,
+            currency: txn.currency || 'USD',
+            merchant: txn.description || txn.merchant || 'Unknown',
+            occurred_on: txn.date ? formatDateToISO(txn.date) : new Date().toISOString().split('T')[0],
+            category: txn.category || 'Other',
+            raw_category: txn.category || '',
+            payment_method: 'Credit Card',
+            note: txn.note || ''
+          }
         })
+
+        setParsedExpenses(mappedExpenses)
+        setSelectedImportIndices(mappedExpenses.map((_: any, i: number) => i)) // Select all by default
+
+        // Close modal and show results
+        setPdfModalOpen(false)
+        setIsImportMode(true)
+      }
+      else {
+        // Log generic objects to debug status to see what we're getting
+        if (typeof data === 'object') {
+          setDebugStatus(`Received data: ${JSON.stringify(data).slice(0, 100)}`)
+        }
       }
     }
-  }, [open, mode, expense, definedCategoryNames, prefCurrency, initialized])
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
     setLoading(true)
     setError(null)
+
     try {
+      const amountVal = parseFloat(formData.amount)
+      if (isNaN(amountVal) || amountVal <= 0) throw new Error('Invalid amount')
+
+      // Handle Transfer Type
+      if (formData.type === 'transfer') {
+        if (!formData.account_id || !formData.toAccountId) {
+          throw new Error('Please select both source and destination accounts')
+        }
+        if (formData.account_id === formData.toAccountId) {
+          throw new Error('Source and destination accounts must be different')
+        }
+
+        await runTransaction(db, async (transaction) => {
+          if (mode === 'edit' && expense) {
+            // EDITING A TRANSFER
+            const oldAmount = expense.transferAmount || 0
+            const oldFromAccountId = expense.account_id
+            const oldToAccountId = expense.toAccountId
+            const newFromAccountId = formData.account_id
+            const newToAccountId = formData.toAccountId!
+
+            // Collect all unique account IDs we need to read
+            const accountIds = new Set([oldFromAccountId, oldToAccountId, newFromAccountId, newToAccountId].filter(Boolean))
+
+            // Read all accounts once
+            const accountDocs = new Map()
+            for (const accId of accountIds) {
+              if (accId) {
+                const accRef = doc(getCollection('accounts'), accId)
+                const accDoc = await transaction.get(accRef)
+                if (accDoc.exists()) {
+                  accountDocs.set(accId, accDoc)
+                }
+              }
+            }
+
+            // Calculate balance changes for each account
+            const balanceChanges = new Map()
+
+            // Revert old transfer
+            if (oldFromAccountId && accountDocs.has(oldFromAccountId)) {
+              balanceChanges.set(oldFromAccountId, (balanceChanges.get(oldFromAccountId) || 0) + oldAmount)
+            }
+            if (oldToAccountId && accountDocs.has(oldToAccountId)) {
+              balanceChanges.set(oldToAccountId, (balanceChanges.get(oldToAccountId) || 0) - oldAmount)
+            }
+
+            // Apply new transfer
+            if (newFromAccountId && accountDocs.has(newFromAccountId)) {
+              balanceChanges.set(newFromAccountId, (balanceChanges.get(newFromAccountId) || 0) - amountVal)
+            }
+            if (newToAccountId && accountDocs.has(newToAccountId)) {
+              balanceChanges.set(newToAccountId, (balanceChanges.get(newToAccountId) || 0) + amountVal)
+            }
+
+            // Apply all balance changes
+            for (const [accId, change] of balanceChanges.entries()) {
+              if (change !== 0) {
+                const accDoc = accountDocs.get(accId)
+                const currentBal = accDoc.data().balance || 0
+                const accRef = doc(getCollection('accounts'), accId)
+                transaction.update(accRef, { balance: currentBal + change })
+              }
+            }
+
+            // Update transfer record
+            const expenseRef = doc(getCollection('expenses'), expense.id)
+            transaction.update(expenseRef, {
+              amount: 0,
+              currency: formData.currency,
+              merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+              payment_method: accounts.find(a => a.id === formData.account_id)?.name,
+              account_id: formData.account_id,
+              note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+              occurred_on: formData.occurred_on,
+              category: 'Transfer',
+              type: 'transfer',
+              toAccountId: formData.toAccountId,
+              transferAmount: amountVal
+            })
+          } else {
+            // ADDING NEW TRANSFER
+            const fromAccRef = doc(getCollection('accounts'), formData.account_id)
+            const toAccRef = doc(getCollection('accounts'), formData.toAccountId!)
+            const fromAccDoc = await transaction.get(fromAccRef)
+            const toAccDoc = await transaction.get(toAccRef)
+
+            if (!fromAccDoc.exists() || !toAccDoc.exists()) {
+              throw new Error('One or both accounts not found')
+            }
+
+            const fromBalance = fromAccDoc.data().balance || 0
+            const toBalance = toAccDoc.data().balance || 0
+
+            transaction.update(fromAccRef, { balance: fromBalance - amountVal })
+            transaction.update(toAccRef, { balance: toBalance + amountVal })
+
+            // Create transfer record
+            const expensesRef = getCollection('expenses')
+            const transferRef = doc(expensesRef)
+            transaction.set(transferRef, {
+              amount: 0, // Transfers don't affect net worth
+              currency: formData.currency,
+              merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+              payment_method: accounts.find(a => a.id === formData.account_id)?.name,
+              account_id: formData.account_id,
+              note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+              occurred_on: formData.occurred_on,
+              category: 'Transfer',
+              type: 'transfer',
+              toAccountId: formData.toAccountId,
+              transferAmount: amountVal,
+              created_at: new Date().toISOString()
+            })
+          }
+        })
+
+        setLoading(false)
+        onAdded()
+        onClose()
+        return
+      }
+
+      // Store income as positive, expenses as negative for proper calculations
+      const storedAmount = formData.type === 'income' ? amountVal : -amountVal
+
       const expenseData = {
-        amount: parseFloat(formData.amount),
+        amount: storedAmount,
         currency: formData.currency,
-        merchant: formData.merchant || 'Unknown',
-        payment_method: formData.payment_method || 'Credit Card',
+        merchant: formData.merchant || (formData.type === 'income' ? 'Income Source' : 'Unknown'),
+        payment_method: formData.payment_method, // Stores Account Name
+        account_id: formData.account_id || null,
         note: formData.note || '',
         occurred_on: formData.occurred_on,
         category: formData.category || 'Other',
         attachment: formData.attachment || null,
+        type: formData.type
       }
-      
-      if (mode === 'edit' && expense?.id) {
-        const expenseDocRef = doc(db, 'expenses', user.uid, 'items', expense.id)
-        await updateDoc(expenseDocRef, expenseData)
-      } else {
-        const expensesRef = collection(db, 'expenses', user.uid, 'items')
-        await addDoc(expensesRef, {
-          ...expenseData,
-          created_at: new Date().toISOString()
-        })
-        
-        // Track expense creation event
-        if (analytics && typeof window !== 'undefined') {
-          logEvent(analytics as any, 'expense_created', {
-            category: expenseData.category,
-            amount: expenseData.amount,
-            currency: expenseData.currency,
-            payment_method: expenseData.payment_method
+
+      await runTransaction(db, async (transaction) => {
+        // ===== READS FIRST (Required by Firestore) =====
+
+        // Read old account if editing
+        let oldAccDoc = null
+        if (mode === 'edit' && expense && expense.account_id) {
+          const oldAccRef = doc(getCollection('accounts'), expense.account_id)
+          oldAccDoc = await transaction.get(oldAccRef)
+        }
+
+        // Read new account
+        let newAccDoc = null
+        if (formData.account_id) {
+          const accRef = doc(getCollection('accounts'), formData.account_id)
+          newAccDoc = await transaction.get(accRef)
+        }
+
+        // ===== WRITES SECOND =====
+
+        if (mode === 'edit' && expense && expense.id) {
+          // EDITING: Handle account balance updates
+          const oldAmount = expense.amount
+          const newAmount = storedAmount
+          const oldAccountId = expense.account_id
+          const newAccountId = formData.account_id
+
+          if (oldAccountId === newAccountId && oldAccountId) {
+            // Same account: calculate net change and apply once
+            const netChange = newAmount - oldAmount
+            if (oldAccDoc && oldAccDoc.exists() && netChange !== 0) {
+              const oldAccRef = doc(getCollection('accounts'), oldAccountId)
+              const currentBal = oldAccDoc.data().balance || 0
+              transaction.update(oldAccRef, { balance: currentBal + netChange })
+            }
+          } else {
+            // Different accounts: revert from old, apply to new
+            if (oldAccountId && oldAccDoc && oldAccDoc.exists()) {
+              const oldAccRef = doc(getCollection('accounts'), oldAccountId)
+              const currentBal = oldAccDoc.data().balance || 0
+              transaction.update(oldAccRef, { balance: currentBal - oldAmount })
+            }
+            if (newAccountId && newAccDoc && newAccDoc.exists()) {
+              const newAccRef = doc(getCollection('accounts'), newAccountId)
+              const currentBal = newAccDoc.data().balance || 0
+              transaction.update(newAccRef, { balance: currentBal + newAmount })
+            }
+          }
+        } else {
+          // ADDING: Simply apply the new transaction
+          if (formData.account_id && newAccDoc && newAccDoc.exists()) {
+            const accRef = doc(getCollection('accounts'), formData.account_id)
+            const currentBal = newAccDoc.data().balance || 0
+            transaction.update(accRef, { balance: currentBal + storedAmount })
+          }
+        }
+
+        // 3. Write Expense Document
+        if (mode === 'edit' && expense?.id) {
+          const expenseRef = doc(getCollection('expenses'), expense.id)
+          transaction.update(expenseRef, expenseData)
+        } else {
+          const expensesRef = getCollection('expenses')
+          const newExpenseRef = doc(expensesRef) // Auto-gen ID
+          transaction.set(newExpenseRef, {
+            ...expenseData,
+            created_at: new Date().toISOString()
           })
         }
-      }
+      })
+
     } catch (error: any) {
       setLoading(false)
       setError(error.message)
       return
     }
+
     setLoading(false)
     onAdded()
     onClose()
-    if (mode !== 'edit') {
-      setFormData({
-        amount: '',
-  currency: prefCurrency || 'USD',
-        merchant: '',
-        payment_method: 'Credit Card',
-        note: '',
-        occurred_on: new Date().toISOString().split('T')[0],
-        category: '',
-        attachment: '',
-      })
-    }
+
   }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }))
-  }
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    // Check if file is an image
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file.')
-      return
-    }
-
-    try {
-      // Compress the image before storing
-      // Max dimensions: 1920x1920, quality: 0.8
-      const compressedBase64 = await compressImage(file, 1920, 1920, 0.8)
-      
-      // Check compressed size (shouldn't exceed 5MB after compression)
-      const sizeInBytes = compressedBase64.length * 0.75
-      if (sizeInBytes > 5 * 1024 * 1024) {
-        alert(`Image is still too large after compression (${formatBytes(sizeInBytes)}). Please try a different image.`)
-        return
-      }
-      
-      setFormData(prev => ({ ...prev, attachment: compressedBase64 }))
-    } catch (error: any) {
-      alert('Failed to process image: ' + error.message)
-    }
-  }
-
-  const selectedCount = useMemo(() => parsedExpenses.filter(p => p.selected !== false).length, [parsedExpenses])
-
-  const updateParsedRow = (idx: number, patch: Partial<{ amount: number; currency: string; merchant?: string; payment_method?: string; note?: string; occurred_on: string; category?: string; selected?: boolean }>) => {
-    setParsedExpenses(prev => prev.map((row, i) => i === idx ? { ...row, ...patch } : row))
-  }
-
-  // Add a new category for the current user, avoiding duplicates (case-insensitive)
-  const addCategory = async (nameRaw: string): Promise<{ id: string | undefined, name: string } | null> => {
-    const name = (nameRaw || '').trim()
-    if (!name) { alert('Category name cannot be empty.'); return null }
-    if (!user?.uid) { alert('You must be signed in to add categories.'); return null }
-
-    const existing = (categories as any[]).find(c => String(c.name).toLowerCase() === name.toLowerCase())
-    if (existing) {
-      // Already exists, just use it
-      return { id: (existing as any).id, name: existing.name }
-    }
-
-    try {
-      const categoriesRef = collection(db, 'categories', user.uid, 'items')
-      const docRef = await addDoc(categoriesRef, {
-        name,
-        created_at: new Date().toISOString()
-      })
-      
-      const newCategory = { id: docRef.id, name }
-      
-      // Optimistically update cache so dropdowns reflect new category immediately
-      queryClient.setQueryData(['categories', user.uid], (prev: any) => {
-        const arr = Array.isArray(prev) ? prev.slice() : []
-        if (!arr.some((c: any) => String(c.name).toLowerCase() === name.toLowerCase())) {
-          arr.push(newCategory)
-        }
-        return arr
-      })
-      return newCategory
-    } catch (error: any) {
-      // If unique constraint or similar, try to recover by finding it again
-      const fallback = (categories as any[]).find(c => String(c.name).toLowerCase() === name.toLowerCase())
-      if (fallback) return { id: (fallback as any).id, name: fallback.name }
-      alert(error.message || 'Failed to add category')
-      return null
-    }
-  }
-
-  const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(null)
-
-  const closeConverterModal = () => {
-    setShowPdfConverterModal(false)
-    // Cleanup any pending message listeners
-    if (messageHandlerRef.current) {
-      window.removeEventListener('message', messageHandlerRef.current)
-      messageHandlerRef.current = null
-    }
-  }
-
-  const openPopupConverter = () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : ''
-    const url = `https://expenso-pdfexcel.vercel.app/?embed=1&targetOrigin=${encodeURIComponent(origin)}`
-    const popup = window.open(url, 'PDFConverter', 'width=1100,height=800,resizable=yes,scrollbars=yes')
-    if (!popup) {
-      alert('Popup blocked. Please allow popups for this site.')
-      return
-    }
-    closeConverterModal()
-    
-    // Listen for message from popup
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
-      if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
-        const transactions = event.data.transactions || []
-        if (!Array.isArray(transactions) || transactions.length === 0) {
-          setImportError('No transactions found or processing cancelled.')
-          return
-        }
-        const currencyCounts = transactions.reduce<Record<string, number>>((acc, r) => {
-          const c = (r.currency || '').toUpperCase()
-          if (!c) return acc
-          acc[c] = (acc[c] || 0) + 1
-          return acc
-        }, {})
-        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
-        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
-        const mapped = transactions.map((t: any) => ({
-          amount: Math.abs(t.debit || t.credit || 0),
-          currency: t.currency || 'USD',
-          merchant: t.description || '',
-          payment_method: defaultPM || 'Credit Card',
-          note: '',
-          occurred_on: formatDateToISO(t.date),
-          category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
-        }))
-        setParsedExpenses(mapped)
-        setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
-        setImportError(null)
-        popup.close()
-        window.removeEventListener('message', handleMessage)
-      }
-    }
-    window.addEventListener('message', handleMessage)
-  }
-
-  const analyzeSelectedPDF = () => {
-    // Open the PDF converter modal with iframe
-    setImportStatus('')
-    setImportLoading(false)
-    setImportError(null)
-    setShowPdfConverterModal(true)
-    
-    // Setup message listener for iframe communication
-    if (messageHandlerRef.current) {
-      window.removeEventListener('message', messageHandlerRef.current)
-    }
-    
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://expenso-pdfexcel.vercel.app') return
-      if (event.data.type === 'TRANSACTIONS_EXTRACTED') {
-        const transactions = event.data.transactions || []
-        if (!Array.isArray(transactions) || transactions.length === 0) {
-          setImportError('No transactions found or processing cancelled.')
-          return
-        }
-        
-        // Determine a sensible default payment method based on currency
-        const currencyCounts = transactions.reduce<Record<string, number>>((acc, r) => {
-          const c = (r.currency || '').toUpperCase()
-          if (!c) return acc
-          acc[c] = (acc[c] || 0) + 1
-          return acc
-        }, {})
-        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
-        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
-        
-        // Map transactions
-        const mapped = transactions.map((t: any) => ({
-          amount: Math.abs(t.debit || t.credit || 0),
-          currency: t.currency || 'USD',
-          merchant: t.description || '',
-          payment_method: defaultPM || 'Credit Card',
-          note: '',
-          occurred_on: formatDateToISO(t.date),
-          category: normalizeCategory(t.category || t.description, definedCategoryNames) || 'Other',
-        }))
-        
-        setParsedExpenses(mapped)
-        setImportStatus(`Extracted ${mapped.length} transactions. Review and import them.`)
-        setImportError(null)
-        // Close modal and cleanup listener
-        setShowPdfConverterModal(false)
-        window.removeEventListener('message', handleMessage)
-        messageHandlerRef.current = null
-      }
-    }
-    
-    window.addEventListener('message', handleMessage)
-    messageHandlerRef.current = handleMessage
-  }
-
-  const toggleSelect = (idx: number) => {
-    setParsedExpenses(prev => prev.map((row, i) => i === idx ? { ...row, selected: row.selected === false ? true : false } : row))
-  }
-
-  const handleUploadSpreadsheet = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    
-    // Reset state
-    setImportError(null)
+  const handleImportUpload = async () => {
+    if (!importFile) return
+    setImporting(true)
+    setError(null)
     setParsedExpenses([])
-    setImportStatus('Uploading Excel/CSV...')
-    setImportLoading(true)
-    
+
     try {
-      const form = new FormData()
-      form.append('file', file)
-      
-      setImportStatus('Reading spreadsheet...')
-      
-      const resp = await fetch('/api/import/parse-spreadsheet', {
+      const formData = new FormData()
+      formData.append('file', importFile)
+
+      const endpoint = '/api/import/parse-spreadsheet'
+
+      const res = await fetch(endpoint, {
         method: 'POST',
-        body: form,
+        body: formData
       })
-      
-      if (!resp.ok) {
-        const errorText = await resp.text().catch(() => '')
-        throw new Error(`Upload failed (${resp.status}): ${errorText || resp.statusText}`)
-      }
-      
-      setImportStatus('Parsing transactions...')
-      
-      const json = await resp.json()
-      if (!json.success) throw new Error(json.error || 'Parse failed')
-      
-      const rows = (json.expenses as any[])
-      if (!Array.isArray(rows) || rows.length === 0) {
-        setParsedExpenses([])
-        setImportError('No transactions found in the uploaded spreadsheet. Try another sheet or adjust column headers.')
-      } else {
-        // Determine default payment method from dominant currency (CAD→Credit, INR→Debit)
-        const currencyCounts = rows.reduce<Record<string, number>>((acc, r) => {
-          const c = (r.currency || '').toUpperCase()
-          if (!c) return acc
-          acc[c] = (acc[c] || 0) + 1
-          return acc
-        }, {})
-        const dominantCurrency = Object.entries(currencyCounts).sort((a,b) => b[1]-a[1])[0]?.[0]
-        const defaultPM = defaultPaymentMethodForCurrency(dominantCurrency)
 
-        if (defaultPM) {
-          setOverridePaymentMethod(defaultPM)
-          setPaymentMethodTouched(false)
-        } else {
-          setOverridePaymentMethod('')
-          setPaymentMethodTouched(false)
-        }
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Import failed')
 
-        setParsedExpenses(rows.map((e) => ({ ...e, selected: true, payment_method: defaultPM || e.payment_method })))
-        setImportStatus(`Successfully extracted ${rows.length} transactions!`)
-        // Clear success message after 2 seconds
-        setTimeout(() => setImportStatus(''), 2000)
-      }
+      setParsedExpenses(data.expenses.map((e: any, i: number) => ({ ...e, _tempId: i })))
+      setSelectedImportIndices(data.expenses.map((_: any, i: number) => i)) // Select all by default
     } catch (err: any) {
-      setImportError(err?.message || 'Failed to import')
-      console.error('Spreadsheet upload error:', err)
+      setError(err.message)
     } finally {
-      setImportLoading(false)
-      // Reset file input to allow re-selecting the same file
-      e.target.value = ''
+      setImporting(false)
     }
   }
 
-  const importSelected = async () => {
-    if (!user) return
-    const rows = parsedExpenses.filter(r => r.selected !== false)
-    if (rows.length === 0) return
-    setImportLoading(true)
-    setImportError(null)
-    try {
-      const cleanNote = (raw?: string, category?: string, merchant?: string) => {
-        const str = String(raw || '')
-        // Remove phrases like 'Transaction date ...; Posting date ...' and any embedded dates
-        const removedPairs = str.replace(/\bTransaction date\b[^;\n]*;\s*\bPosting date\b[^\n]*/gi, '').trim()
-        // Remove standalone date-like patterns (e.g., Aug 27, 2025 or 2025-08-27)
-        const noDates = removedPairs
-          .replace(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s*\d{4}\b/gi, '')
-          .replace(/\b\d{4}-\d{2}-\d{2}\b/g, '')
-          .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, '')
-          .replace(/\s{2,}/g, ' ')
-          .trim()
-        if (noDates.length > 0) return noDates
-        if (category && category.trim().length > 0) return category
-        if (merchant && merchant.trim().length > 0) return merchant
-        return ''
-      }
+  const handleSaveImported = async () => {
+    if (!user || !importAccount) {
+      setError('Please select an account for these transactions')
+      return
+    }
+    setLoading(true)
+    setError(null)
 
-      const expensesRef = collection(db, 'expenses', user.uid, 'items')
-      const payload = rows.map(r => ({
-        amount: Number(r.amount),
-        currency: r.currency || prefCurrency || 'CAD',
-        merchant: r.merchant || 'Unknown',
-        payment_method: r.payment_method || 'Credit Card',
-        note: cleanNote(r.note, r.category, r.merchant),
-        occurred_on: (r.occurred_on || new Date().toISOString().slice(0,10)).slice(0,10),
-        category: r.category || 'Other',
-        created_at: new Date().toISOString()
-      }))
-      // Insert all expenses
-      await Promise.all(payload.map(expense => addDoc(expensesRef, expense)))
-      setParsedExpenses([])
+    try {
+      const selected = parsedExpenses.filter((_, i) => selectedImportIndices.includes(i))
+      if (selected.length === 0) return
+
+      await runTransaction(db, async (transaction) => {
+        const accRef = doc(getCollection('accounts'), importAccount)
+        const accDoc = await transaction.get(accRef)
+        if (!accDoc.exists()) throw new Error('Account not found')
+
+        const currentBal = accDoc.data().balance || 0
+        let netChange = 0
+
+        selected.forEach(exp => {
+          // exp.amount: positive = expense/debit, negative = income/credit
+          const isIncome = exp.amount < 0
+          const isExpense = exp.amount > 0
+
+          // For database storage: negative for income, positive for expense
+          const storedAmount = exp.amount // Keep the sign as-is
+
+          // For balance calculation: income increases balance, expense decreases balance
+          if (isIncome) {
+            netChange += Math.abs(exp.amount) // Add income to balance
+          } else {
+            netChange -= Math.abs(exp.amount) // Subtract expense from balance
+          }
+
+          const newRef = doc(getCollection('expenses'))
+          transaction.set(newRef, {
+            amount: storedAmount, // Store with sign: negative for income, positive for expense
+            currency: exp.currency || 'USD',
+            merchant: exp.merchant || 'Unknown',
+            payment_method: 'Imported',
+            account_id: importAccount,
+            note: exp.note || '',
+            occurred_on: exp.occurred_on,
+            category: exp.category || 'Uncategorized',
+            attachment: null,
+            type: isIncome ? 'income' : 'expense',
+            created_at: new Date().toISOString()
+          })
+        })
+
+        transaction.update(accRef, { balance: currentBal + netChange })
+      })
+
       onAdded()
       onClose()
     } catch (e: any) {
-      setImportError(e?.message || 'Failed to import')
+      setError(e.message)
     } finally {
-      setImportLoading(false)
+      setLoading(false)
     }
   }
 
+  const handleAccountChange = (accId: string) => {
+    const acc = accounts.find(a => a.id === accId)
+    if (acc) {
+      setFormData(prev => ({
+        ...prev,
+        account_id: acc.id,
+        payment_method: acc.name,
+        currency: acc.currency // Auto-switch currency to account currency? Yes, usually.
+      }))
+    } else {
+      setFormData(prev => ({ ...prev, account_id: '', payment_method: 'Cash' }))
+    }
+  }
+
+  // Simplified file handler
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) { alert('Images only'); return }
+    try {
+      const compressedBase64 = await compressImage(file, 1920, 1920, 0.8)
+      setFormData(prev => ({ ...prev, attachment: compressedBase64 }))
+    } catch { alert('Failed processing image') }
+  }
+
+  const themeColor = formData.type === 'income' ? 'green' : formData.type === 'transfer' ? 'blue' : 'primary'
+  const ThemeIcon = formData.type === 'income' ? ArrowDownCircle : formData.type === 'transfer' ? ArrowDownCircle : ArrowUpCircle
+
   return (
-    <>
-      {/* Beautiful full-screen loading overlay */}
-      {importLoading && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-blue-50 via-green-50 to-emerald-50">
-          <div className="text-center">
-            {/* Animated money/bank icon */}
-            <div className="mb-8 flex justify-center">
-              <div className="relative">
-                {/* Outer ring */}
-                <div className="absolute inset-0 animate-ping opacity-20">
-                  <svg className="w-32 h-32 text-green-500" fill="none" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                  </svg>
-                </div>
-                {/* Middle ring */}
-                <div className="absolute inset-0 animate-pulse">
-                  <svg className="w-32 h-32 text-emerald-500" fill="none" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4"/>
-                  </svg>
-                </div>
-                {/* Bank/Receipt icon */}
-                <div className="relative animate-bounce">
-                  <svg className="w-32 h-32 text-green-600" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z" opacity="0.3"/>
-                    <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12z"/>
-                    <path d="M6 9h12v2H6V9zm0 4h8v2H6v-2z"/>
-                  </svg>
-                </div>
-              </div>
-            </div>
-            
-            {/* Status text */}
-            <div className="space-y-3">
-              <h3 className="text-2xl font-semibold text-gray-800">
-                {importStatus}
-              </h3>
-              <p className="text-sm text-gray-600">
-                Extracting your transactions
-              </p>
-              {/* Animated dots */}
-              <div className="flex justify-center gap-2 mt-4">
-                <div className="w-3 h-3 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-3 h-3 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                <div className="w-3 h-3 bg-teal-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      <Transition.Root show={open} as={Fragment}>
-        <Dialog as="div" className="relative z-50" onClose={onClose}>
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0"
-            enterTo="opacity-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100"
-            leaveTo="opacity-0"
-          >
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
-          </Transition.Child>
+    <Transition.Root show={open} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={onClose}>
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
           <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-              enterTo="opacity-100 translate-y-0 sm:scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-              leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-            >
-              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-7xl sm:p-6">
-                <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
-                  <button
-                    type="button"
-                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-                    onClick={onClose}
-                  >
-                    <span className="sr-only">Close</span>
-                    <X className="h-6 w-6" />
-                  </button>
-                </div>
-                
-                <div className="sm:flex sm:items-start">
-                  <div className="mt-3 text-center sm:ml-0 sm:mt-0 sm:text-left w-full">
-                    <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900 mb-4">
-                      {mode === 'edit' ? 'Edit Expense' : 'Add New Expense'}
-                    </Dialog.Title>
-                    
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                      {error && <div className="text-sm text-error-600 bg-error-50 border border-error-100 rounded p-2">{error}</div>}
-                      {/* Import from PDF / Excel */}
-                      {mode === 'add' && (
-                        <div className="rounded border border-gray-200 p-3">
-                          <div className="flex flex-col gap-3">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">Import from Statement (PDF or Excel/CSV)</div>
-                              <div className="text-xs text-gray-500">Upload a bank/credit card statement. PDF uses AI extraction; Excel/CSV parses directly.</div>
-                            </div>
-                            
-                            {/* Status Message */}
-                            {importStatus && (
-                              <div className="bg-blue-50 border border-blue-200 rounded-md p-2 flex items-center gap-2">
-                                <div className="flex-shrink-0">
-                                  {importLoading ? (
-                                    <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                  ) : (
-                                    <svg className="h-4 w-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </div>
-                                <div className="text-xs font-medium text-gray-700">{importStatus}</div>
-                              </div>
-                            )}
-                            
-                            <div className="flex flex-col gap-2 items-stretch">
-                              {/* AI is always used with masking by default; toggle removed for simplicity */}
+            <Dialog.Panel className={`relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full ${isImportMode && parsedExpenses.length > 0
+              ? 'sm:max-w-7xl' // Large for import table
+              : isImportMode
+                ? 'sm:max-w-2xl' // Medium for import options
+                : 'sm:max-w-lg' // Small for manual entry
+              } sm:p-6`}>
+              <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
 
-                              <button 
-                                type="button"
-                                className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  analyzeSelectedPDF()
-                                }}
-                                disabled={importLoading}
-                              >
-                                {importLoading ? 'Processing...' : 'Upload PDF'}
-                              </button>
-                              
-                              <input 
-                                id="uploadSheetInput" 
-                                type="file" 
-                                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" 
-                                className="hidden" 
-                                onChange={handleUploadSpreadsheet} 
-                                disabled={importLoading}
-                                aria-label="Upload Excel or CSV statement"
-                              />
-                              <label 
-                                htmlFor="uploadSheetInput" 
-                                className={`btn-secondary cursor-pointer text-center ${importLoading ? 'opacity-60 pointer-events-none' : ''}`}
-                              >
-                                {importLoading ? 'Uploading...' : 'Upload Excel/CSV'}
-                              </label>
-                            </div>
+              <div className="w-full">
+                {/* Toggle Type */}
+                <div className="flex justify-center mb-6">
+                  <div className="bg-gray-100 dark:bg-gray-700 p-1 rounded-xl flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setFormData(p => ({ ...p, type: 'expense' }))}
+                      className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${formData.type === 'expense'
+                        ? 'bg-white dark:bg-gray-600 text-red-600 dark:text-red-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        }`}
+                    >
+                      Expense
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(p => ({ ...p, type: 'income' }))}
+                      className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${formData.type === 'income'
+                        ? 'bg-white dark:bg-gray-600 text-green-600 dark:text-green-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        }`}
+                    >
+                      Income
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData(p => ({ ...p, type: 'transfer', toAccountId: '' }))}
+                      className={`px-6 py-2 rounded-lg text-sm font-medium transition-all ${formData.type === 'transfer'
+                        ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        }`}
+                    >
+                      Transfer
+                    </button>
+                  </div>
+                </div>
+
+                {/* PDF Tool Modal - Responsive */}
+                <Transition.Root show={pdfModalOpen} as={Fragment}>
+                  <Dialog as="div" className="relative z-[60]" onClose={() => setPdfModalOpen(false)}>
+                    <div className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" />
+                    <div className="fixed inset-0 z-10 overflow-y-auto">
+                      <div className="flex min-h-full items-center justify-center p-2 sm:p-4">
+                        <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 w-full max-w-[95vw] lg:max-w-[90vw] h-[90vh] lg:h-[85vh] shadow-2xl transition-all flex flex-col">
+                          <div className="flex justify-between items-center px-4 py-3 border-b dark:border-gray-700 bg-white dark:bg-gray-800">
+                            <h3 className="text-lg font-medium text-gray-900 dark:text-white">PDF Converter Tool</h3>
+                            <button
+                              onClick={() => setPdfModalOpen(false)}
+                              className="text-gray-400 hover:text-gray-600 transition-colors"
+                            >
+                              <X className="h-6 w-6" />
+                            </button>
                           </div>
-                          {importError && <div className="mt-2 text-xs text-error-600 bg-error-50 border border-error-100 rounded p-2">{importError}</div>}
-                          {parsedExpenses.length > 0 && (
-                            <div className="mt-3">
-                              <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
-                                <div className="text-sm text-gray-700">Parsed expenses: {parsedExpenses.length} • Selected: {selectedCount}</div>
-                                <div className="flex items-center gap-2">
-                                  <label className="text-xs text-gray-600">Currency:</label>
-                                  <select
-                                    value={overrideCurrency || ''}
-                                    onChange={(e) => {
-                                      const cur = e.target.value
-                                      setOverrideCurrency(cur)
-                                      if (cur) {
-                                        setParsedExpenses(prev => prev.map(p => ({ ...p, currency: cur })))
-                                        // If user hasn't manually set payment method, default it based on selected currency
-                                        if (!paymentMethodTouched) {
-                                          const pm = defaultPaymentMethodForCurrency(cur)
-                                          setOverridePaymentMethod(pm)
-                                          if (pm) setParsedExpenses(prev => prev.map(p => ({ ...p, payment_method: pm })))
-                                        }
-                                      }
-                                    }}
-                                    className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
-                                  >
-                                    <option value="">— keep detected —</option>
-                                    <option value="USD">USD</option>
-                                    <option value="EUR">EUR</option>
-                                    <option value="GBP">GBP</option>
-                                    <option value="CAD">CAD</option>
-                                    <option value="AUD">AUD</option>
-                                    <option value="INR">INR</option>
-                                  </select>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <label className="text-xs text-gray-600">Payment method:</label>
-                                  <select
-                                    value={overridePaymentMethod || ''}
-                                    onChange={(e) => {
-                                      const pm = e.target.value
-                                      setOverridePaymentMethod(pm)
-                                      setPaymentMethodTouched(true)
-                                      if (pm) setParsedExpenses(prev => prev.map(p => ({ ...p, payment_method: pm })))
-                                    }}
-                                    className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
-                                  >
-                                    <option value="">— keep detected —</option>
-                                    <option value="Credit Card">Credit Card</option>
-                                    <option value="Debit Card">Debit Card</option>
-                                    <option value="Bank Transfer">Bank Transfer</option>
-                                    <option value="Digital Wallet">Digital Wallet</option>
-                                    <option value="Interact">Interact</option>
-                                    <option value="Cash">Cash</option>
-                                  </select>
-                                </div>
-                                <div className="space-x-2">
-                                  <button type="button" className="btn-secondary" onClick={() => setParsedExpenses(prev => prev.map(p => ({ ...p, selected: true })))}>Select all</button>
-                                  <button type="button" className="btn-secondary" onClick={() => setParsedExpenses(prev => prev.map(p => ({ ...p, selected: false })))}>Clear</button>
-                                </div>
-                              </div>
-                              <div className="max-h-60 overflow-auto border rounded">
-                                <div className="overflow-x-auto">
-                                  <table className="min-w-full w-full text-xs">
-                  <thead className="bg-gray-50 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-2 py-2 text-left sticky left-0 bg-gray-50 w-12">Pick</th>
-                    <th className="px-2 py-2 text-left w-24">Date</th>
-                    <th className="px-2 py-2 text-right w-20">Amount</th>
-                    <th className="px-2 py-2 text-left w-16">Currency</th>
-                    <th className="px-2 py-2 text-left min-w-32">Merchant</th>
-                    <th className="px-2 py-2 text-left w-24">Payment</th>
-                    <th className="px-2 py-2 text-left w-24">Category</th>
-                    <th className="px-2 py-2 text-left text-xs text-gray-500 min-w-24">Raw Category</th>
-                  </tr>
-                  </thead>
-                                    <tbody>
-                                      {parsedExpenses.map((p, idx) => (
-                                        <tr key={idx} className="border-t">
-                                          <td className="px-2 py-2 sticky left-0 bg-white"><input type="checkbox" checked={p.selected !== false} onChange={() => toggleSelect(idx)} /></td>
-                                          <td className="px-2 py-2 whitespace-nowrap">
-                                            <input
-                                              type="date"
-                                              value={p.occurred_on}
-                                              onChange={(ev) => updateParsedRow(idx, { occurred_on: ev.target.value })}
-                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white w-full"
-                                            />
-                                          </td>
-                                          <td className="px-2 py-2 text-right whitespace-nowrap">
-                                            <div className="flex items-center justify-end gap-1">
-                                              <span>{p.amount}</span>
-                                              <button
-                                                type="button"
-                                                onClick={() => updateParsedRow(idx, { amount: -p.amount })}
-                                                className="text-xs text-gray-400 hover:text-gray-600 px-1 py-0.5 rounded border border-gray-200 hover:border-gray-300 flex-shrink-0"
-                                                title="Toggle amount sign (+/-)"
-                                              >
-                                                ±
-                                              </button>
-                                            </div>
-                                          </td>
-                                          <td className="px-2 py-2 whitespace-nowrap">{p.currency}</td>
-                                          <td className="px-2 py-2">
-                                            <input
-                                              type="text"
-                                              value={p.merchant || ''}
-                                              onChange={(ev) => updateParsedRow(idx, { merchant: ev.target.value })}
-                                              placeholder="Enter merchant"
-                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white w-full"
-                                            />
-                                          </td>
-                                          <td className="px-2 py-2">
-                                            <select
-                                              value={p.payment_method || ''}
-                                              onChange={(ev) => updateParsedRow(idx, { payment_method: ev.target.value || undefined })}
-                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
-                                            >
-                                              <option value="">—</option>
-                                              <option value="Credit Card">Credit Card</option>
-                                              <option value="Debit Card">Debit Card</option>
-                                              <option value="Bank Transfer">Bank Transfer</option>
-                                              <option value="Digital Wallet">Digital Wallet</option>
-                                              <option value="Interact">Interact</option>
-                                              <option value="Cash">Cash</option>
-                                            </select>
-                                          </td>
-                                          <td className="px-2 py-2">
-                                            <select
-                                              value={p.category || ''}
-                                              onChange={async (ev) => {
-                                                const val = ev.target.value
-                                                if (val === '__add__') {
-                                                  const newName = window.prompt('Enter new category name:')
-                                                  if (newName && newName.trim()) {
-                                                    const created = await addCategory(newName)
-                                                    if (created) updateParsedRow(idx, { category: created.name })
-                                                  }
-                                                  // Do not set to '__add__'
-                                                  return
-                                                }
-                                                updateParsedRow(idx, { category: val || undefined })
-                                              }}
-                                              className="border border-gray-300 rounded px-2 py-1 text-xs bg-white"
-                                            >
-                                              <option value="">—</option>
-                                              {definedCategoryNames.map((name: string) => (
-                                                <option key={name} value={name}>{name}</option>
-                                              ))}
-                                              {!definedCategoryNames.includes('Other') && (
-                                                <option value="Other">Other</option>
-                                              )}
-                                              <option value="__add__">+ Add new…</option>
-                                            </select>
-                                          </td>
-                                          <td className="px-2 py-2 text-xs text-gray-500">{p.category ? p.category : <span className="italic text-gray-400">—</span>}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                              <div className="mt-2 flex justify-end">
-                                <button type="button" className="btn-primary disabled:opacity-60" onClick={importSelected} disabled={importLoading || selectedCount === 0}>
-                                  {importLoading ? 'Importing…' : `Import ${selectedCount} selected`}
-                                </button>
-                              </div>
-                            </div>
+                          <div className="flex-1 w-full bg-gray-50 overflow-hidden">
+                            <iframe
+                              src="https://expenso-pdfexcel.vercel.app"
+                              className="w-full h-full border-0"
+                              title="PDF Converter"
+                              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                            />
+                          </div>
+                        </Dialog.Panel>
+                      </div>
+                    </div>
+                  </Dialog>
+                </Transition.Root>
+                <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900 dark:text-white mb-4 text-center">
+                  <div className="flex justify-center items-center gap-2 mb-4">
+                    <button
+                      onClick={() => { setIsImportMode(false); setImportMediaType('none') }}
+                      className={`px-3 py-1 rounded-full text-sm ${!isImportMode ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                    >
+                      Manual Entry
+                    </button>
+                    <button
+                      onClick={() => { setIsImportMode(true); setImportMediaType('none') }}
+                      className={`px-3 py-1 rounded-full text-sm ${isImportMode ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                    >
+                      Import File
+                    </button>
+                  </div>
+                  {isImportMode ? 'Import Transactions' : (mode === 'edit' ? 'Edit Transaction' : (formData.type === 'income' ? 'Add Income' : 'Add Expense'))}
+                </Dialog.Title>
+
+                {isImportMode ? (
+                  <div className="space-y-4">
+                    {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+
+
+                    {/* Selection Screen */}
+                    {importMediaType === 'none' && !parsedExpenses.length && (
+                      <div className="grid grid-cols-2 gap-4 mt-4">
+                        <button
+                          onClick={() => {
+                            setDebugStatus('Opening PDF Modal...')
+                            setPdfModalOpen(true)
+                          }}
+                          className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl hover:border-primary-500 dark:hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all group"
+                        >
+                          <FileText className="h-10 w-10 text-gray-400 dark:text-gray-500 group-hover:text-primary-600 dark:group-hover:text-primary-400 mb-3" />
+                          <span className="font-medium text-gray-900 dark:text-white">Import PDF</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">Bank Statements</span>
+                        </button>
+
+                        <button
+                          onClick={() => setImportMediaType('excel')}
+                          className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl hover:border-green-500 dark:hover:border-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group"
+                        >
+                          <FileSpreadsheet className="h-10 w-10 text-gray-400 dark:text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400 mb-3" />
+                          <span className="font-medium text-gray-900 dark:text-white">Import Excel/CSV</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">Spreadsheets</span>
+                        </button>
+                      </div>
+                    )}
+
+
+
+                    {/* Excel Import UI */}
+                    {importMediaType === 'excel' && !parsedExpenses.length && (
+                      <div className="space-y-4">
+                        <button
+                          onClick={() => setImportMediaType('none')}
+                          className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                        >
+                          ← Back to options
+                        </button>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Target Account</label>
+                          <select
+                            value={importAccount}
+                            onChange={e => setImportAccount(e.target.value)}
+                            className="mt-1 block w-full rounded-md border-gray-300 py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                          >
+                            <option value="">Select Account...</option>
+                            {accounts.map(acc => (
+                              <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-500 transition-colors">
+                          <input
+                            type="file"
+                            id="file-upload"
+                            className="hidden"
+                            accept=".csv,.xlsx,.xls"
+                            onChange={e => {
+                              if (e.target.files?.[0]) {
+                                setImportFile(e.target.files[0])
+                              }
+                            }}
+                          />
+                          <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
+                            <Upload className="h-8 w-8 text-gray-400 mb-2" />
+                            <span className="text-sm text-gray-600 font-medium">
+                              {importFile ? importFile.name : 'Click to upload Excel/CSV'}
+                            </span>
+                            <span className="text-xs text-gray-500 mt-1">.xlsx, .xls, .csv</span>
+                          </label>
+                          {importFile && (
+                            <button
+                              onClick={handleImportUpload}
+                              disabled={importing || !importAccount}
+                              className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50"
+                            >
+                              {importing ? 'Parsing...' : 'Process File'}
+                            </button>
                           )}
                         </div>
-                      )}
-                      <div>
-                        <label htmlFor="note" className="label">
-                          Note
-                        </label>
-                        <input
-                          type="text"
-                          name="note"
-                          id="note"
-                          value={formData.note}
-                          onChange={handleInputChange}
-                          className="input"
-                          placeholder="Enter expense note (optional)"
-                        />
                       </div>
+                    )}
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label htmlFor="amount" className="label">
-                            Amount
-                          </label>
+                    {/* Results Table (Shared) - Editable */}
+                    {parsedExpenses.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <p className="text-sm text-gray-600">
+                            Parsed expenses: <strong>{parsedExpenses.length}</strong> • Selected: <strong>{selectedImportIndices.length}</strong>
+                          </p>
+                          <div className="flex gap-2">
+                            <button onClick={() => setSelectedImportIndices(parsedExpenses.map((_, i) => i))} className="text-xs text-primary-600 hover:underline">Select all</button>
+                            <button onClick={() => setSelectedImportIndices([])} className="text-xs text-gray-600 hover:underline">Clear</button>
+                          </div>
+                        </div>
+
+                        {/* Account & Currency Selectors */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Target Account</label>
+                            <select
+                              value={importAccount}
+                              onChange={e => setImportAccount(e.target.value)}
+                              className="mt-1 block w-full rounded-md border-gray-300 py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                            >
+                              <option value="">— keep detected —</option>
+                              {accounts.map(acc => (
+                                <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Currency Override</label>
+                            <select
+                              className="mt-1 block w-full rounded-md border-gray-300 py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                              onChange={(e) => {
+                                if (e.target.value && e.target.value !== '') {
+                                  // Apply currency to all selected items
+                                  const updated = parsedExpenses.map((exp, i) =>
+                                    selectedImportIndices.includes(i) ? { ...exp, currency: e.target.value } : exp
+                                  )
+                                  setParsedExpenses(updated)
+                                }
+                              }}
+                            >
+                              <option value="">— keep detected —</option>
+                              <option value={currentEnvironment.currency || 'USD'}>
+                                {currentEnvironment.currency || 'USD'} (Environment Default)
+                              </option>
+                              <option disabled>──────────</option>
+                              <option value="USD">USD - US Dollar</option>
+                              <option value="EUR">EUR - Euro</option>
+                              <option value="GBP">GBP - British Pound</option>
+                              <option value="CAD">CAD - Canadian Dollar</option>
+                              <option value="AUD">AUD - Australian Dollar</option>
+                              <option value="JPY">JPY - Japanese Yen</option>
+                              <option value="CHF">CHF - Swiss Franc</option>
+                              <option value="CNY">CNY - Chinese Yuan</option>
+                              <option value="INR">INR - Indian Rupee</option>
+                              <option value="MXN">MXN - Mexican Peso</option>
+                              <option value="BRL">BRL - Brazilian Real</option>
+                              <option value="ZAR">ZAR - South African Rand</option>
+                              <option value="SGD">SGD - Singapore Dollar</option>
+                              <option value="HKD">HKD - Hong Kong Dollar</option>
+                              <option value="NZD">NZD - New Zealand Dollar</option>
+                              <option value="SEK">SEK - Swedish Krona</option>
+                              <option value="NOK">NOK - Norwegian Krone</option>
+                              <option value="KRW">KRW - South Korean Won</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="max-h-96 overflow-y-auto border rounded-md">
+                          <table className="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead className="bg-gray-50 sticky top-0">
+                              <tr>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedImportIndices.length === parsedExpenses.length}
+                                    onChange={(e) => setSelectedImportIndices(e.target.checked ? parsedExpenses.map((_, i) => i) : [])}
+                                    className="rounded text-primary-600 focus:ring-primary-500"
+                                  />
+                                </th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase">Income</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase">Expense</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Currency</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Merchant</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Raw Category</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {parsedExpenses.map((exp, idx) => {
+                                const isIncome = exp.amount < 0
+                                const absAmount = Math.abs(exp.amount)
+                                return (
+                                  <tr key={idx} className={selectedImportIndices.includes(idx) ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                                    <td className="px-2 py-2 whitespace-nowrap">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedImportIndices.includes(idx)}
+                                        onChange={e => {
+                                          if (e.target.checked) setSelectedImportIndices([...selectedImportIndices, idx])
+                                          else setSelectedImportIndices(selectedImportIndices.filter(i => i !== idx))
+                                        }}
+                                        className="rounded text-primary-600 focus:ring-primary-500"
+                                      />
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap">
+                                      <input
+                                        type="date"
+                                        value={exp.occurred_on}
+                                        onChange={e => {
+                                          const updated = [...parsedExpenses]
+                                          updated[idx].occurred_on = e.target.value
+                                          setParsedExpenses(updated)
+                                        }}
+                                        className="w-32 text-xs border-gray-300 rounded px-1 py-0.5"
+                                      />
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-right">
+                                      {isIncome ? (
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          value={absAmount}
+                                          onChange={e => {
+                                            const updated = [...parsedExpenses]
+                                            updated[idx].amount = -Math.abs(parseFloat(e.target.value) || 0)
+                                            setParsedExpenses(updated)
+                                          }}
+                                          className="w-20 text-xs border-gray-300 rounded px-1 py-0.5 text-right text-green-600 font-medium"
+                                        />
+                                      ) : (
+                                        <span className="text-gray-300">—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap text-right">
+                                      {!isIncome ? (
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          value={absAmount}
+                                          onChange={e => {
+                                            const updated = [...parsedExpenses]
+                                            updated[idx].amount = Math.abs(parseFloat(e.target.value) || 0)
+                                            setParsedExpenses(updated)
+                                          }}
+                                          className="w-20 text-xs border-gray-300 rounded px-1 py-0.5 text-right text-gray-900 font-medium"
+                                        />
+                                      ) : (
+                                        <span className="text-gray-300">—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap">
+                                      <input
+                                        type="text"
+                                        value={exp.currency || 'USD'}
+                                        onChange={e => {
+                                          const updated = [...parsedExpenses]
+                                          updated[idx].currency = e.target.value
+                                          setParsedExpenses(updated)
+                                        }}
+                                        className="w-16 text-xs border-gray-300 rounded px-1 py-0.5 uppercase"
+                                      />
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      <input
+                                        type="text"
+                                        value={exp.merchant || ''}
+                                        onChange={e => {
+                                          const updated = [...parsedExpenses]
+                                          updated[idx].merchant = e.target.value
+                                          setParsedExpenses(updated)
+                                        }}
+                                        className="w-full text-xs border-gray-300 rounded px-1 py-0.5"
+                                      />
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap">
+                                      <select
+                                        value={exp.payment_method || 'Credit Card'}
+                                        onChange={e => {
+                                          const updated = [...parsedExpenses]
+                                          updated[idx].payment_method = e.target.value
+                                          setParsedExpenses(updated)
+                                        }}
+                                        className="w-full text-xs border-gray-300 rounded px-1 py-0.5"
+                                      >
+                                        <option>Credit Card</option>
+                                        <option>Debit Card</option>
+                                        <option>Cash</option>
+                                        <option>Bank Transfer</option>
+                                      </select>
+                                    </td>
+                                    <td className="px-2 py-2 whitespace-nowrap">
+                                      <select
+                                        value={exp.category || 'Other'}
+                                        onChange={e => {
+                                          const updated = [...parsedExpenses]
+                                          updated[idx].category = e.target.value
+                                          setParsedExpenses(updated)
+                                        }}
+                                        className="w-full text-xs border-gray-300 rounded px-1 py-0.5"
+                                      >
+                                        {definedCategoryNames.map(c => <option key={c} value={c}>{c}</option>)}
+                                        <option value="Other">Other</option>
+                                      </select>
+                                    </td>
+                                    <td className="px-2 py-2 text-xs text-gray-500">
+                                      {exp.raw_category || exp.category || 'Other'}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="flex justify-end gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParsedExpenses([])
+                              setImportMediaType('none')
+                            }}
+                            className="text-gray-600 hover:text-gray-800 text-sm font-medium px-3 py-2"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveImported}
+                            disabled={loading || selectedImportIndices.length === 0}
+                            className="inline-flex justify-center rounded-md border border-transparent bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+                          >
+                            {loading ? 'Importing...' : `Import ${selectedImportIndices.length} selected`}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      {error && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>}
+
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Amount</label>
+                        <div className="relative rounded-2xl shadow-sm overflow-hidden border-2 border-gray-100 dark:border-gray-700 focus-within:border-primary-500 dark:focus-within:border-primary-400 transition-all">
                           <input
                             type="number"
-                            name="amount"
-                            id="amount"
+                            step="0.01"
                             required
-                            step="any"
                             value={formData.amount}
-                            onChange={handleInputChange}
-                            className="input"
-                            placeholder="0.00 (use negative for refund)"
+                            onChange={e => setFormData({ ...formData, amount: e.target.value })}
+                            className={`block w-full bg-gray-50 dark:bg-gray-900/50 dark:text-white pl-4 pr-24 py-4 text-3xl font-bold border-none focus:ring-0 placeholder:text-gray-300 dark:placeholder:text-gray-700`}
+                            placeholder="0.00"
                           />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+                            <select
+                              value={formData.currency}
+                              onChange={e => setFormData({ ...formData, currency: e.target.value })}
+                              className="h-10 rounded-xl border-none bg-white dark:bg-gray-800 py-0 pl-3 pr-8 text-sm font-semibold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary-500 shadow-sm"
+                            >
+                              <option value="USD">🇺🇸 USD</option>
+                              <option value="EUR">🇪🇺 EUR</option>
+                              <option value="GBP">🇬🇧 GBP</option>
+                              <option value="CAD">🇨🇦 CAD</option>
+                              <option value="INR">🇮🇳 INR</option>
+                              <option value="AED">🇦🇪 AED</option>
+                              <option value="AUD">🇦🇺 AUD</option>
+                              <option value="JPY">🇯🇵 JPY</option>
+                              <option value="SAR">🇸🇦 SAR</option>
+                              <option value="QAR">🇶🇦 QAR</option>
+                              <option value="SGD">🇸🇬 SGD</option>
+                            </select>
+                          </div>
                         </div>
+                      </div>
 
-                        <div>
-                          <label htmlFor="occurred_on" className="label">
-                            Date
+                      {formData.type === 'transfer' ? (
+                        <>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Date</label>
+                            <input
+                              type="date"
+                              required
+                              value={formData.occurred_on}
+                              onChange={e => setFormData({ ...formData, occurred_on: e.target.value })}
+                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">From Account</label>
+                              <select
+                                value={formData.account_id}
+                                onChange={e => handleAccountChange(e.target.value)}
+                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
+                                required
+                              >
+                                <option value="">Select Source Account</option>
+                                {accounts.map(acc => (
+                                  <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">To Account</label>
+                              <select
+                                value={formData.toAccountId}
+                                onChange={e => setFormData({ ...formData, toAccountId: e.target.value })}
+                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
+                                required
+                              >
+                                <option value="">Select Destination Account</option>
+                                {accounts.filter(acc => acc.id !== formData.account_id).map(acc => (
+                                  <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Date</label>
+                            <input
+                              type="date"
+                              required
+                              value={formData.occurred_on}
+                              onChange={e => setFormData({ ...formData, occurred_on: e.target.value })}
+                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Account</label>
+                            <select
+                              value={formData.account_id}
+                              onChange={e => handleAccountChange(e.target.value)}
+                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                            >
+                              <option value="" disabled>Select Account</option>
+                              {accounts.map(acc => (
+                                <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                              ))}
+                              {/* Fallback for no accounts */}
+                              {accounts.length === 0 && <option value="">Cash (Default)</option>}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Category - Hide for transfers */}
+                      {formData.type !== 'transfer' && (
+                        <div className="space-y-1">
+                          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">
+                            {formData.type === 'income' ? 'Income Category' : 'Expense Category'}
+                          </label>
+                          <select
+                            value={formData.category}
+                            onChange={e => setFormData({ ...formData, category: e.target.value })}
+                            className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                          >
+                            <option value="">Select a category...</option>
+                            {definedCategoryNames.map(c => <option key={c} value={c}>{c}</option>)}
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Merchant/Source */}
+                      {formData.type !== 'transfer' && (
+                        <div className="space-y-1">
+                          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">
+                            {formData.type === 'income' ? 'Source' : 'Merchant'}
                           </label>
                           <input
-                            type="date"
-                            name="occurred_on"
-                            id="occurred_on"
-                            required
-                            value={formData.occurred_on}
-                            onChange={handleInputChange}
-                            className="input"
+                            type="text"
+                            value={formData.merchant}
+                            onChange={e => setFormData({ ...formData, merchant: e.target.value })}
+                            className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 font-medium"
+                            placeholder={formData.type === 'income' ? 'e.g. Employer, Client' : 'e.g. Uber, Walmart'}
                           />
                         </div>
-                      </div>
+                      )}
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label htmlFor="currency" className="label">
-                            Currency
-                          </label>
-                          <select
-                            name="currency"
-                            id="currency"
-                            required
-                            value={formData.currency}
-                            onChange={handleInputChange}
-                            className="input"
-                          >
-                            <option value="USD">USD ($)</option>
-                            <option value="EUR">EUR (€)</option>
-                            <option value="GBP">GBP (£)</option>
-                            <option value="CAD">CAD (C$)</option>
-                            <option value="AUD">AUD (A$)</option>
-                            <option value="INR">INR (₹)</option>
-                            <option value="JPY">JPY (¥)</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label htmlFor="payment_method" className="label">
-                            Payment Method
-                          </label>
-                          <select
-                            name="payment_method"
-                            id="payment_method"
-                            required
-                            value={formData.payment_method}
-                            onChange={handleInputChange}
-                            className="input"
-                          >
-                            <option value="Credit Card">Credit Card</option>
-                            <option value="Debit Card">Debit Card</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
-                            <option value="Digital Wallet">Digital Wallet</option>
-                            <option value="Interact">Interact</option>
-                            <option value="Cash">Cash</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label htmlFor="category" className="label">
-                          Category
-                        </label>
-                        <select
-                          name="category"
-                          id="category"
-                          required
-                          value={formData.category}
-                          onChange={async (e) => {
-                            const val = e.target.value
-                            if (val === '__add__') {
-                              const newName = window.prompt('Enter new category name:')
-                              if (newName && newName.trim()) {
-                                const created = await addCategory(newName)
-                                if (created) {
-                                  setFormData(prev => ({ ...prev, category: created.name }))
-                                  return
-                                }
-                              }
-                              // If cancelled or failed, don't change the select
-                              return
-                            }
-                            handleInputChange(e)
-                          }}
-                          className="input"
-                        >
-                          <option value="">Select a category</option>
-                          {definedCategoryNames.map((cat) => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                          <option value="__add__">+ Add new…</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label htmlFor="merchant" className="label">
-                          Merchant
-                        </label>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Note (Optional)</label>
                         <input
                           type="text"
-                          name="merchant"
-                          id="merchant"
-                          required
-                          value={formData.merchant}
-                          onChange={handleInputChange}
-                          className="input"
-                          placeholder="Where did you spend?"
+                          value={formData.note}
+                          onChange={e => setFormData({ ...formData, note: e.target.value })}
+                          className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
                         />
                       </div>
 
                       <div>
-                        <label htmlFor="attachment" className="label">
-                          Bill Attachment (Optional)
-                        </label>
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <input
-                            type="file"
-                            id="attachment"
-                            accept="image/*"
-                            onChange={handleFileChange}
-                            className="hidden"
-                          />
-                          <label
-                            htmlFor="attachment"
-                            className="flex-1 cursor-pointer inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            Choose File
-                          </label>
-                          <label
-                            htmlFor="attachment-camera"
-                            className="flex-1 cursor-pointer inline-flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500 sm:flex-none"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            Camera
-                          </label>
-                          <input
-                            type="file"
-                            id="attachment-camera"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={handleFileChange}
-                            className="hidden"
-                          />
-                        </div>
-                        <p className="mt-1 text-xs text-gray-500">Max 5MB • JPG, PNG, etc.</p>
-                        {formData.attachment && (
-                          <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex-1">
-                                <p className="text-xs font-medium text-gray-700 mb-2">Attached Image:</p>
-                                <img 
-                                  src={formData.attachment} 
-                                  alt="Bill preview" 
-                                  className="h-24 w-auto object-contain border rounded bg-white" 
-                                />
-                              </div>
-                              <button 
-                                type="button"
-                                onClick={() => {
-                                  setFormData(prev => ({ ...prev, attachment: '' }))
-                                  // Reset file inputs
-                                  const fileInput = document.getElementById('attachment') as HTMLInputElement
-                                  const cameraInput = document.getElementById('attachment-camera') as HTMLInputElement
-                                  if (fileInput) fileInput.value = ''
-                                  if (cameraInput) cameraInput.value = ''
-                                }}
-                                className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                                title="Remove attachment"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Attachment</label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileChange}
+                          className="mt-1 block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary-50 dark:file:bg-primary-900/30 file:text-primary-700 dark:file:text-primary-400 hover:file:bg-primary-100 dark:hover:file:bg-primary-900/50"
+                        />
+                        {formData.attachment && <p className="text-xs text-green-600 dark:text-green-400 mt-1">Image attached</p>}
                       </div>
 
-                      <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:space-x-3 sm:flex-row-reverse">
-                        <button
-                          type="submit"
-                          className="btn-primary w-full sm:w-auto sm:flex-initial disabled:opacity-60"
-                          disabled={loading}
-                        >
-                          {loading ? (mode === 'edit' ? 'Updating…' : 'Saving...') : (mode === 'edit' ? 'Update Expense' : 'Add Expense')}
-                        </button>
+                      <div className="mt-8 flex flex-col-reverse sm:grid sm:grid-cols-2 gap-3">
                         <button
                           type="button"
-                          className="btn-secondary w-full sm:w-auto sm:flex-initial"
+                          className="w-full justify-center rounded-xl bg-gray-100 dark:bg-gray-700 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
                           onClick={onClose}
                         >
                           Cancel
                         </button>
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className={`w-full justify-center rounded-xl px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary-500/20 transition-all active:scale-[0.98] ${formData.type === 'income'
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-500/20'
+                            : formData.type === 'transfer'
+                              ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-blue-500/20'
+                              : 'bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800'
+                            }`}
+                        >
+                          {loading ? 'Saving...' : 'Save Transaction'}
+                        </button>
                       </div>
                     </form>
-                  </div>
-                </div>
-              </Dialog.Panel>
-            </Transition.Child>
-          </div>
-        </div>
-      </Dialog>
-    </Transition.Root>
-
-    {/* PDF Converter Modal */}
-    <Transition.Root show={showPdfConverterModal} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={closeConverterModal}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
-        </Transition.Child>
-
-        <div className="fixed inset-0 z-10 flex items-center justify-center p-2 sm:p-4">
-          <Transition.Child
-            as={Fragment}
-            enter="ease-out duration-300"
-            enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-            enterTo="opacity-100 translate-y-0 sm:scale-100"
-            leave="ease-in duration-200"
-            leaveFrom="opacity-100 translate-y-0 sm:scale-100"
-            leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
-          >
-            <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all w-full h-full sm:w-11/12 sm:h-[85vh] lg:w-5/6 lg:h-[90vh] flex flex-col">
-              
-              <div className="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
-                <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900">
-                  PDF Converter - Upload and Convert PDF to Transactions
-                </Dialog.Title>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={openPopupConverter}
-                    className="inline-flex items-center rounded-md border border-gray-300 bg-white p-2 sm:px-3 sm:py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-                    title="Open in popup if iframe doesn't load"
-                  >
-                    <ExternalLink className="h-5 w-5 sm:h-4 sm:w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Open in popup</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 p-1"
-                    onClick={closeConverterModal}
-                  >
-                    <span className="sr-only">Close</span>
-                    <X className="h-6 w-6" />
-                  </button>
-                </div>
-              </div>
-              
-              {/* Iframe container - takes up remaining space */}
-              <div className="flex-1 overflow-hidden bg-gray-100">
-                <iframe
-                  ref={iframeRef}
-                  src="https://expenso-pdfexcel.vercel.app/?embed=1"
-                  className="w-full h-full border-0"
-                  title="PDF Converter"
-                  allow="clipboard-write"
-                />
+                  </>
+                )}
               </div>
             </Dialog.Panel>
-          </Transition.Child>
+          </div>
         </div>
-      </Dialog>
-    </Transition.Root>
-    </>
+      </Dialog >
+    </Transition.Root >
   )
 }

@@ -20,7 +20,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const authHeader = req.headers.authorization
     if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing token' })
     const token = authHeader.slice('Bearer '.length)
-    
+
     const decodedToken = await adminAuth.verifyIdToken(token)
     const userId = decodedToken.uid
 
@@ -71,18 +71,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await deleteCollection(userId, 'budgets', collectionDeletes)
     await deleteCollection(userId, 'categories', collectionDeletes)
     await deleteCollection(userId, 'monthly_income', collectionDeletes)
-    
-    // Delete user settings
+
+    // Delete user settings & environments
     try {
-      await adminDb.collection('user_settings').doc(userId).delete()
-      collectionDeletes.push({ collection: 'user_settings' })
+      await Promise.all([
+        adminDb.collection('user_settings').doc(userId).delete(),
+        adminDb.collection('users').doc(userId).delete() // Contains environment metadata
+      ])
+      collectionDeletes.push({ collection: 'user_settings_and_profiles' })
     } catch (error: any) {
-      collectionDeletes.push({ collection: 'user_settings', error: error.message })
+      collectionDeletes.push({ collection: 'user_settings_and_profiles', error: error.message })
     }
 
     // Delete user from Auth
     await adminAuth.deleteUser(userId)
-    
+
     return res.status(200).json({ success: true, soft: false, exported: !!exportPayload, data: exportPayload, details: collectionDeletes })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'Unexpected error'

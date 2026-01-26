@@ -23,24 +23,24 @@ export default function Auth() {
     const handleMouseMove = (e: MouseEvent) => {
       const character = document.querySelector('#auth-character')
       if (!character) return
-      
+
       const rect = character.getBoundingClientRect()
       const characterX = rect.left + rect.width / 2
       const characterY = rect.top + rect.height / 2
-      
+
       // Calculate angle and distance from character to mouse
       const deltaX = e.clientX - characterX
       const deltaY = e.clientY - characterY
-      
+
       // Limit eye movement range
       const maxDistance = 8
       const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY)
       const limitedDistance = Math.min(distance / 30, maxDistance)
-      
+
       const angle = Math.atan2(deltaY, deltaX)
       const x = Math.cos(angle) * limitedDistance
       const y = Math.sin(angle) * limitedDistance
-      
+
       setEyePosition({ x, y })
     }
 
@@ -61,7 +61,7 @@ export default function Auth() {
     }
   }, [router.query.reset])
 
-  useEffect(() => { 
+  useEffect(() => {
     if (user && !isRecoveryMode) {
       const redirect = router.query.redirect as string
       router.replace(redirect && redirect !== '/auth' ? redirect : '/')
@@ -122,7 +122,7 @@ export default function Auth() {
   return (
     <div className="min-h-screen flex bg-white overflow-hidden">
       <Head>
-        <title>{isRecoveryMode ? 'Reset Password' : (isLogin ? 'Sign In' : 'Sign Up')} - Expenso</title>
+        <title>{`${isRecoveryMode ? 'Reset Password' : (isLogin ? 'Sign In' : 'Sign Up')} - Expenso`}</title>
         <meta name="description" content="Access your Expenso account" />
         <style>{`
           @keyframes hiphop-bounce {
@@ -150,7 +150,7 @@ export default function Auth() {
           .animate-beat { animation: beat-pulse 2s infinite; }
         `}</style>
       </Head>
-      
+
       {/* Left Side - Hip Hop Mouse Party (Desktop Only) */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-indigo-900 items-center justify-center overflow-hidden">
         {/* Dynamic Background */}
@@ -162,128 +162,128 @@ export default function Auth() {
         </div>
 
         <div className="relative z-10 flex flex-col items-center">
-            {/* The Dancing Mouse Character */}
-            <div id="auth-character" className="relative w-64 h-64 mb-8 group animate-hiphop-body cursor-pointer">
-              <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-2xl">
-                {/* Shadow */}
-                <ellipse cx="100" cy="180" rx="60" ry="10" fill="black" opacity="0.3" className="animate-pulse" />
-                
-                {/* Body */}
-                <g transform="translate(100, 140)">
-                   <rect x="-25" y="-40" width="50" height="70" rx="20" fill="#4B5563" /> {/* Hoodie body */}
-                   <path d="M-15 -30 L-15 30" stroke="#374151" strokeWidth="2" /> {/* Zipper */}
+          {/* The Dancing Mouse Character */}
+          <div id="auth-character" className="relative w-64 h-64 mb-8 group animate-hiphop-body cursor-pointer">
+            <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-2xl">
+              {/* Shadow */}
+              <ellipse cx="100" cy="180" rx="60" ry="10" fill="black" opacity="0.3" className="animate-pulse" />
+
+              {/* Body */}
+              <g transform="translate(100, 140)">
+                <rect x="-25" y="-40" width="50" height="70" rx="20" fill="#4B5563" /> {/* Hoodie body */}
+                <path d="M-15 -30 L-15 30" stroke="#374151" strokeWidth="2" /> {/* Zipper */}
+              </g>
+
+              {/* Left Arm */}
+              <g transform="translate(70, 110)">
+                <path d="M0 0 Q-20 20 -30 10" stroke="#4B5563" strokeWidth="12" strokeLinecap="round" fill="none">
+                  <animateTransform attributeName="transform" type="rotate" values="10; -20; 10" dur="1.5s" repeatCount="indefinite" />
+                </path>
+                <circle cx="-30" cy="10" r="8" fill="#FEF3C7" /> {/* Hand */}
+              </g>
+
+              {/* Right Arm */}
+              <g transform="translate(130, 110)">
+                <path d="M0 0 Q20 20 30 10" stroke="#4B5563" strokeWidth="12" strokeLinecap="round" fill="none">
+                  <animateTransform attributeName="transform" type="rotate" values="-10; 20; -10" dur="1.5s" repeatCount="indefinite" />
+                </path>
+                <circle cx="30" cy="10" r="8" fill="#FEF3C7" /> {/* Hand */}
+              </g>
+
+              {/* Head Group */}
+              <g transform="translate(100, 80)">
+                <animateTransform attributeName="transform" type="rotate" values="-5; 5; -5" dur="1.5s" repeatCount="indefinite" additive="sum" />
+
+                {/* Ears */}
+                <circle cx="-35" cy="-25" r="25" fill="#374151" />
+                <circle cx="-35" cy="-25" r="15" fill="#F9A8D4" opacity="0.6" />
+                <circle cx="35" cy="-25" r="25" fill="#374151" />
+                <circle cx="35" cy="-25" r="15" fill="#F9A8D4" opacity="0.6" />
+
+                {/* Face base */}
+                <circle cx="0" cy="0" r="40" fill="#FEF3C7" />
+
+                {/* Cap (Sideways/Backwards) */}
+                <path d="M-42 -10 Q0 -50 42 -10 L45 -5 Q0 -40 -45 -5 Z" fill="#6366F1" transform="rotate(-15) translate(0, -5)" />
+                <path d="M-45 -5 Q0 -40 45 -5 L45 0 Q0 -35 -45 0 Z" fill="#4338CA" transform="rotate(-15) translate(0, -5)" />
+
+                {/* Sunglasses */}
+                <g transform="translate(0, 5)">
+                  <rect x="-28" y="-8" width="24" height="14" rx="4" fill="#111827" />
+                  <rect x="4" y="-8" width="24" height="14" rx="4" fill="#111827" />
+                  <line x1="-4" y1="-4" x2="4" y2="-4" stroke="#111827" strokeWidth="2" />
+                  {/* Reflections */}
+                  <path d="M-22 -4 L-14 4" stroke="white" strokeWidth="1" opacity="0.3" />
+                  <path d="M10 -4 L18 4" stroke="white" strokeWidth="1" opacity="0.3" />
                 </g>
 
-                {/* Left Arm */}
-                <g transform="translate(70, 110)">
-                  <path d="M0 0 Q-20 20 -30 10" stroke="#4B5563" strokeWidth="12" strokeLinecap="round" fill="none">
-                    <animateTransform attributeName="transform" type="rotate" values="10; -20; 10" dur="1.5s" repeatCount="indefinite" />
-                  </path>
-                  <circle cx="-30" cy="10" r="8" fill="#FEF3C7" /> {/* Hand */}
-                </g>
-
-                {/* Right Arm */}
-                <g transform="translate(130, 110)">
-                  <path d="M0 0 Q20 20 30 10" stroke="#4B5563" strokeWidth="12" strokeLinecap="round" fill="none">
-                    <animateTransform attributeName="transform" type="rotate" values="-10; 20; -10" dur="1.5s" repeatCount="indefinite" />
-                  </path>
-                  <circle cx="30" cy="10" r="8" fill="#FEF3C7" /> {/* Hand */}
-                </g>
-
-                {/* Head Group */}
-                <g transform="translate(100, 80)">
-                  <animateTransform attributeName="transform" type="rotate" values="-5; 5; -5" dur="1.5s" repeatCount="indefinite" additive="sum" />
-                  
-                  {/* Ears */}
-                  <circle cx="-35" cy="-25" r="25" fill="#374151" />
-                  <circle cx="-35" cy="-25" r="15" fill="#F9A8D4" opacity="0.6" />
-                  <circle cx="35" cy="-25" r="25" fill="#374151" />
-                  <circle cx="35" cy="-25" r="15" fill="#F9A8D4" opacity="0.6" />
-
-                  {/* Face base */}
-                  <circle cx="0" cy="0" r="40" fill="#FEF3C7" />
-                  
-                  {/* Cap (Sideways/Backwards) */}
-                  <path d="M-42 -10 Q0 -50 42 -10 L45 -5 Q0 -40 -45 -5 Z" fill="#6366F1" transform="rotate(-15) translate(0, -5)" />
-                  <path d="M-45 -5 Q0 -40 45 -5 L45 0 Q0 -35 -45 0 Z" fill="#4338CA" transform="rotate(-15) translate(0, -5)" />
-
-                  {/* Sunglasses */}
-                  <g transform="translate(0, 5)">
-                    <rect x="-28" y="-8" width="24" height="14" rx="4" fill="#111827" />
-                    <rect x="4" y="-8" width="24" height="14" rx="4" fill="#111827" />
-                    <line x1="-4" y1="-4" x2="4" y2="-4" stroke="#111827" strokeWidth="2" />
-                    {/* Reflections */}
-                    <path d="M-22 -4 L-14 4" stroke="white" strokeWidth="1" opacity="0.3" />
-                    <path d="M10 -4 L18 4" stroke="white" strokeWidth="1" opacity="0.3" />
-                  </g>
-                  
-                  {/* Eyes (Tracking - visible behind/through sunglasses if we wanted, but let's make them peek or just be the interaction point. Actually, let's keep the original eyes but maybe slightly modified or below sunglasses) */}
-                  {/* Let's disable tracking eyes for the "Cool Sunglasses" version OR put the eyes on the lens as a reflection? */}
-                  {/* To keep the cool mouse-tracking feature, let's put the eyes *on the glasses* effectively, or remove sunglasses and rely on the cap. 
+                {/* Eyes (Tracking - visible behind/through sunglasses if we wanted, but let's make them peek or just be the interaction point. Actually, let's keep the original eyes but maybe slightly modified or below sunglasses) */}
+                {/* Let's disable tracking eyes for the "Cool Sunglasses" version OR put the eyes on the lens as a reflection? */}
+                {/* To keep the cool mouse-tracking feature, let's put the eyes *on the glasses* effectively, or remove sunglasses and rely on the cap. 
                       Let's stick to the requested "Hip Hop Mouse". Sunglasses are key. Maybe tracking eyes *are* the pupils?
                       Let's revert to cute eyes + Cap, no sunglasses for better interaction. */}
-                  
+
+              </g>
+
+              {/* Head (Redrawn for Logic Consistency with Eye Tracking) */}
+              <g transform="translate(100, 80)">
+                <animateTransform attributeName="transform" type="rotate" values="-5; 5; -5" dur="1.5s" repeatCount="indefinite" additive="sum" />
+
+                {/* Ears */}
+                <circle cx="-35" cy="-35" r="28" fill="#1F2937" /> {/* Dark Grey Ears */}
+                <circle cx="-35" cy="-35" r="18" fill="#FCA5A5" opacity="0.8" /> {/* Pink inner */}
+                <circle cx="35" cy="-35" r="28" fill="#1F2937" />
+                <circle cx="35" cy="-35" r="18" fill="#FCA5A5" opacity="0.8" />
+
+                {/* Face */}
+                <circle cx="0" cy="0" r="45" fill="#FEF3C7" stroke="#F59E0B" strokeWidth="2" />
+
+                {/* Cap */}
+                <path d="M-45 -10 C-45 -40, 45 -40, 45 -10" fill="#4F46E5" /> {/* Cap Dome */}
+                <rect x="-50" y="-10" width="100" height="8" rx="2" fill="#4338CA" /> {/* Cap Brim Base */}
+                <path d="M-50 -6 L-60 10 L40 -6 Z" fill="#4338CA" transform="rotate(-10)" /> {/* Cap Visor */}
+
+                {/* Eyes Container */}
+                <g transform="translate(0, 10)">
+                  {/* Left Eye */}
+                  <ellipse cx="-15" cy="0" rx="10" ry="12" fill="white" stroke="#374151" strokeWidth="1.5" />
+                  <circle cx={-15 + eyePosition.x} cy={eyePosition.y} r="4" fill="#1F2937" />
+                  <circle cx={-15 + eyePosition.x + 1.5} cy={eyePosition.y - 1.5} r="1.5" fill="white" />
+
+                  {/* Right Eye */}
+                  <ellipse cx="15" cy="0" rx="10" ry="12" fill="white" stroke="#374151" strokeWidth="1.5" />
+                  <circle cx={15 + eyePosition.x} cy={eyePosition.y} r="4" fill="#1F2937" />
+                  <circle cx={15 + eyePosition.x + 1.5} cy={eyePosition.y - 1.5} r="1.5" fill="white" />
                 </g>
-                 
-               {/* Head (Redrawn for Logic Consistency with Eye Tracking) */}
-               <g transform="translate(100, 80)"> 
-                  <animateTransform attributeName="transform" type="rotate" values="-5; 5; -5" dur="1.5s" repeatCount="indefinite" additive="sum"/>
-                   
-                  {/* Ears */}
-                  <circle cx="-35" cy="-35" r="28" fill="#1F2937" /> {/* Dark Grey Ears */}
-                  <circle cx="-35" cy="-35" r="18" fill="#FCA5A5" opacity="0.8" /> {/* Pink inner */}
-                  <circle cx="35" cy="-35" r="28" fill="#1F2937" />
-                  <circle cx="35" cy="-35" r="18" fill="#FCA5A5" opacity="0.8" />
 
-                   {/* Face */}
-                  <circle cx="0" cy="0" r="45" fill="#FEF3C7" stroke="#F59E0B" strokeWidth="2"/>
+                {/* Nose & Mouth */}
+                <circle cx="0" cy="22" r="3" fill="#FCA5A5" />
+                <path d="M-10 32 Q0 40 10 32" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" />
 
-                   {/* Cap */}
-                   <path d="M-45 -10 C-45 -40, 45 -40, 45 -10" fill="#4F46E5" /> {/* Cap Dome */}
-                   <rect x="-50" y="-10" width="100" height="8" rx="2" fill="#4338CA" /> {/* Cap Brim Base */}
-                   <path d="M-50 -6 L-60 10 L40 -6 Z" fill="#4338CA" transform="rotate(-10)" /> {/* Cap Visor */}
+                {/* Whiskers */}
+                <line x1="-20" y1="25" x2="-40" y2="20" stroke="#9CA3AF" strokeWidth="1" />
+                <line x1="-20" y1="28" x2="-40" y2="30" stroke="#9CA3AF" strokeWidth="1" />
+                <line x1="20" y1="25" x2="40" y2="20" stroke="#9CA3AF" strokeWidth="1" />
+                <line x1="20" y1="28" x2="40" y2="30" stroke="#9CA3AF" strokeWidth="1" />
+              </g>
 
-                   {/* Eyes Container */}
-                  <g transform="translate(0, 10)">
-                    {/* Left Eye */}
-                    <ellipse cx="-15" cy="0" rx="10" ry="12" fill="white" stroke="#374151" strokeWidth="1.5" />
-                    <circle cx={-15 + eyePosition.x} cy={eyePosition.y} r="4" fill="#1F2937" />
-                    <circle cx={-15 + eyePosition.x + 1.5} cy={eyePosition.y - 1.5} r="1.5" fill="white" />
-                    
-                    {/* Right Eye */}
-                    <ellipse cx="15" cy="0" rx="10" ry="12" fill="white" stroke="#374151" strokeWidth="1.5" />
-                    <circle cx={15 + eyePosition.x} cy={eyePosition.y} r="4" fill="#1F2937" />
-                    <circle cx={15 + eyePosition.x + 1.5} cy={eyePosition.y - 1.5} r="1.5" fill="white" />
-                  </g>
+              {/* Music Notes */}
+              <g className="animate-bounce" style={{ animationDuration: '2s' }}>
+                <path d="M160 60 Q170 50 180 60 L180 90" stroke="white" strokeWidth="2" fill="none" opacity="0.5" />
+                <circle cx="180" cy="90" r="3" fill="white" opacity="0.5" />
+              </g>
+              <g className="animate-bounce" style={{ animationDuration: '2.5s', animationDelay: '0.5s' }}>
+                <path d="M40 60 Q30 50 20 60 L20 90" stroke="white" strokeWidth="2" fill="none" opacity="0.5" />
+                <circle cx="20" cy="90" r="3" fill="white" opacity="0.5" />
+              </g>
 
-                  {/* Nose & Mouth */}
-                  <circle cx="0" cy="22" r="3" fill="#FCA5A5" />
-                  <path d="M-10 32 Q0 40 10 32" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" />
-                  
-                  {/* Whiskers */}
-                  <line x1="-20" y1="25" x2="-40" y2="20" stroke="#9CA3AF" strokeWidth="1"/>
-                  <line x1="-20" y1="28" x2="-40" y2="30" stroke="#9CA3AF" strokeWidth="1"/>
-                  <line x1="20" y1="25" x2="40" y2="20" stroke="#9CA3AF" strokeWidth="1"/>
-                  <line x1="20" y1="28" x2="40" y2="30" stroke="#9CA3AF" strokeWidth="1"/>
-               </g>
+            </svg>
+          </div>
 
-               {/* Music Notes */}
-               <g className="animate-bounce" style={{ animationDuration: '2s' }}>
-                 <path d="M160 60 Q170 50 180 60 L180 90" stroke="white" strokeWidth="2" fill="none" opacity="0.5" />
-                 <circle cx="180" cy="90" r="3" fill="white" opacity="0.5" />
-               </g>
-               <g className="animate-bounce" style={{ animationDuration: '2.5s', animationDelay: '0.5s' }}>
-                 <path d="M40 60 Q30 50 20 60 L20 90" stroke="white" strokeWidth="2" fill="none" opacity="0.5" />
-                 <circle cx="20" cy="90" r="3" fill="white" opacity="0.5" />
-               </g>
-
-              </svg>
-            </div>
-
-            <div className="text-center transform translate-y-4">
-               <h2 className="text-3xl font-extrabold text-white mb-2">Join the Rhythm</h2>
-               <p className="text-indigo-200">Expenso helps you stay in tune with your finances.</p>
-            </div>
+          <div className="text-center transform translate-y-4">
+            <h2 className="text-3xl font-extrabold text-white mb-2">Join the Rhythm</h2>
+            <p className="text-indigo-200">Expenso helps you stay in tune with your finances.</p>
+          </div>
         </div>
       </div>
 
@@ -293,11 +293,11 @@ export default function Auth() {
           <div className="text-center">
             {/* Mobile-only branding/character for continuity */}
             <div className="lg:hidden flex justify-center mb-6">
-                 <CalcBrand size={48} />
+              <CalcBrand size={48} />
             </div>
-             {/* Desktop branding top-left of right panel? No, let's just header it */}
+            {/* Desktop branding top-left of right panel? No, let's just header it */}
             <div className="hidden lg:flex justify-center mb-8">
-                 <CalcBrand size={48} />
+              <CalcBrand size={48} />
             </div>
 
             <h2 className="text-3xl font-bold text-gray-900">{isRecoveryMode ? 'Set new password' : (isLogin ? 'Welcome back' : 'Create account')}</h2>
@@ -366,8 +366,8 @@ export default function Auth() {
                 <div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">Or</span></div>
               </div>
               <div className="mt-6 space-y-3">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={async () => {
                     setLoading(true)
                     setError(null)
@@ -391,8 +391,8 @@ export default function Auth() {
                   </svg>
                   <span className="ml-2">Continue with Google</span>
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={async () => {
                     setLoading(true)
                     setError(null)

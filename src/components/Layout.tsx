@@ -1,12 +1,27 @@
 import { ReactNode, useState, useEffect } from 'react'
 import Sidebar from './Sidebar'
+import OnboardingWizard from './OnboardingWizard'
+import { usePreferences } from '@/contexts/PreferencesContext'
+import { useAuth } from '@/contexts/AuthContext'
 
 interface LayoutProps {
   children: ReactNode
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const { user } = useAuth()
+  const { hasOnboarded, loading: prefsLoading } = usePreferences()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  useEffect(() => {
+    if (!prefsLoading && user && hasOnboarded === false) {
+      setShowOnboarding(true)
+    } else {
+      setShowOnboarding(false)
+    }
+  }, [hasOnboarded, prefsLoading, user])
+
   const [touchStart, setTouchStart] = useState<number | null>(null)
   const [touchEnd, setTouchEnd] = useState<number | null>(null)
 
@@ -24,7 +39,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const onTouchEnd = () => {
     if (!touchStart || !touchEnd) return
-    
+
     const distance = touchStart - touchEnd
     const isLeftSwipe = distance > minSwipeDistance
     const isRightSwipe = distance < -minSwipeDistance
@@ -34,7 +49,7 @@ export default function Layout({ children }: LayoutProps) {
     if (isRightSwipe && touchStart < 50) {
       setSidebarOpen(true)
     }
-    
+
     // Swipe Left -> Close Sidebar (if open)
     // This is handled by the Sidebar backdrop usually, but we can add it here too
     if (isLeftSwipe && sidebarOpen) {
@@ -43,8 +58,8 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div 
-      className="min-h-screen bg-gray-50"
+    <div
+      className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -55,6 +70,7 @@ export default function Layout({ children }: LayoutProps) {
           {children}
         </div>
       </main>
+      <OnboardingWizard open={showOnboarding} onClose={() => setShowOnboarding(false)} />
     </div>
   )
 }
