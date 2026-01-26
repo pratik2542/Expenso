@@ -405,7 +405,7 @@ function DashboardContent() {
               {/* Mobile View - Modern Card Layout */}
               <div className="block lg:hidden space-y-2">
                 {recentExpenses.map(e => (
-                  <div key={e.id} className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white dark:from-gray-700 dark:to-gray-700 rounded-xl border border-gray-100 dark:border-gray-600 active:scale-[0.98] transition-transform">
+                  <div key={e.id} className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-white dark:from-gray-700/50 dark:to-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-600 active:scale-[0.98] transition-transform">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
                         <span className="text-base font-bold text-red-500 dark:text-red-400">
@@ -585,6 +585,7 @@ function DashboardContent() {
                             outerRadius="85%"
                             paddingAngle={3}
                             dataKey="value"
+                            stroke="none"
                           >
                             {categoryData.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />
@@ -593,10 +594,11 @@ function DashboardContent() {
                           <Tooltip
                             formatter={(value) => [formatCurrencyExplicit(Number(value), viewCurrency), 'Amount']}
                             contentStyle={{
-                              backgroundColor: '#1f2937',
+                              backgroundColor: 'rgb(31, 41, 55)',
                               border: 'none',
                               borderRadius: '12px',
-                              padding: '8px 12px'
+                              padding: '8px 12px',
+                              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                             }}
                             itemStyle={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}
                           />

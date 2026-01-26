@@ -1,6 +1,6 @@
 {
   "name": "expenso",
-  "version": "1.0.23",
+  "version": "1.0.29",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -17,11 +17,13 @@
     "predeploy": "npm run security:check"
   },
   "dependencies": {
-    "@capacitor/android": "^6.2.1",
-    "@capacitor/app": "^6.0.3",
+    "@capacitor/android": "^8.0.1",
+    "@capacitor/app": "^8.0.0",
     "@capacitor/cli": "^6.2.1",
-    "@capacitor/core": "^6.2.1",
-    "@codetrix-studio/capacitor-google-auth": "^3.4.0-rc.4",
+    "@capacitor/core": "^8.0.1",
+    "@capacitor/filesystem": "^8.1.0",
+    "@capacitor/share": "^8.0.0",
+    "@codetrix-studio/capacitor-google-auth": "3.4.0-rc.4",
     "@headlessui/react": "^2.2.7",
     "@tanstack/react-query": "^5.0.0",
     "@types/nodemailer": "^7.0.4",

@@ -206,6 +206,7 @@ export default function Charts({ startDate, endDate, currency, periodLabel }: { 
                     dataKey="value"
                     activeIndex={-1}
                     activeShape={false}
+                    stroke="none"
                   >
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={palette[index % palette.length]} />

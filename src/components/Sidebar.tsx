@@ -18,7 +18,8 @@ import {
     SparklesIcon,
     CoinsIcon,
     MoonIcon,
-    SunIcon
+    SunIcon,
+    Globe
 } from 'lucide-react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
@@ -26,6 +27,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { CalcBrand } from '@/components/Logo'
 import { Capacitor } from '@capacitor/core'
+import { useEnvironment } from '@/contexts/EnvironmentContext'
 import EnvironmentSwitcher from './EnvironmentSwitcher'
 
 // Categorized navigation for desktop
@@ -88,7 +90,31 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     const router = useRouter()
     const [mounted, setMounted] = useState(false)
     const { user, signOut } = useAuth()
-    const { darkMode, toggleDarkMode } = usePreferences()
+    const { darkMode, toggleDarkMode, currency: prefCurrency } = usePreferences()
+    const { currentEnvironment, createEnvironment } = useEnvironment()
+
+    // Create Environment Modal State
+    const [showCreateEnv, setShowCreateEnv] = useState(false)
+    const [newEnvName, setNewEnvName] = useState('')
+    const [newEnvCurrency, setNewEnvCurrency] = useState('USD')
+    const [newEnvCountry, setNewEnvCountry] = useState('')
+    const [isCreatingEnv, setIsCreatingEnv] = useState(false)
+
+    const handleCreateEnv = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setIsCreatingEnv(true)
+        try {
+            await createEnvironment(newEnvName, newEnvCurrency, newEnvCountry)
+            setShowCreateEnv(false)
+            setNewEnvName('')
+            setNewEnvCountry('')
+        } catch (err) {
+            console.error(err)
+            alert('Failed to create environment')
+        } finally {
+            setIsCreatingEnv(false)
+        }
+    }
 
     // Use props if provided, otherwise internal state
     const sidebarOpen = isOpen !== undefined ? isOpen : internalOpen
@@ -102,6 +128,13 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
             .then(data => setAppVersion(data.version))
             .catch(() => { })
     }, [])
+
+    // Sync default currency
+    useEffect(() => {
+        if (showCreateEnv && !newEnvCountry) {
+            setNewEnvCurrency(currentEnvironment.currency || prefCurrency || 'USD')
+        }
+    }, [showCreateEnv, currentEnvironment.currency, prefCurrency])
 
     if (!mounted) {
         return (
@@ -415,7 +448,10 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
 
                                     {/* Environment Switcher */}
                                     <div className="mb-4">
-                                        <EnvironmentSwitcher />
+                                        <EnvironmentSwitcher onNewClick={() => {
+                                            setShowMoreMenu(false)
+                                            setShowCreateEnv(true)
+                                        }} />
                                     </div>
 
                                     {/* Menu items */}
@@ -520,7 +556,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                             <div className="text-xl font-bold text-gray-900 dark:text-white"><CalcBrand size={26} /></div>
                         </div>
 
-                        <EnvironmentSwitcher />
+                        <EnvironmentSwitcher onNewClick={() => setShowCreateEnv(true)} />
 
                         <nav className="mt-2 flex-1 px-2 space-y-4">
                             {navigationGroups.map((group) => (
@@ -649,6 +685,137 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                             Close
                                         </button>
                                     </div>
+                                </Dialog.Panel>
+                            </Transition.Child>
+                        </div>
+                    </div>
+                </Dialog>
+            </Transition>
+            {/* Create Environment Modal - Global */}
+            <Transition appear show={showCreateEnv} as={Fragment}>
+                <Dialog as="div" className="relative z-[100]" onClose={() => setShowCreateEnv(false)}>
+                    <Transition.Child
+                        as={Fragment}
+                        enter="ease-out duration-300"
+                        enterFrom="opacity-0"
+                        enterTo="opacity-100"
+                        leave="ease-in duration-200"
+                        leaveFrom="opacity-100"
+                        leaveTo="opacity-0"
+                    >
+                        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity" />
+                    </Transition.Child>
+
+                    <div className="fixed inset-0 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center p-4 text-center">
+                            <Transition.Child
+                                as={Fragment}
+                                enter="ease-out duration-300"
+                                enterFrom="opacity-0 scale-95"
+                                enterTo="opacity-100 scale-100"
+                                leave="ease-in duration-200"
+                                leaveFrom="opacity-100 scale-100"
+                                leaveTo="opacity-0 scale-95"
+                            >
+                                <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-3xl bg-white dark:bg-gray-800 p-6 lg:p-8 text-left align-middle shadow-2xl border-none transition-all">
+                                    <Dialog.Title
+                                        as="h3"
+                                        className="text-xl lg:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-6"
+                                    >
+                                        <Globe className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+                                        Create New Environment
+                                    </Dialog.Title>
+                                    <form onSubmit={handleCreateEnv} className="space-y-6">
+                                        <div className="space-y-1">
+                                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Environment Name</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-3 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium placeholder:text-gray-300 dark:placeholder:text-gray-700"
+                                                placeholder="e.g. Canada Trip, Business"
+                                                value={newEnvName}
+                                                onChange={e => setNewEnvName(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Country</label>
+                                            <select
+                                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-3 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                                                value={newEnvCountry}
+                                                onChange={e => {
+                                                    const val = e.target.value
+                                                    setNewEnvCountry(val)
+                                                    // Auto set currency based on country
+                                                    if (val === 'Canada') setNewEnvCurrency('CAD')
+                                                    else if (val === 'India') setNewEnvCurrency('INR')
+                                                    else if (val === 'USA') setNewEnvCurrency('USD')
+                                                    else if (val === 'UK') setNewEnvCurrency('GBP')
+                                                    else if (val === 'Europe') setNewEnvCurrency('EUR')
+                                                }}
+                                            >
+                                                <option value="">Select Country...</option>
+                                                <option value="Canada">🇨🇦 Canada</option>
+                                                <option value="India">🇮🇳 India</option>
+                                                <option value="USA">🇺🇸 USA</option>
+                                                <option value="UK">🇬🇧 UK</option>
+                                                <option value="Europe">🇪🇺 Europe</option>
+                                                <option value="Other">🌐 Other</option>
+                                            </select>
+                                        </div>
+
+                                        {newEnvCountry && (
+                                            <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-100 dark:border-primary-800 rounded-xl p-3.5 space-y-2">
+                                                <div className="flex justify-between items-center text-[10px] lg:text-xs">
+                                                    <span className="text-primary-600 dark:text-primary-400 font-bold uppercase tracking-wider">Currency:</span>
+                                                    <span className="text-primary-900 dark:text-white font-black px-2 py-0.5 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-primary-100 dark:border-primary-800">{newEnvCurrency}</span>
+                                                </div>
+                                                <div className="flex justify-between items-center text-[10px] lg:text-xs">
+                                                    <span className="text-primary-600 dark:text-primary-400 font-bold uppercase tracking-wider">Time Zone:</span>
+                                                    <span className="text-primary-900 dark:text-white font-black px-2 py-0.5 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-primary-100 dark:border-primary-800">
+                                                        {newEnvCountry === 'Canada' ? 'America/Toronto' :
+                                                            newEnvCountry === 'India' ? 'Asia/Kolkata' :
+                                                                newEnvCountry === 'USA' ? 'America/New_York' :
+                                                                    newEnvCountry === 'UK' ? 'Europe/London' :
+                                                                        newEnvCountry === 'Europe' ? 'Europe/Paris' : 'UTC'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-1">
+                                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Override Currency (Optional)</label>
+                                            <select
+                                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-3 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                                                value={newEnvCurrency}
+                                                onChange={e => setNewEnvCurrency(e.target.value)}
+                                            >
+                                                <option value="USD">USD - US Dollar</option>
+                                                <option value="CAD">CAD - Canadian Dollar</option>
+                                                <option value="INR">INR - Indian Rupee</option>
+                                                <option value="EUR">EUR - Euro</option>
+                                                <option value="GBP">GBP - British Pound</option>
+                                                <option value="AUD">AUD - Australian Dollar</option>
+                                                <option value="JPY">JPY - Japanese Yen</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="mt-8 flex flex-col-reverse lg:grid lg:grid-cols-2 gap-3 pb-2">
+                                            <button
+                                                type="button"
+                                                className="w-full justify-center rounded-xl bg-gray-100 dark:bg-gray-700 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
+                                                onClick={() => setShowCreateEnv(false)}
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="submit"
+                                                disabled={isCreatingEnv}
+                                                className="w-full justify-center rounded-xl bg-gradient-to-r from-primary-600 to-primary-700 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary-500/20 hover:from-primary-700 hover:to-primary-800 transition-all active:scale-[0.98] disabled:opacity-50"
+                                            >
+                                                {isCreatingEnv ? 'Creating...' : 'Create Workspace'}
+                                            </button>
+                                        </div>
+                                    </form>
                                 </Dialog.Panel>
                             </Transition.Child>
                         </div>

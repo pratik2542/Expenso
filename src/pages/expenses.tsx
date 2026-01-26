@@ -14,6 +14,9 @@ import AddExpenseModal from '@/components/AddExpenseModal'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { getApiUrl } from '@/lib/config'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 
 interface Expense {
   id: string
@@ -180,7 +183,7 @@ export default function Expenses() {
 
 
   // CSV Export function
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     if (!expenses || expenses.length === 0) {
       alert('No expenses to export')
       return
@@ -208,16 +211,42 @@ export default function Expenses() {
       ...rows.map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(','))
     ].join('\n')
 
-    // Create blob and download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', `expenses_${monthFilter || 'all'}.csv`)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    const fileName = `expenses_${monthFilter || 'all'}.csv`
+
+    // Check if running on native platform (iOS/Android)
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // Write file to device storage
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: csvContent,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8
+        })
+
+        // Share the file using native share dialog
+        await Share.share({
+          title: 'Export Expenses',
+          text: 'Your expenses CSV file',
+          url: result.uri,
+          dialogTitle: 'Save or Share CSV'
+        })
+      } catch (error) {
+        console.error('Error exporting CSV on mobile:', error)
+        alert('Failed to export CSV. Please try again.')
+      }
+    } else {
+      // Web platform - use blob download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', fileName)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
   }
 
   // Compact currency formatter for small boxes
@@ -676,10 +705,14 @@ export default function Expenses() {
                       setDuplicateGroups([])
                       setSelectedDuplicateIds(new Set())
                       try {
+                        // Optimizing payload: slice to last 500 AND remove heavy fields like attachment
+                        const expensesToCheck = expenses.slice(0, 500).map(({ id, amount, currency, merchant, occurred_on, category, note }) => ({
+                          id, amount, currency, merchant, occurred_on, category, note
+                        }));
                         const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ expenses })
+                          body: JSON.stringify({ expenses: expensesToCheck })
                         })
                         if (!resp.ok) throw new Error('Failed to detect duplicates')
                         const json = await resp.json()
@@ -916,10 +949,16 @@ export default function Expenses() {
                         setDuplicateGroups([])
                         setSelectedDuplicateIds(new Set())
                         try {
+                          // Chunk expenses to avoid 413 Payload Too Large
+                          // Check reasonably recent expenses and strip heavy fields
+                          const expensesToCheck = expenses.slice(0, 500).map(({ id, amount, currency, merchant, occurred_on, category, note }) => ({
+                            id, amount, currency, merchant, occurred_on, category, note
+                          }));
+                          
                           const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ expenses })
+                            body: JSON.stringify({ expenses: expensesToCheck })
                           })
                           if (!resp.ok) throw new Error('Failed to detect duplicates')
                           const json = await resp.json()
@@ -1266,7 +1305,7 @@ export default function Expenses() {
                 </div>
                 {/* Desktop/table view */}
                 <div className="hidden md:block overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 table-fixed">
                     <thead className="bg-gray-50 dark:bg-gray-700">
                       <tr>
                         <th className="px-6 py-3 w-12">
@@ -1283,19 +1322,19 @@ export default function Expenses() {
                             />
                           </div>
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 w-[30%] text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Description
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 w-[20%] text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Category
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 w-[20%] text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Date
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 w-[20%] text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Amount
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        <th className="px-6 py-3 w-[10%] text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
@@ -1323,8 +1362,8 @@ export default function Expenses() {
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="max-w-[200px] sm:max-w-xs">
-                                <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900 dark:text-white break-words line-clamp-2">
                                   {(() => {
                                     const clean = String(expense.note || '').replace(/\bTransaction date\b[^;\n]*;\s*\bPosting date\b[^\n]*/gi, '').trim()
                                     if (clean) return clean
@@ -1442,11 +1481,11 @@ export default function Expenses() {
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
                 {/* Category Filter */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Category</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Category</label>
                   <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   >
                     <option value="">All Categories</option>
                     {categories.map((c) => (
@@ -1457,13 +1496,13 @@ export default function Expenses() {
 
                 {/* Sort By */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Sort By</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Sort By</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       onClick={() => setSortBy('occurred_on')}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${sortBy === 'occurred_on'
                         ? 'bg-primary-600 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                     >
                       📅 Date
@@ -1472,7 +1511,7 @@ export default function Expenses() {
                       onClick={() => setSortBy('amount')}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${sortBy === 'amount'
                         ? 'bg-primary-600 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                     >
                       💰 Amount
@@ -1481,7 +1520,7 @@ export default function Expenses() {
                       onClick={() => setSortBy('note')}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${sortBy === 'note'
                         ? 'bg-primary-600 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                     >
                       📝 Note
@@ -1491,13 +1530,13 @@ export default function Expenses() {
 
                 {/* Sort Order */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Order</label>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">Order</label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setSortOrder('desc')}
                       className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${sortOrder === 'desc'
                         ? 'bg-primary-600 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                     >
                       ↓ Descending
@@ -1506,7 +1545,7 @@ export default function Expenses() {
                       onClick={() => setSortOrder('asc')}
                       className={`px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${sortOrder === 'asc'
                         ? 'bg-primary-600 text-white shadow-md'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                     >
                       ↑ Ascending
@@ -1522,14 +1561,14 @@ export default function Expenses() {
                     setSortBy('occurred_on')
                     setSortOrder('desc')
                   }}
-                  className="w-full px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors text-sm"
+                  className="w-full px-4 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-medium rounded-lg transition-colors text-sm"
                 >
                   Clear All Filters
                 </button>
               </div>
 
               {/* Footer */}
-              <div className="border-t border-gray-200 p-4 bg-gray-50">
+              <div className="border-t border-gray-200 dark:border-gray-700 p-4 bg-gray-50 dark:bg-gray-800">
                 <button
                   onClick={() => setShowFilterModal(false)}
                   className="w-full px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-colors"
@@ -2022,9 +2061,9 @@ export default function Expenses() {
               </div>
 
               <div className="p-6 space-y-4">
-                <div className="flex items-start justify-between pb-4 border-b border-gray-200">
+                <div className="flex items-start justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
                   <div className="flex-1">
-                    <h3 className="text-xl font-bold text-gray-900 mb-1">
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
                       {(() => {
                         const clean = String(selectedExpense.note || '').replace(/\bTransaction date\b[^;\n]*;\s*\bPosting date\b[^\n]*/gi, '').trim()
                         if (clean) return clean
@@ -2033,14 +2072,14 @@ export default function Expenses() {
                         return 'No description'
                       })()}
                     </h3>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       {formatDate(selectedExpense.occurred_on, { year: 'numeric', month: 'long', day: 'numeric' })}
                       {' at '}
                       {new Date(selectedExpense.occurred_on).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
                     </p>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white">
                       <ConvertedAmount
                         amount={selectedExpense.amount}
                         currency={selectedExpense.currency}
@@ -2054,7 +2093,7 @@ export default function Expenses() {
 
                 <div className="space-y-3">
                   <div>
-                    <label className="text-sm font-medium text-gray-500">Category</label>
+                    <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</label>
                     <p className="mt-1">
                       <span className={categoryBadgeClass(normalizeCategory(selectedExpense.category, definedCategoryNames))}>
                         {normalizeCategory(selectedExpense.category, definedCategoryNames)}
@@ -2064,32 +2103,32 @@ export default function Expenses() {
 
                   {selectedExpense.merchant && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">Merchant</label>
-                      <p className="mt-1 text-base text-gray-900">{selectedExpense.merchant}</p>
+                      <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Merchant</label>
+                      <p className="mt-1 text-base text-gray-900 dark:text-gray-100">{selectedExpense.merchant}</p>
                     </div>
                   )}
 
                   {selectedExpense.payment_method && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">Payment Method</label>
-                      <p className="mt-1 text-base text-gray-900">{selectedExpense.payment_method}</p>
+                      <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Payment Method</label>
+                      <p className="mt-1 text-base text-gray-900 dark:text-gray-100">{selectedExpense.payment_method}</p>
                     </div>
                   )}
 
                   {selectedExpense.note && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500">Note</label>
-                      <p className="mt-1 text-base text-gray-900 whitespace-pre-wrap">{selectedExpense.note}</p>
+                      <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Note</label>
+                      <p className="mt-1 text-base text-gray-900 dark:text-gray-100 whitespace-pre-wrap">{selectedExpense.note}</p>
                     </div>
                   )}
 
                   {selectedExpense.attachment && (
                     <div>
-                      <label className="text-sm font-medium text-gray-500 mb-2 block">Attachment</label>
+                      <label className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 block">Attachment</label>
                       <img
                         src={selectedExpense.attachment}
                         alt="Receipt"
-                        className="w-full h-auto rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                        className="w-full h-auto rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity"
                         onClick={() => setViewAttachment(selectedExpense.attachment!)}
                       />
                     </div>

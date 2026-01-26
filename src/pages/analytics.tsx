@@ -662,7 +662,7 @@ export default function Analytics() {
                                             </BarChart>
                                           ) : (
                                             <PieChart>
-                                              <Pie data={chartData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label>
+                                              <Pie data={chartData.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={60} label stroke="none">
                                                 {chartData.data.map((entry: any, idx: number) => (
                                                   <Cell key={`cell-${idx}`} fill={['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6'][idx % 5]} />
                                                 ))}
