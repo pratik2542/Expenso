@@ -65,8 +65,8 @@ export default function Layout({ children }: LayoutProps) {
       onTouchEnd={onTouchEnd}
     >
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
-      <main className="lg:pl-64 pt-[env(safe-area-inset-top)]">
-        <div className="px-4 sm:px-6 lg:px-8 py-6 pb-32 lg:pb-8">
+      <main className="lg:pl-64 safe-area-top">
+        <div className="px-4 sm:px-6 lg:px-8 pt-12 lg:pt-8 pb-32 lg:pb-8">
           {children}
         </div>
       </main>
