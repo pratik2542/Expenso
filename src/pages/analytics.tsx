@@ -718,6 +718,8 @@ export default function Analytics() {
                       }}
                       placeholder="Ask a question about your finances..."
                       className="flex-1 px-3 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400"
+                      style={{ WebkitAppearance: 'none', fontSize: '16px' }}
+                      inputMode="text"
                       disabled={chatLoading}
                     />
                     <button

@@ -32,6 +32,7 @@ interface AddExpenseModalProps {
     transferAmount?: number
     toAccountId?: string
   } | null
+  initialImportMode?: boolean
 }
 
 const CATEGORY_MAP: Record<string, string> = {
@@ -88,7 +89,7 @@ function formatDateToISO(dateStr?: string): string {
   return localToday
 }
 
-export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', expense = null }: AddExpenseModalProps) {
+export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', expense = null, initialImportMode = false }: AddExpenseModalProps) {
   const { user } = useAuth()
   const { currentEnvironment, getCollection } = useEnvironment()
   const queryClient = useQueryClient()
@@ -164,8 +165,22 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const [error, setError] = useState<string | null>(null)
 
   // Import state
-  const [isImportMode, setIsImportMode] = useState(false)
+  const [isImportMode, setIsImportMode] = useState(initialImportMode)
   const [importMediaType, setImportMediaType] = useState<'none' | 'pdf' | 'excel'>('none')
+  
+  // Reset import mode when modal opens with initialImportMode
+  useEffect(() => {
+    if (open && initialImportMode) {
+      setIsImportMode(true)
+      setImportMediaType('none')
+      setParsedExpenses([])
+      setImportFile(null)
+    } else if (!open && !initialImportMode) {
+      // Only reset if closing and not in initial import mode
+      setIsImportMode(false)
+      setImportMediaType('none')
+    }
+  }, [open, initialImportMode])
   const [importing, setImporting] = useState(false)
   const [parsedExpenses, setParsedExpenses] = useState<any[]>([])
   const [selectedImportIndices, setSelectedImportIndices] = useState<number[]>([])
@@ -214,13 +229,17 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         })
       }
       setError(null)
-      setIsImportMode(false)
-      setImportMediaType('none')
+      // Only reset import mode if not opening with initialImportMode
+      // Don't reset if initialImportMode is true - let the other useEffect handle it
+      if (!initialImportMode) {
+        setIsImportMode(false)
+        setImportMediaType('none')
+      }
       setParsedExpenses([])
       setPdfModalOpen(false)
       setImportFile(null)
     }
-  }, [open, mode, expense, accounts, currentEnvironment])
+  }, [open, mode, expense, accounts, currentEnvironment, initialImportMode])
 
   // Sync currency with environment when it changes (but not during edit mode)
   useEffect(() => {
@@ -412,7 +431,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               amount: 0,
               currency: formData.currency,
               merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
-              payment_method: accounts.find(a => a.id === formData.account_id)?.name,
+              payment_method: formData.payment_method || accounts.find(a => a.id === formData.account_id)?.name || null,
               account_id: formData.account_id,
               note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
               occurred_on: formData.occurred_on,
@@ -445,7 +464,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               amount: 0, // Transfers don't affect net worth
               currency: formData.currency,
               merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
-              payment_method: accounts.find(a => a.id === formData.account_id)?.name,
+              payment_method: formData.payment_method || accounts.find(a => a.id === formData.account_id)?.name || null,
               account_id: formData.account_id,
               note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
               occurred_on: formData.occurred_on,
@@ -471,7 +490,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         amount: storedAmount,
         currency: formData.currency,
         merchant: formData.merchant || (formData.type === 'income' ? 'Income Source' : 'Unknown'),
-        payment_method: formData.payment_method, // Stores Account Name
+        payment_method: formData.payment_method || null,
         account_id: formData.account_id || null,
         note: formData.note || '',
         occurred_on: formData.occurred_on,
@@ -631,7 +650,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
             amount: storedAmount, // Store with sign: negative for income, positive for expense
             currency: exp.currency || 'USD',
             merchant: exp.merchant || 'Unknown',
-            payment_method: 'Imported',
+            payment_method: exp.payment_method || 'Imported',
             account_id: importAccount,
             note: exp.note || '',
             occurred_on: exp.occurred_on,
@@ -688,13 +707,13 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+          <div className="flex min-h-full items-end justify-center p-4 pb-safe text-center sm:items-center sm:p-0" style={{ paddingBottom: 'max(calc(5rem + env(safe-area-inset-bottom, 0px)), 5rem)' }}>
             <Dialog.Panel className={`relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full ${isImportMode && parsedExpenses.length > 0
               ? 'sm:max-w-7xl' // Large for import table
               : isImportMode
                 ? 'sm:max-w-2xl' // Medium for import options
                 : 'sm:max-w-lg' // Small for manual entry
-              } sm:p-6`}>
+              } sm:p-6`} style={{ marginBottom: 'max(env(safe-area-inset-bottom, 0px), 0px)' }}>
               <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
                 <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
                   <X className="h-6 w-6" />
@@ -823,17 +842,17 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                       <div className="space-y-4">
                         <button
                           onClick={() => setImportMediaType('none')}
-                          className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1"
                         >
                           ← Back to options
                         </button>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">Target Account</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Target Account</label>
                           <select
                             value={importAccount}
                             onChange={e => setImportAccount(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
                           >
                             <option value="">Select Account...</option>
                             {accounts.map(acc => (
@@ -842,7 +861,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                           </select>
                         </div>
 
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-500 transition-colors">
+                        <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-primary-500 transition-colors">
                           <input
                             type="file"
                             id="file-upload"
@@ -856,10 +875,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                           />
                           <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
                             <Upload className="h-8 w-8 text-gray-400 mb-2" />
-                            <span className="text-sm text-gray-600 font-medium">
+                            <span className="text-sm text-gray-600 dark:text-gray-300 font-medium">
                               {importFile ? importFile.name : 'Click to upload Excel/CSV'}
                             </span>
-                            <span className="text-xs text-gray-500 mt-1">.xlsx, .xls, .csv</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">.xlsx, .xls, .csv</span>
                           </label>
                           {importFile && (
                             <button
@@ -878,34 +897,35 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                     {parsedExpenses.length > 0 && (
                       <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                          <p className="text-sm text-gray-600">
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
                             Parsed expenses: <strong>{parsedExpenses.length}</strong> • Selected: <strong>{selectedImportIndices.length}</strong>
                           </p>
                           <div className="flex gap-2">
-                            <button onClick={() => setSelectedImportIndices(parsedExpenses.map((_, i) => i))} className="text-xs text-primary-600 hover:underline">Select all</button>
-                            <button onClick={() => setSelectedImportIndices([])} className="text-xs text-gray-600 hover:underline">Clear</button>
+                            <button onClick={() => setSelectedImportIndices(parsedExpenses.map((_, i) => i))} className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Select all</button>
+                            <button onClick={() => setSelectedImportIndices([])} className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:underline">Clear</button>
                           </div>
                         </div>
 
-                        {/* Account & Currency Selectors */}
-                        <div className="grid grid-cols-2 gap-4">
+                        {/* Account, Currency & Payment Method Selectors */}
+                        <div className="grid grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Target Account</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Target Account *</label>
                             <select
                               value={importAccount}
                               onChange={e => setImportAccount(e.target.value)}
-                              className="mt-1 block w-full rounded-md border-gray-300 py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                              className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                              required
                             >
-                              <option value="">— keep detected —</option>
+                              <option value="">Select Account</option>
                               {accounts.map(acc => (
                                 <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
                               ))}
                             </select>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700">Currency Override</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Currency Override</label>
                             <select
-                              className="mt-1 block w-full rounded-md border-gray-300 py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                              className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
                               onChange={(e) => {
                                 if (e.target.value && e.target.value !== '') {
                                   // Apply currency to all selected items
@@ -941,13 +961,38 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               <option value="KRW">KRW - South Korean Won</option>
                             </select>
                           </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Payment Method Override</label>
+                            <select
+                              className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white py-2 text-base focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                              onChange={(e) => {
+                                if (e.target.value && e.target.value !== '') {
+                                  // Apply payment method to all parsed expenses
+                                  const updated = parsedExpenses.map((exp) => ({
+                                    ...exp,
+                                    payment_method: e.target.value
+                                  }))
+                                  setParsedExpenses(updated)
+                                }
+                              }}
+                            >
+                              <option value="">— keep detected —</option>
+                              <option value="Credit Card">Credit Card</option>
+                              <option value="Debit Card">Debit Card</option>
+                              <option value="Cash">Cash</option>
+                              <option value="Bank Transfer">Bank Transfer</option>
+                              <option value="UPI">UPI</option>
+                              <option value="NEFT">NEFT</option>
+                              <option value="Imported">Imported</option>
+                            </select>
+                          </div>
                         </div>
 
-                        <div className="max-h-96 overflow-y-auto border rounded-md">
-                          <table className="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead className="bg-gray-50 sticky top-0">
+                        <div className="max-h-96 overflow-y-auto border dark:border-gray-600 rounded-md">
+                          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-600 text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                               <tr>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                                   <input
                                     type="checkbox"
                                     checked={selectedImportIndices.length === parsedExpenses.length}
@@ -955,22 +1000,22 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                     className="rounded text-primary-600 focus:ring-primary-500"
                                   />
                                 </th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase">Income</th>
-                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 uppercase">Expense</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Currency</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Merchant</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Raw Category</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Income</th>
+                                <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Expense</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Currency</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Merchant</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Payment</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Category</th>
+                                <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Raw Category</th>
                               </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-600">
                               {parsedExpenses.map((exp, idx) => {
                                 const isIncome = exp.amount < 0
                                 const absAmount = Math.abs(exp.amount)
                                 return (
-                                  <tr key={idx} className={selectedImportIndices.includes(idx) ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                                  <tr key={idx} className={selectedImportIndices.includes(idx) ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}>
                                     <td className="px-2 py-2 whitespace-nowrap">
                                       <input
                                         type="checkbox"
@@ -991,7 +1036,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                           updated[idx].occurred_on = e.target.value
                                           setParsedExpenses(updated)
                                         }}
-                                        className="w-32 text-xs border-gray-300 rounded px-1 py-0.5"
+                                        className="w-32 text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-0.5"
                                       />
                                     </td>
                                     <td className="px-2 py-2 whitespace-nowrap text-right">
@@ -1005,10 +1050,10 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                             updated[idx].amount = -Math.abs(parseFloat(e.target.value) || 0)
                                             setParsedExpenses(updated)
                                           }}
-                                          className="w-20 text-xs border-gray-300 rounded px-1 py-0.5 text-right text-green-600 font-medium"
+                                          className="w-20 text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded px-1 py-0.5 text-right text-green-600 dark:text-green-400 font-medium"
                                         />
                                       ) : (
-                                        <span className="text-gray-300">—</span>
+                                        <span className="text-gray-300 dark:text-gray-600">—</span>
                                       )}
                                     </td>
                                     <td className="px-2 py-2 whitespace-nowrap text-right">
@@ -1022,7 +1067,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                             updated[idx].amount = Math.abs(parseFloat(e.target.value) || 0)
                                             setParsedExpenses(updated)
                                           }}
-                                          className="w-20 text-xs border-gray-300 rounded px-1 py-0.5 text-right text-gray-900 font-medium"
+                                          className="w-20 text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 rounded px-1 py-0.5 text-right text-gray-900 dark:text-white font-medium"
                                         />
                                       ) : (
                                         <span className="text-gray-300">—</span>
@@ -1037,7 +1082,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                           updated[idx].currency = e.target.value
                                           setParsedExpenses(updated)
                                         }}
-                                        className="w-16 text-xs border-gray-300 rounded px-1 py-0.5 uppercase"
+                                        className="w-16 text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-0.5 uppercase"
                                       />
                                     </td>
                                     <td className="px-2 py-2">
@@ -1049,23 +1094,27 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                           updated[idx].merchant = e.target.value
                                           setParsedExpenses(updated)
                                         }}
-                                        className="w-full text-xs border-gray-300 rounded px-1 py-0.5"
+                                        className="w-full text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-0.5"
                                       />
                                     </td>
                                     <td className="px-2 py-2 whitespace-nowrap">
                                       <select
-                                        value={exp.payment_method || 'Credit Card'}
+                                        value={exp.payment_method || ''}
                                         onChange={e => {
                                           const updated = [...parsedExpenses]
-                                          updated[idx].payment_method = e.target.value
+                                          updated[idx].payment_method = e.target.value || undefined
                                           setParsedExpenses(updated)
                                         }}
-                                        className="w-full text-xs border-gray-300 rounded px-1 py-0.5"
+                                        className="w-full text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-0.5"
                                       >
+                                        <option value="">— detected —</option>
                                         <option>Credit Card</option>
                                         <option>Debit Card</option>
                                         <option>Cash</option>
                                         <option>Bank Transfer</option>
+                                        <option>UPI</option>
+                                        <option>NEFT</option>
+                                        <option>Imported</option>
                                       </select>
                                     </td>
                                     <td className="px-2 py-2 whitespace-nowrap">
@@ -1076,13 +1125,13 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                           updated[idx].category = e.target.value
                                           setParsedExpenses(updated)
                                         }}
-                                        className="w-full text-xs border-gray-300 rounded px-1 py-0.5"
+                                        className="w-full text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-0.5"
                                       >
                                         {definedCategoryNames.map(c => <option key={c} value={c}>{c}</option>)}
                                         <option value="Other">Other</option>
                                       </select>
                                     </td>
-                                    <td className="px-2 py-2 text-xs text-gray-500">
+                                    <td className="px-2 py-2 text-xs text-gray-500 dark:text-gray-400">
                                       {exp.raw_category || exp.category || 'Other'}
                                     </td>
                                   </tr>
@@ -1098,7 +1147,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               setParsedExpenses([])
                               setImportMediaType('none')
                             }}
-                            className="text-gray-600 hover:text-gray-800 text-sm font-medium px-3 py-2"
+                            className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-sm font-medium px-3 py-2"
                           >
                             Cancel
                           </button>
@@ -1194,52 +1243,90 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               </select>
                             </div>
                           </div>
-                        </>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-1">
-                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Date</label>
-                            <input
-                              type="date"
-                              required
-                              value={formData.occurred_on}
-                              onChange={e => setFormData({ ...formData, occurred_on: e.target.value })}
-                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Account</label>
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Payment Method</label>
                             <select
-                              value={formData.account_id}
-                              onChange={e => handleAccountChange(e.target.value)}
-                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                              value={formData.payment_method || ''}
+                              onChange={e => setFormData({ ...formData, payment_method: e.target.value })}
+                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
                             >
-                              <option value="" disabled>Select Account</option>
-                              {accounts.map(acc => (
-                                <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
-                              ))}
-                              {/* Fallback for no accounts */}
-                              {accounts.length === 0 && <option value="">Cash (Default)</option>}
+                              <option value="">Select Payment Method</option>
+                              <option>Bank Transfer</option>
+                              <option>Wire Transfer</option>
+                              <option>ACH Transfer</option>
+                              <option>NEFT</option>
+                              <option>UPI</option>
+                              <option>Other</option>
                             </select>
                           </div>
-                        </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Date</label>
+                              <input
+                                type="date"
+                                required
+                                value={formData.occurred_on}
+                                onChange={e => setFormData({ ...formData, occurred_on: e.target.value })}
+                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Account</label>
+                              <select
+                                value={formData.account_id}
+                                onChange={e => handleAccountChange(e.target.value)}
+                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                              >
+                                <option value="" disabled>Select Account</option>
+                                {accounts.map(acc => (
+                                  <option key={acc.id} value={acc.id}>{acc.name} ({acc.currency})</option>
+                                ))}
+                                {/* Fallback for no accounts */}
+                                {accounts.length === 0 && <option value="">Cash (Default)</option>}
+                              </select>
+                            </div>
+                          </div>
+                        </>
                       )}
 
-                      {/* Category - Hide for transfers */}
+                      {/* Category and Payment Method - Hide for transfers */}
                       {formData.type !== 'transfer' && (
-                        <div className="space-y-1">
-                          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">
-                            {formData.type === 'income' ? 'Income Category' : 'Expense Category'}
-                          </label>
-                          <select
-                            value={formData.category}
-                            onChange={e => setFormData({ ...formData, category: e.target.value })}
-                            className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
-                          >
-                            <option value="">Select a category...</option>
-                            {definedCategoryNames.map(c => <option key={c} value={c}>{c}</option>)}
-                            <option value="Other">Other</option>
-                          </select>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">
+                              {formData.type === 'income' ? 'Income Category' : 'Expense Category'}
+                            </label>
+                            <select
+                              value={formData.category}
+                              onChange={e => setFormData({ ...formData, category: e.target.value })}
+                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                            >
+                              <option value="">Select a category...</option>
+                              {definedCategoryNames.map(c => <option key={c} value={c}>{c}</option>)}
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Payment Method</label>
+                            <select
+                              value={formData.payment_method || ''}
+                              onChange={e => setFormData({ ...formData, payment_method: e.target.value })}
+                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
+                            >
+                              <option value="">Select Payment Method</option>
+                              <option>Credit Card</option>
+                              <option>Debit Card</option>
+                              <option>Cash</option>
+                              <option>Bank Transfer</option>
+                              <option>UPI</option>
+                              <option>NEFT</option>
+                              <option>Check</option>
+                              <option>Other</option>
+                            </select>
+                          </div>
                         </div>
                       )}
 

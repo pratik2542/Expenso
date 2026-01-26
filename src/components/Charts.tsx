@@ -110,7 +110,7 @@ export default function Charts({ startDate, endDate, currency, periodLabel }: { 
         const amount = Number(data.amount || 0)
 
         // Only include expenses (exclude income and transfers)
-        const isIncome = data.type === 'income' || (!data.type && amount > 0)
+        const isIncome = data.type === 'income'
         const isTransfer = data.type === 'transfer'
         if (isIncome || isTransfer) return
 

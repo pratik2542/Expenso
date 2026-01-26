@@ -86,6 +86,19 @@ export default function CategoriesPage() {
     setSaving(true)
     setError(null)
     try {
+      // Check for duplicate category (case-insensitive, same type)
+      const normalizedName = newCategory.name.trim().toLowerCase()
+      const duplicate = categories.find(cat => 
+        cat.name.toLowerCase().trim() === normalizedName && 
+        (cat.type || 'expense') === newCategory.type
+      )
+
+      if (duplicate) {
+        setError(`A ${newCategory.type} category with the name "${newCategory.name.trim()}" already exists.`)
+        setSaving(false)
+        return
+      }
+
       const categoriesRef = getCollection('categories')
       await addDoc(categoriesRef, {
         name: newCategory.name.trim(),
@@ -125,6 +138,19 @@ export default function CategoriesPage() {
 
   const handleUpdate = async (id: string) => {
     if (!user || !editingName.trim()) return
+    
+    // Check for duplicate category (case-insensitive, same type, excluding current category)
+    const normalizedName = editingName.trim().toLowerCase()
+    const duplicate = categories.find(cat => 
+      cat.id !== id &&
+      cat.name.toLowerCase().trim() === normalizedName && 
+      (cat.type || 'expense') === editingType
+    )
+
+    if (duplicate) {
+      setError(`A ${editingType} category with the name "${editingName.trim()}" already exists.`)
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -247,6 +273,8 @@ export default function CategoriesPage() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm dark:text-white dark:placeholder:text-gray-500 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  style={{ WebkitAppearance: 'none' }}
+                  inputMode="search"
                 />
                 {searchTerm && (
                   <button

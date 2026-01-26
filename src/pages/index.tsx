@@ -25,6 +25,8 @@ import { usePreferences } from '@/contexts/PreferencesContext'
 import { SparklesIcon } from 'lucide-react'
 import { getApiUrl } from '@/lib/config'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
+import { useRouter } from 'next/router'
+import { Capacitor } from '@capacitor/core'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
@@ -58,7 +60,7 @@ function ConvertedAmount({ amount, currency, formatCurrencyExplicit, type, trans
 
   // Income/Expense: green/red with +/- sign
   const absAmount = Math.abs(amount)
-  const isIncome = amount > 0 || type === 'income'
+  const isIncome = type === 'income'
   const sign = isIncome ? '+' : '-'
   const colorClass = isIncome ? 'text-green-600' : 'text-red-600'
 
@@ -652,6 +654,14 @@ function DashboardContent() {
 
 export default function Home() {
   const { user, loading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    // If on mobile (native) and not logged in, redirect to auth immediately
+    if (!loading && !user && Capacitor.isNativePlatform()) {
+      router.replace('/auth')
+    }
+  }, [loading, user, router])
 
   if (loading) {
     return (
@@ -662,6 +672,14 @@ export default function Home() {
   }
 
   if (!user) {
+    // On native, show nothing (or spinner) while redirecting to avoid flashing Landing Page
+    if (Capacitor.isNativePlatform()) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
+        </div>
+      )
+    }
     return <LandingPage />
   }
 

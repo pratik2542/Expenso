@@ -14,11 +14,12 @@ const securityHeaders = [
     key: 'X-XSS-Protection',
     value: '1; mode=block'
   },
-  // Prevent clickjacking attacks
-  {
-    key: 'X-Frame-Options',
-    value: 'DENY'
-  },
+  // Prevent clickjacking attacks (but allow Firebase auth popups)
+  // Note: We use CSP frame-src instead for more granular control
+  // {
+  //   key: 'X-Frame-Options',
+  //   value: 'DENY'
+  // },
   // Control referrer information
   {
     key: 'Referrer-Policy',
@@ -33,8 +34,8 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'", // Required for styled components
       "img-src 'self' data: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app",
-      "frame-src https://expenso-pdfexcel.vercel.app", // Allow PDF converter iframe
+      "connect-src 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app https://www.google-analytics.com https://*.firebaseapp.com https://*.firebase.com",
+      "frame-src https://expenso-pdfexcel.vercel.app https://*.firebaseapp.com https://accounts.google.com", // Allow PDF converter iframe and Firebase auth popups
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'"

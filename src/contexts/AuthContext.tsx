@@ -63,43 +63,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen to Firebase auth state changes
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('Firebase auth state changed:', firebaseUser?.uid)
+      // Set user state immediately - don't wait for Firestore operations
       setUser(firebaseUser)
       setLoading(false)
       
       // When user signs in, save their display name and email to user_settings
+      // Do this asynchronously so it doesn't block the auth state update
       if (firebaseUser) {
         const displayName = firebaseUser.displayName
         const email = firebaseUser.email
         
         // Track login event
         if (analytics && typeof window !== 'undefined') {
-          logEvent(analytics as any, 'login', {
-            method: firebaseUser.providerData[0]?.providerId || 'email'
-          })
+          try {
+            logEvent(analytics as any, 'login', {
+              method: firebaseUser.providerData[0]?.providerId || 'email'
+            })
+          } catch (analyticsError) {
+            console.error('Analytics error:', analyticsError)
+          }
         }
         
-        try {
-          // Update or create user_settings with the name and email
-          const userSettingsRef = doc(db, 'user_settings', firebaseUser.uid)
-          
-          // First check if user_settings exists
-          const existingDoc = await getDoc(userSettingsRef)
-          
-          if (!existingDoc.exists()) {
-            // Only create/update if document doesn't exist
-            await setDoc(userSettingsRef, {
-              user_id: firebaseUser.uid,
-              full_name: displayName || '',
-              email: email || '',
-              updated_at: serverTimestamp()
-            })
+        // Save user info asynchronously - don't block auth state
+        (async () => {
+          try {
+            // Update or create user_settings with the name and email
+            const userSettingsRef = doc(db, 'user_settings', firebaseUser.uid)
             
-            // Initialize default categories for new user (from Google/GitHub sign-in)
-            await initializeDefaultCategories(firebaseUser.uid)
+            // First check if user_settings exists
+            const existingDoc = await getDoc(userSettingsRef)
+            
+            if (!existingDoc.exists()) {
+              // Only create/update if document doesn't exist
+              await setDoc(userSettingsRef, {
+                user_id: firebaseUser.uid,
+                full_name: displayName || '',
+                email: email || '',
+                updated_at: serverTimestamp()
+              })
+              
+              // Initialize default categories for new user (from Google/GitHub sign-in)
+              try {
+                await initializeDefaultCategories(firebaseUser.uid)
+              } catch (categoryError) {
+                console.error('Failed to initialize categories:', categoryError)
+                // Don't throw - this is not critical for login
+              }
+            }
+          } catch (error) {
+            console.error('Failed to save user info:', error)
+            // Don't throw - user is still authenticated even if Firestore save fails
           }
-        } catch (error) {
-          console.error('Failed to save user info:', error)
-        }
+        })()
       }
     })
     
@@ -159,12 +174,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const idToken = googleUser.authentication.idToken
         const credential = GoogleAuthProvider.credential(idToken)
         await signInWithCredential(auth, credential)
+        // Verify user is set
+        if (auth.currentUser) {
+          setUser(auth.currentUser)
+          setLoading(false)
+        }
       } else {
         const provider = new GoogleAuthProvider()
-        await signInWithPopup(auth, provider)
+        const result = await signInWithPopup(auth, provider)
+        console.log('Google sign in successful:', result.user.uid)
+        // Immediately update user state from the result
+        if (result.user) {
+          setUser(result.user)
+          setLoading(false)
+        }
       }
       return {}
     } catch (error: any) {
+      console.error('Google sign in error:', error.code, error.message)
+      // Don't show error if user cancelled the popup - this is expected behavior
+      if (error.code === 'auth/popup-closed-by-user') {
+        return { error: 'cancelled' } // Return special error code to indicate user cancelled
+      }
+      // For popup-blocked, provide a helpful message
+      if (error.code === 'auth/popup-blocked') {
+        return { error: 'Popup was blocked. Please allow popups for this site and try again.' }
+      }
       return { error: error.message }
     }
   }

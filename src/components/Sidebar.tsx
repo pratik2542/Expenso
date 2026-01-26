@@ -19,7 +19,8 @@ import {
     CoinsIcon,
     MoonIcon,
     SunIcon,
-    Globe
+    Globe,
+    UploadIcon
 } from 'lucide-react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
@@ -27,6 +28,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { CalcBrand } from '@/components/Logo'
 import { Capacitor } from '@capacitor/core'
+import { Keyboard } from '@capacitor/keyboard'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import EnvironmentSwitcher from './EnvironmentSwitcher'
 
@@ -99,6 +101,19 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     const [newEnvCurrency, setNewEnvCurrency] = useState('USD')
     const [newEnvCountry, setNewEnvCountry] = useState('')
     const [isCreatingEnv, setIsCreatingEnv] = useState(false)
+    const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
+
+    useEffect(() => {
+        if (Capacitor.isNativePlatform()) {
+            Keyboard.addListener('keyboardDidShow', () => setIsKeyboardOpen(true))
+            Keyboard.addListener('keyboardDidHide', () => setIsKeyboardOpen(false))
+            // Clean up listener? Capacitor plugins listeners are often persistent or global, but good practice to remove if possible.
+            // However, the removal API returns a promise, so we can ignore it for this simple usage or handle it properly.
+            return () => {
+                Keyboard.removeAllListeners()
+            }
+        }
+    }, [])
 
     const handleCreateEnv = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -139,6 +154,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     if (!mounted) {
         return (
             <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+
                 <div className="flex min-h-0 flex-1 flex-col bg-white border-r border-gray-200">
                     <div className="flex flex-1 flex-col overflow-y-auto pt-5 pb-4">
                         <div className="flex flex-shrink-0 items-center px-4 mb-6">
@@ -166,7 +182,17 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     return (
         <>
             {/* Mobile Bottom Navigation Bar with Center Quick Actions Button */}
-            <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden">
+            {(!isKeyboardOpen || !Capacitor.isNativePlatform()) && (
+            <div 
+                className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white dark:bg-gray-800" 
+                style={{ 
+                    paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0px)',
+                    position: 'fixed',
+                    willChange: 'transform',
+                    transform: 'translateZ(0)',
+                    WebkitTransform: 'translateZ(0)'
+                }}
+            >
                 {/* Quick Actions Button - Centered and elevated */}
                 <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-10">
                     <button
@@ -178,7 +204,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                 </div>
 
                 {/* Bottom Nav Bar with notch */}
-                <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 safe-area-bottom relative transition-colors">
+                <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 relative transition-colors">
                     {/* Notch cutout effect */}
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-20 h-5 bg-white dark:bg-gray-800 rounded-t-full transition-colors"></div>
 
@@ -251,6 +277,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                     </nav>
                 </div>
             </div>
+            )}
 
             {/* Quick Actions Menu Bottom Sheet */}
             <Transition appear show={showQuickActions} as={Fragment}>
@@ -314,6 +341,19 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                     <CreditCardIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
                                                 </div>
                                                 <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Expenses</span>
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    setShowQuickActions(false)
+                                                    router.push('/expenses?action=import')
+                                                }}
+                                                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/10 dark:to-blue-900/20 hover:from-blue-100 hover:to-blue-200 active:scale-95 transition-all"
+                                            >
+                                                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                                                    <UploadIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
+                                                </div>
+                                                <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Upload</span>
                                             </button>
                                         </div>
                                     </div>
@@ -472,6 +512,19 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                             <span className="font-medium">Income</span>
                                         </Link>
 
+                                        <button
+                                            onClick={() => {
+                                                setShowMoreMenu(false)
+                                                router.push('/expenses?action=import')
+                                            }}
+                                            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors"
+                                        >
+                                            <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                                <UploadIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                            </div>
+                                            <span className="font-medium">Upload File</span>
+                                        </button>
+
                                         <Link
                                             href="/categories"
                                             onClick={() => setShowMoreMenu(false)}
@@ -568,20 +621,31 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                         {group.items.map((item) => {
                                             const isActive = router.pathname === item.href
                                             return (
-                                                <Link
-                                                    key={item.name}
-                                                    href={item.href}
-                                                    className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${isActive
-                                                        ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400'
-                                                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
-                                                        }`}
-                                                >
-                                                    <item.icon className={`mr-3 h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-400'}`} />
-                                                    {item.name}
-                                                    {isActive && (
-                                                        <div className="ml-auto w-1 h-5 bg-primary-600 rounded-full" />
+                                                <div key={item.name}>
+                                                    <Link
+                                                        href={item.href}
+                                                        className={`group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${isActive
+                                                            ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400'
+                                                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
+                                                            }`}
+                                                    >
+                                                        <item.icon className={`mr-3 h-5 w-5 flex-shrink-0 ${isActive ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-400'}`} />
+                                                        {item.name}
+                                                        {isActive && (
+                                                            <div className="ml-auto w-1 h-5 bg-primary-600 rounded-full" />
+                                                        )}
+                                                    </Link>
+                                                    {/* Add Upload File submenu for Expenses */}
+                                                    {item.name === 'Expenses' && isActive && (
+                                                        <button
+                                                            onClick={() => router.push('/expenses?action=import')}
+                                                            className="group flex items-center px-3 py-2 pl-11 text-sm font-medium rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
+                                                        >
+                                                            <UploadIcon className="mr-3 h-4 w-4 flex-shrink-0 text-gray-400 dark:text-gray-500 group-hover:text-gray-500 dark:group-hover:text-gray-400" />
+                                                            Upload File
+                                                        </button>
                                                     )}
-                                                </Link>
+                                                </div>
                                             )
                                         })}
                                         {group.name === 'Settings' && !Capacitor.isNativePlatform() && (

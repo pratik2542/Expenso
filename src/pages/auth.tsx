@@ -48,6 +48,14 @@ export default function Auth() {
     return () => window.removeEventListener('mousemove', handleMouseMove)
   }, [])
 
+  // Redirect to dashboard if user is already logged in
+  useEffect(() => {
+    if (user) {
+      const redirect = router.query.redirect as string
+      router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+    }
+  }, [user, router])
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       if (window.location.hash.includes('type=recovery')) {
@@ -63,8 +71,15 @@ export default function Auth() {
 
   useEffect(() => {
     if (user && !isRecoveryMode) {
-      const redirect = router.query.redirect as string
-      router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+      console.log('User authenticated, redirecting...', user.uid)
+      // Small delay to ensure auth state is fully propagated
+      const timer = setTimeout(() => {
+        const redirect = router.query.redirect as string
+        const targetPath = redirect && redirect !== '/auth' ? redirect : '/'
+        console.log('Redirecting to:', targetPath)
+        router.replace(targetPath)
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [user, isRecoveryMode, router])
 
@@ -373,11 +388,45 @@ export default function Auth() {
                     setError(null)
                     const { error } = await signInWithGoogle()
                     if (error) {
+                      // Don't show error if user cancelled - just stop loading
+                      if (error === 'cancelled') {
+                        setLoading(false)
+                        return
+                      }
                       setError(error)
                       setLoading(false)
                     } else {
-                      const redirect = router.query.redirect as string
-                      router.replace(redirect && redirect !== '/auth' ? redirect : '/')
+                      // Sign in succeeded - check auth state directly and wait for context to update
+                      const { auth: firebaseAuth } = await import('@/lib/firebaseClient')
+                      
+                      // Wait for auth state to propagate
+                      let attempts = 0
+                      const checkAuth = setInterval(() => {
+                        attempts++
+                        const currentUser = firebaseAuth.currentUser
+                        const contextUser = user
+                        
+                        if (currentUser || contextUser) {
+                          clearInterval(checkAuth)
+                          setLoading(false)
+                          console.log('User authenticated, redirect should happen via useEffect')
+                          // The useEffect will handle redirect when user state updates
+                          // If it doesn't redirect within 1 second, force it
+                          setTimeout(() => {
+                            if (router.pathname === '/auth') {
+                              const redirect = router.query.redirect as string
+                              const targetPath = redirect && redirect !== '/auth' ? redirect : '/'
+                              console.log('Forcing redirect to:', targetPath)
+                              router.replace(targetPath)
+                            }
+                          }, 1000)
+                        } else if (attempts > 30) {
+                          // After 3 seconds, give up
+                          clearInterval(checkAuth)
+                          setLoading(false)
+                          setError('Sign in completed but authentication state not updated. Please refresh the page.')
+                        }
+                      }, 100)
                     }
                   }}
                   disabled={loading}

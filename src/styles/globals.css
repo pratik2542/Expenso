@@ -23,10 +23,59 @@ a {
 /* Safe area support for mobile devices with notches/home indicators */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
 }
 
 .safe-area-top {
   padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Android-specific fixes for navigation bar and keyboard */
+@supports (padding: max(0px)) {
+  .safe-area-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
+  }
+}
+
+/* Fixed bottom elements should account for safe area */
+.fixed-bottom-safe {
+  bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
+}
+
+/* Android keyboard handling */
+@media (max-width: 768px) {
+  /* Ensure inputs don't cause layout shift - 16px prevents zoom on iOS */
+  input[type="text"],
+  input[type="search"],
+  input[type="email"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  
+  /* Ensure bottom navigation has solid background and stays fixed */
+  [class*="fixed"][class*="bottom-0"] {
+    position: fixed !important;
+    bottom: 0 !important;
+    transform: translateZ(0) !important;
+    -webkit-transform: translateZ(0) !important;
+    will-change: transform;
+    background-color: inherit;
+    /* Extend background into safe area to prevent content bleed */
+    box-shadow: 0 -1px 0 0 rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Dark mode shadow */
+  .dark [class*="fixed"][class*="bottom-0"] {
+    box-shadow: 0 -1px 0 0 rgba(255, 255, 255, 0.1);
+  }
+  
+  /* Prevent content from bleeding under navigation */
+  html {
+    /* Ensure viewport accounts for safe areas */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }
 
 /* Component styles */

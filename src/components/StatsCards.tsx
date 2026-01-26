@@ -87,7 +87,7 @@ export default function StatsCards({
       snapshot.docs.forEach(doc => {
         const data = doc.data()
         const amount = Number(data.amount || 0)
-        const isIncome = data.type === 'income' || (!data.type && amount > 0) || amount > 0
+        const isIncome = data.type === 'income'
 
         if (isIncome) {
           incomeTotal += Math.abs(amount)

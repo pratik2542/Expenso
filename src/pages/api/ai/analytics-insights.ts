@@ -126,16 +126,16 @@ async function generateInsights(data: AnalyticsRequest): Promise<{ text: string;
   const { expenses, income, incomeRecords, monthlyIncomeRecords, month, year, currency, question, chatHistory, periodLabel, format = 'json' } = data
 
   // Calculate some stats
-  const totalSpend = expenses.reduce((sum, e) => sum + e.amount, 0)
+  const totalSpend = expenses.reduce((sum, e) => sum + Math.abs(e.amount), 0)
   const categorySpend = expenses.reduce((acc, e) => {
     const cat = e.category || 'Other'
-    acc[cat] = (acc[cat] || 0) + e.amount
+    acc[cat] = (acc[cat] || 0) + Math.abs(e.amount)
     return acc
   }, {} as Record<string, number>)
 
   const merchantSpend = expenses.reduce((acc, e) => {
     const merchant = e.merchant || 'Unknown'
-    acc[merchant] = (acc[merchant] || 0) + e.amount
+    acc[merchant] = (acc[merchant] || 0) + Math.abs(e.amount)
     return acc
   }, {} as Record<string, number>)
 
@@ -143,7 +143,7 @@ async function generateInsights(data: AnalyticsRequest): Promise<{ text: string;
   const monthlyExpenseBreakdown = expenses.reduce((acc, e) => {
     const date = new Date(e.occurred_on)
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-    acc[key] = (acc[key] || 0) + e.amount
+    acc[key] = (acc[key] || 0) + Math.abs(e.amount)
     return acc
   }, {} as Record<string, number>)
 
@@ -153,7 +153,7 @@ async function generateInsights(data: AnalyticsRequest): Promise<{ text: string;
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     const cat = e.category || 'Other'
     if (!acc[monthKey]) acc[monthKey] = {}
-    acc[monthKey][cat] = (acc[monthKey][cat] || 0) + e.amount
+    acc[monthKey][cat] = (acc[monthKey][cat] || 0) + Math.abs(e.amount)
     return acc
   }, {} as Record<string, Record<string, number>>)
 
@@ -201,6 +201,7 @@ Total Income for Period: ${totalIncome.toFixed(2)} ${currency}
     incomeSection = `Monthly Income: ${totalIncome.toFixed(2)} ${currency}`
   } else if (monthlyIncomeRecords && monthlyIncomeRecords.length > 0) {
     const totalIncome = monthlyIncomeRecords.reduce((sum, r) => sum + r.amount, 0)
+    // Avoid double counting if using absolute values for expenses
     const overallSavingsRate = totalIncome > 0 ? ((totalIncome - totalSpend) / totalIncome * 100) : 0
 
     incomeSection = `Total Income (All Time): ${totalIncome.toFixed(2)} ${currency}
@@ -284,13 +285,13 @@ ${question
       ? `All Transactions ${isAllTime ? '(sorted by date)' : `for ${timeHeader} (sorted by date)`}:
 ${expenses
         .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
-        .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+        .map(e => `- ${e.occurred_on}: ${Math.abs(e.amount).toFixed(2)} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
         .join('\n')}`
       : `Recent Transactions (last 10):
 ${expenses
         .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
         .slice(0, 10)
-        .map(e => `- ${e.occurred_on}: ${e.amount} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+        .map(e => `- ${e.occurred_on}: ${Math.abs(e.amount).toFixed(2)} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
         .join('\n')}`}
 `
 

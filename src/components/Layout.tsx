@@ -66,7 +66,13 @@ export default function Layout({ children }: LayoutProps) {
     >
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       <main className="lg:pl-64">
-        <div className="px-4 sm:px-6 lg:px-8 py-6 pb-32 lg:pb-8">
+        <div 
+          className="px-4 sm:px-6 lg:px-8 py-6 lg:pb-8"
+          style={{ 
+            paddingBottom: 'max(calc(8rem + env(safe-area-inset-bottom, 0px)), 8rem)',
+            minHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8rem)'
+          }}
+        >
           {children}
         </div>
       </main>

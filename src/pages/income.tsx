@@ -65,13 +65,13 @@ export default function IncomePage() {
             const expensesRef = getCollection('expenses')
             const q = query(expensesRef, orderBy('occurred_on', 'desc'))
             const snapshot = await getDocs(q)
-            // Filter for income transactions (type='income' or positive amounts)
+            // Filter for income transactions (only type='income')
             return snapshot.docs
                 .map(doc => ({
                     id: doc.id,
                     ...doc.data()
                 }))
-                .filter((item: any) => item.type === 'income' || item.amount > 0) as any[]
+                .filter((item: any) => item.type === 'income') as any[]
         }
     })
 

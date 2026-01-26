@@ -9,7 +9,7 @@ export default function Document() {
         
         {/* Global SEO */}
         <meta name="application-name" content="Expenso" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, interactive-widget=overlays-content" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Expenso" />
@@ -18,7 +18,7 @@ export default function Document() {
         <meta name="theme-color" content="#3b82f6" />
         
         {/* Content Security Policy for native app */}
-        <meta httpEquiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:; connect-src * 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app https://expense-ai-manager.vercel.app/; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; style-src * 'self' 'unsafe-inline'; frame-src https://expenso-pdfexcel.vercel.app;" />
+        <meta httpEquiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:; connect-src * 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app https://expense-ai-manager.vercel.app/ https://www.google-analytics.com https://*.firebaseapp.com https://*.firebase.com; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; style-src * 'self' 'unsafe-inline'; frame-src https://expenso-pdfexcel.vercel.app https://*.firebaseapp.com https://accounts.google.com;" />
         {/* Use login page logo as favicon */}
         <link rel="icon" type="image/png" href="/calculatorImg.png" />
         <link rel="shortcut icon" href="/calculatorImg.png" />

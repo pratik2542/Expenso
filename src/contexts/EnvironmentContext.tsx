@@ -157,15 +157,39 @@ export function EnvironmentProvider({ children }: { children: ReactNode }) {
             accountRef = collection(db, 'users', user.uid, 'environments', envId, 'accounts')
         }
 
-        // Add default expense categories
-        const expenseCatPromises = DEFAULT_EXPENSE_CATEGORIES.map(name => addDoc(categoryRef, {
+        // Get existing categories to check for duplicates
+        const { getDocs, query } = await import('firebase/firestore')
+        const existingCategoriesQuery = query(categoryRef)
+        const existingSnapshot = await getDocs(existingCategoriesQuery)
+        
+        // Get existing category names (case-insensitive for duplicate checking)
+        const existingCategoryNames = new Set(
+            existingSnapshot.docs.map(doc => {
+                const data = doc.data()
+                return `${(data.name || '').toLowerCase().trim()}_${data.type || 'expense'}`
+            })
+        )
+
+        // Filter out categories that already exist (checking both name and type)
+        const expenseCatsToAdd = DEFAULT_EXPENSE_CATEGORIES.filter(name => {
+            const key = `${name.toLowerCase().trim()}_expense`
+            return !existingCategoryNames.has(key)
+        })
+
+        const incomeCatsToAdd = DEFAULT_INCOME_CATEGORIES.filter(name => {
+            const key = `${name.toLowerCase().trim()}_income`
+            return !existingCategoryNames.has(key)
+        })
+
+        // Add default expense categories (only new ones)
+        const expenseCatPromises = expenseCatsToAdd.map(name => addDoc(categoryRef, {
             name,
             type: 'expense',
             created_at: new Date().toISOString()
         }))
 
-        // Add default income categories
-        const incomeCatPromises = DEFAULT_INCOME_CATEGORIES.map(name => addDoc(categoryRef, {
+        // Add default income categories (only new ones)
+        const incomeCatPromises = incomeCatsToAdd.map(name => addDoc(categoryRef, {
             name,
             type: 'income',
             created_at: new Date().toISOString()

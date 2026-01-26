@@ -41,12 +41,22 @@ export async function initializeDefaultCategories(userId: string): Promise<void>
     const existingCategoriesQuery = query(categoriesRef)
     const existingSnapshot = await getDocs(existingCategoriesQuery)
     
-    // Only initialize if user has no categories
-    if (existingSnapshot.empty) {
-      console.log('Initializing default categories for user:', userId)
+    // Get existing category names (case-insensitive for duplicate checking)
+    const existingCategoryNames = new Set(
+      existingSnapshot.docs.map(doc => doc.data().name?.toLowerCase().trim() || '')
+    )
+    
+    // Filter out categories that already exist
+    const categoriesToAdd = DEFAULT_CATEGORIES.filter(category => {
+      const normalizedName = category.name.toLowerCase().trim()
+      return !existingCategoryNames.has(normalizedName)
+    })
+    
+    if (categoriesToAdd.length > 0) {
+      console.log(`Initializing ${categoriesToAdd.length} default categories for user:`, userId)
       
-      // Add all default categories
-      const promises = DEFAULT_CATEGORIES.map(category =>
+      // Add only new categories
+      const promises = categoriesToAdd.map(category =>
         addDoc(categoriesRef, {
           name: category.name,
           icon: category.icon,
@@ -58,7 +68,7 @@ export async function initializeDefaultCategories(userId: string): Promise<void>
       await Promise.all(promises)
       console.log('Default categories initialized successfully')
     } else {
-      console.log('User already has categories, skipping initialization')
+      console.log('All default categories already exist, skipping initialization')
     }
   } catch (error) {
     console.error('Error initializing default categories:', error)

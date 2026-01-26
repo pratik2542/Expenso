@@ -2,7 +2,7 @@ import Head from 'next/head'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
-import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon, DownloadIcon, Wallet } from 'lucide-react'
+import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon, DownloadIcon, Wallet, UploadIcon } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState as useReactState } from 'react';
 import { db } from '@/lib/firebaseClient'
@@ -123,7 +123,7 @@ function ConvertedAmount({ amount, currency, formatCurrencyExplicit, type, trans
 
   // Income/Expense: green/red with +/- sign
   const absAmount = Math.abs(amount)
-  const isIncome = amount > 0 || type === 'income'
+  const isIncome = type === 'income'
   const sign = isIncome ? '+' : '-'
   const colorClass = isIncome ? 'text-green-600' : 'text-red-600'
 
@@ -134,6 +134,7 @@ export default function Expenses() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
+  const [shouldOpenInImportMode, setShouldOpenInImportMode] = useState(false)
   const { user } = useAuth()
   const { getCollection, currentEnvironment } = useEnvironment()
   const { formatCurrency, formatCurrencyExplicit, currency: prefCurrency, formatDate } = usePreferences()
@@ -154,6 +155,12 @@ export default function Expenses() {
   useEffect(() => {
     if (router.query.action === 'add') {
       setShowAdd(true)
+      setShouldOpenInImportMode(false)
+      // Clean up URL
+      router.replace('/expenses', undefined, { shallow: true })
+    } else if (router.query.action === 'import') {
+      setShowAdd(true)
+      setShouldOpenInImportMode(true)
       // Clean up URL
       router.replace('/expenses', undefined, { shallow: true })
     } else if (router.query.action === 'filter') {
@@ -197,7 +204,7 @@ export default function Expenses() {
       formatDate(expense.occurred_on),
       expense.amount.toString(),
       expense.currency,
-      expense.type || (expense.amount > 0 ? 'income' : 'expense'),
+      expense.type || 'expense',
       expense.category || 'Other',
       expense.merchant || '',
       expense.payment_method || '',
@@ -389,7 +396,7 @@ export default function Expenses() {
   // Total should be displayed in current preference currency; if multiple currencies exist, we can either:
   // (a) show per-currency subtotals, or (b) show a simple sum without conversion (not meaningful cross-currency).
   // For now we keep original logic but if multiple currencies are present we append a note.
-  // Calculate net total: income (positive) - expenses (negative) = income + |expenses|
+  // Calculate net total: Income - Expenses
   // For account filtering, handle transfers correctly:
   // - If transfer FROM this account (account_id matches): subtract transferAmount
   // - If transfer TO this account (toAccountId matches): add transferAmount
@@ -404,7 +411,13 @@ export default function Expenses() {
         return sum + (expense.transferAmount || 0)
       }
     }
-    // Regular expenses and income
+    // Regular expenses and income: Income adds, Expenses subtract
+    if (expense.type === 'income') {
+      return sum + Math.abs(expense.amount)  // Income increases total
+    } else if (expense.type === 'expense') {
+      return sum - Math.abs(expense.amount)  // Expenses decrease total
+    }
+    // Fallback for legacy data without type field
     return sum + expense.amount
   }, 0)
   const distinctCurrencies = new Set(sortedExpenses.map(e => e.currency))
@@ -464,6 +477,69 @@ export default function Expenses() {
     queryClient.invalidateQueries({ queryKey: ['expenses', user?.uid, currentEnvironment.id] })
   }
 
+  // Helper function to delete a single expense with account balance updates
+  const deleteExpenseWithBalanceUpdate = async (expenseToDelete: Expense) => {
+    const expenseDocRef = doc(getCollection('expenses'), expenseToDelete.id)
+    const { runTransaction } = await import('firebase/firestore')
+
+    // Handle different transaction types
+    if (expenseToDelete.type === 'transfer') {
+      // TRANSFER: Revert both accounts
+      await runTransaction(db, async (transaction) => {
+        // ===== READS FIRST =====
+        const transferAmount = expenseToDelete.transferAmount || 0
+
+        let fromAccountDoc = null
+        let fromAccountRef = null
+        if (expenseToDelete.account_id) {
+          fromAccountRef = doc(getCollection('accounts'), expenseToDelete.account_id)
+          fromAccountDoc = await transaction.get(fromAccountRef)
+        }
+
+        let toAccountDoc = null
+        let toAccountRef = null
+        if (expenseToDelete.toAccountId) {
+          toAccountRef = doc(getCollection('accounts'), expenseToDelete.toAccountId)
+          toAccountDoc = await transaction.get(toAccountRef)
+        }
+
+        // ===== WRITES SECOND =====
+        if (fromAccountDoc && fromAccountDoc.exists() && fromAccountRef) {
+          const currentBalance = fromAccountDoc.data().balance || 0
+          transaction.update(fromAccountRef, { balance: currentBalance + transferAmount }) // Add back to source
+        }
+
+        if (toAccountDoc && toAccountDoc.exists() && toAccountRef) {
+          const currentBalance = toAccountDoc.data().balance || 0
+          transaction.update(toAccountRef, { balance: currentBalance - transferAmount }) // Remove from destination
+        }
+
+        // Delete the transfer record
+        transaction.delete(expenseDocRef)
+      })
+    } else if (expenseToDelete.account_id) {
+      // INCOME/EXPENSE: Revert single account
+      await runTransaction(db, async (transaction) => {
+        // Read the account
+        const accountRef = doc(getCollection('accounts'), expenseToDelete.account_id!)
+        const accountDoc = await transaction.get(accountRef)
+
+        if (accountDoc.exists()) {
+          // Revert the transaction: subtract the amount (income is positive, expense is negative)
+          const currentBalance = accountDoc.data().balance || 0
+          const revertAmount = -expenseToDelete.amount
+          transaction.update(accountRef, { balance: currentBalance + revertAmount })
+        }
+
+        // Delete the expense
+        transaction.delete(expenseDocRef)
+      })
+    } else {
+      // No account associated, just delete the expense
+      await deleteDoc(expenseDocRef)
+    }
+  }
+
   const deleteExpense = async (id: string) => {
     if (!user) return
     setActionError(null)
@@ -478,66 +554,7 @@ export default function Expenses() {
         throw new Error('Expense not found')
       }
 
-      const expenseDocRef = doc(getCollection('expenses'), id)
-
-      // Handle different transaction types
-      if (expenseToDelete.type === 'transfer') {
-        // TRANSFER: Revert both accounts
-        const { runTransaction } = await import('firebase/firestore')
-        await runTransaction(db, async (transaction) => {
-          // ===== READS FIRST =====
-          const transferAmount = expenseToDelete.transferAmount || 0
-
-          let fromAccountDoc = null
-          let fromAccountRef = null
-          if (expenseToDelete.account_id) {
-            fromAccountRef = doc(getCollection('accounts'), expenseToDelete.account_id)
-            fromAccountDoc = await transaction.get(fromAccountRef)
-          }
-
-          let toAccountDoc = null
-          let toAccountRef = null
-          if (expenseToDelete.toAccountId) {
-            toAccountRef = doc(getCollection('accounts'), expenseToDelete.toAccountId)
-            toAccountDoc = await transaction.get(toAccountRef)
-          }
-
-          // ===== WRITES SECOND =====
-          if (fromAccountDoc && fromAccountDoc.exists() && fromAccountRef) {
-            const currentBalance = fromAccountDoc.data().balance || 0
-            transaction.update(fromAccountRef, { balance: currentBalance + transferAmount }) // Add back to source
-          }
-
-          if (toAccountDoc && toAccountDoc.exists() && toAccountRef) {
-            const currentBalance = toAccountDoc.data().balance || 0
-            transaction.update(toAccountRef, { balance: currentBalance - transferAmount }) // Remove from destination
-          }
-
-          // Delete the transfer record
-          transaction.delete(expenseDocRef)
-        })
-      } else if (expenseToDelete.account_id) {
-        // INCOME/EXPENSE: Revert single account
-        const { runTransaction } = await import('firebase/firestore')
-        await runTransaction(db, async (transaction) => {
-          // Read the account
-          const accountRef = doc(getCollection('accounts'), expenseToDelete.account_id!)
-          const accountDoc = await transaction.get(accountRef)
-
-          if (accountDoc.exists()) {
-            // Revert the transaction: subtract the amount (income is positive, expense is negative)
-            const currentBalance = accountDoc.data().balance || 0
-            const revertAmount = -expenseToDelete.amount
-            transaction.update(accountRef, { balance: currentBalance + revertAmount })
-          }
-
-          // Delete the expense
-          transaction.delete(expenseDocRef)
-        })
-      } else {
-        // No account associated, just delete the expense
-        await deleteDoc(expenseDocRef)
-      }
+      await deleteExpenseWithBalanceUpdate(expenseToDelete)
 
       queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
       queryClient.invalidateQueries({ queryKey: ['accounts', user.uid, currentEnvironment.id] })
@@ -645,7 +662,7 @@ export default function Expenses() {
                 )}
 
                 {/* Mobile Quick Actions */}
-                <div className="grid grid-cols-4 gap-2 mb-3">
+                <div className="grid grid-cols-5 gap-2 mb-3">
                   <button
                     onClick={() => setShowAdd(true)}
                     className="flex flex-col items-center justify-center py-2 bg-primary-600 text-white hover:bg-primary-700 rounded-xl transition-all shadow-sm shadow-primary-200"
@@ -653,6 +670,14 @@ export default function Expenses() {
                   >
                     <PlusIcon className="w-5 h-5 mb-0.5" />
                     <span className="text-[10px] font-bold">Add</span>
+                  </button>
+                  <button
+                    onClick={() => router.push('/expenses?action=import')}
+                    className="flex flex-col items-center justify-center py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl transition-all shadow-sm shadow-blue-200"
+                    title="Upload File"
+                  >
+                    <UploadIcon className="w-5 h-5 mb-0.5" />
+                    <span className="text-[10px] font-bold">Upload</span>
                   </button>
                   <button
                     className="flex flex-col items-center justify-center py-2 text-xs font-medium rounded-xl bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 transition-all shadow-sm"
@@ -801,15 +826,9 @@ export default function Expenses() {
                   <div className="bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 border border-red-100 dark:border-red-800 rounded-lg p-2.5 overflow-hidden">
                     <p className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Expense</p>
                     <p className="text-[13px] font-bold text-red-700 dark:text-red-300 truncate">
-                      {singleCurrencyCode ? (
-                        formatCompact(
-                          Math.abs(sortedExpenses.filter(e => e.type !== 'income' && e.type !== 'transfer' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0)),
-                          singleCurrencyCode
-                        )
-                      ) : (
-                        formatCurrency(
-                          Math.abs(sortedExpenses.filter(e => e.type !== 'income' && e.type !== 'transfer' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0))
-                        )
+                      {formatCurrencyExplicit(
+                        Math.abs(sortedExpenses.filter(e => e.type !== 'income' && e.type !== 'transfer' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0)),
+                        currentEnvironment.currency || prefCurrency
                       )}
                     </p>
                   </div>
@@ -818,15 +837,9 @@ export default function Expenses() {
                   <div className="bg-gradient-to-br from-green-100/80 to-emerald-100/80 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-lg p-2.5 overflow-hidden">
                     <p className="text-[10px] font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide mb-1">Income</p>
                     <p className="text-[13px] font-bold text-green-800 dark:text-green-300 truncate">
-                      {singleCurrencyCode ? (
-                        formatCompact(
-                          Math.abs(sortedExpenses.filter(e => e.type === 'income').reduce((sum, e) => sum + Math.abs(e.amount), 0)),
-                          singleCurrencyCode
-                        )
-                      ) : (
-                        formatCurrency(
-                          Math.abs(sortedExpenses.filter(e => e.type === 'income').reduce((sum, e) => sum + Math.abs(e.amount), 0))
-                        )
+                      {formatCurrencyExplicit(
+                        Math.abs(sortedExpenses.filter(e => e.type === 'income').reduce((sum, e) => sum + Math.abs(e.amount), 0)),
+                        currentEnvironment.currency || prefCurrency
                       )}
                     </p>
                   </div>
@@ -840,13 +853,9 @@ export default function Expenses() {
                       }`}>Total</p>
                     <p className={`text-[13px] font-bold truncate ${(!categoryFilter && totalAmount >= 0) || (categoryFilter && totalAmount >= 0) ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'
                       }`}>
-                      {singleCurrencyCode ? (
-                        formatCompact(
-                          categoryFilter ? Math.abs(totalAmount) : totalAmount,
-                          singleCurrencyCode
-                        )
-                      ) : (
-                        formatCurrency(categoryFilter ? Math.abs(totalAmount) : totalAmount)
+                      {formatCurrencyExplicit(
+                        categoryFilter ? Math.abs(totalAmount) : totalAmount,
+                        currentEnvironment.currency || prefCurrency
                       )}
                     </p>
                   </div>
@@ -870,13 +879,15 @@ export default function Expenses() {
                           setDeletingId('bulk')
                           const ids = Array.from(selectedIds)
                           try {
-                            // Delete each expense
-                            await Promise.all(ids.map(id => {
-                              const expenseDocRef = doc(getCollection('expenses'), id)
-                              return deleteDoc(expenseDocRef)
-                            }))
+                            // Get all expenses to delete first
+                            const expensesToDelete = expenses?.filter(e => ids.includes(e.id)) || []
+                            
+                            // Delete each expense with balance updates
+                            await Promise.all(expensesToDelete.map(exp => deleteExpenseWithBalanceUpdate(exp)))
+                            
                             setSelectedIds(new Set())
                             queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
+                            queryClient.invalidateQueries({ queryKey: ['accounts', user.uid, currentEnvironment.id] })
                           } catch (error: any) {
                             setActionError(error.message)
                           } finally {
@@ -1033,6 +1044,8 @@ export default function Expenses() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    style={{ WebkitAppearance: 'none' }}
+                    inputMode="search"
                   />
                 </div>
 
@@ -1275,7 +1288,7 @@ export default function Expenses() {
 
                   {/* Mobile Action Buttons */}
                   {selectedIds.size > 0 && (
-                    <div className="fixed bottom-20 left-4 right-4 bg-red-600 text-white rounded-xl shadow-lg p-3 flex items-center justify-between z-40">
+                    <div className="fixed bottom-20 left-4 right-4 bg-red-600 text-white rounded-xl shadow-lg p-3 flex items-center justify-between z-40 safe-area-bottom" style={{ bottom: 'max(calc(5rem + env(safe-area-inset-bottom, 0px)), 5rem)' }}>
                       <span className="text-sm font-medium">{selectedIds.size} selected</span>
                       <button
                         className="px-4 py-1.5 bg-white dark:bg-gray-800 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium"
@@ -1285,12 +1298,15 @@ export default function Expenses() {
                           setDeletingId('bulk')
                           const ids = Array.from(selectedIds)
                           try {
-                            await Promise.all(ids.map(id => {
-                              const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
-                              return deleteDoc(expenseDocRef)
-                            }))
+                            // Get all expenses to delete first
+                            const expensesToDelete = expenses?.filter(e => ids.includes(e.id)) || []
+                            
+                            // Delete each expense with balance updates
+                            await Promise.all(expensesToDelete.map(exp => deleteExpenseWithBalanceUpdate(exp)))
+                            
                             setSelectedIds(new Set())
-                            queryClient.invalidateQueries({ queryKey: ['expenses', user.uid] })
+                            queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
+                            queryClient.invalidateQueries({ queryKey: ['accounts', user.uid, currentEnvironment.id] })
                           } catch (error: any) {
                             setActionError(error.message)
                           } finally {
@@ -1449,8 +1465,13 @@ export default function Expenses() {
         </Layout>
         <AddExpenseModal
           open={showAdd}
-          onClose={() => { setShowAdd(false); setEditingExpense(null) }}
+          onClose={() => { 
+            setShowAdd(false)
+            setEditingExpense(null)
+            setShouldOpenInImportMode(false)
+          }}
           onAdded={onAdded}
+          initialImportMode={shouldOpenInImportMode}
           mode={editingExpense ? 'edit' : 'add'}
           expense={editingExpense}
         />
@@ -1458,7 +1479,7 @@ export default function Expenses() {
         {/* Filter Modal */}
         {showFilterModal && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md max-h-[85vh] overflow-hidden flex flex-col safe-area-bottom" style={{ marginBottom: 'max(env(safe-area-inset-bottom, 0px), 0px)' }}>
               {/* Header */}
               <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-5 py-4">
                 <div className="flex items-center justify-between">
@@ -2060,7 +2081,7 @@ export default function Expenses() {
                 </button>
               </div>
 
-              <div className="p-6 space-y-4">
+              <div className="p-6 space-y-4" style={{ paddingBottom: 'max(calc(3rem + env(safe-area-inset-bottom, 0px)), 3rem)' }}>
                 <div className="flex items-start justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
                   <div className="flex-1">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
@@ -2288,7 +2309,8 @@ export default function Expenses() {
         {showScrollTop && (
           <button
             onClick={scrollToTop}
-            className="fixed bottom-24 right-6 z-40 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all duration-300 hover:scale-110"
+            className="fixed right-6 z-40 w-12 h-12 flex items-center justify-center bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-all duration-300 hover:scale-110"
+            style={{ bottom: 'max(calc(6rem + env(safe-area-inset-bottom, 0px)), 6rem)' }}
             aria-label="Scroll to top"
           >
             <ArrowUpIcon className="w-5 h-5" />
