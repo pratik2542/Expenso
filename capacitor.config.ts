@@ -8,6 +8,7 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
     allowNavigation: [
       'https://expense-ai-manager.vercel.app/',
+      'https://expenso-pdfexcel.vercel.app',
       'https://*.googleapis.com',
       'https://generativelanguage.googleapis.com',
       'https://api.perplexity.ai'

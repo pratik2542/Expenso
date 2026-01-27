@@ -11,6 +11,7 @@ import { db } from '@/lib/firebaseClient'
 import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy, runTransaction, getDoc } from 'firebase/firestore'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { Account } from '@/types/models'
+import { getApiUrl } from '@/lib/config'
 
 interface AddExpenseModalProps {
   open: boolean
@@ -591,7 +592,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       const formData = new FormData()
       formData.append('file', importFile)
 
-      const endpoint = '/api/import/parse-spreadsheet'
+      const endpoint = getApiUrl('/api/import/parse-spreadsheet')
 
       const res = await fetch(endpoint, {
         method: 'POST',

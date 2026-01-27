@@ -40,23 +40,56 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let biggestChange = 'N/A';
       
       try {
-        // 1. Fetch expenses for current week
-        const expensesRef = adminDb.collection('expenses').doc(userId).collection('items');
+        // Collect all expense collection references (Legacy + Environments)
+        const expenseCollections: any[] = [];
         
-        const currentWeekQuery = await expensesRef
-          .where('occurred_on', '>=', start.toISOString())
-          .where('occurred_on', '<=', end.toISOString())
-          .get();
+        // 1. Legacy/Default path
+        expenseCollections.push(
+            adminDb.collection('expenses').doc(userId).collection('items')
+        );
+
+        // 2. Named Environments
+        const envsSnapshot = await adminDb.collection('users').doc(userId).collection('environments').get();
+        envsSnapshot.docs.forEach(envDoc => {
+            expenseCollections.push(
+                adminDb.collection('users').doc(userId).collection('environments').doc(envDoc.id).collection('expenses')
+            );
+        });
+
+        // Helper to fetch and sum expenses for a date range across all collections
+        const fetchExpenses = async (startDate: Date, endDate: Date) => {
+            const promises = expenseCollections.map(ref => 
+                ref.where('occurred_on', '>=', startDate.toISOString())
+                   .where('occurred_on', '<=', endDate.toISOString())
+                   .get()
+            );
+            
+            const snapshots = await Promise.all(promises);
+            const allDocs: any[] = [];
+            snapshots.forEach((chap: any) => {
+                if (!chap.empty) {
+                    chap.docs.forEach((d: any) => allDocs.push(d.data()));
+                }
+            });
+            return allDocs;
+        };
+
+        // 1. Fetch expenses for current week
+        const currentExpenses = await fetchExpenses(start, end);
 
         const categoryTotals: Record<string, number> = {};
 
-        currentWeekQuery.docs.forEach(doc => {
-          const exp = doc.data();
+        currentExpenses.forEach(exp => {
           const amt = Number(exp.amount) || 0;
-          // Simple sum - in production, we should normalize currency here
+          // Only count expenses matching the user's preferred currency to avoid mixed currency sums
+          // Ideally, we would convert currencies here.
           if (exp.currency === userCurrency) {
-            totalSpent += amt;
-            categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
+             // Basic filtering: ensure it's an expense flow (not income)
+             // If type is missing, we assume expense (legacy behavior)
+             if (exp.type === 'expense' || !exp.type) {
+                totalSpent += amt;
+                categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
+             }
           }
         });
 
@@ -74,15 +107,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         prevStart.setDate(prevStart.getDate() - 7);
         const prevEnd = new Date(start); // Start of current week is end of prev week
 
-        const prevWeekQuery = await expensesRef
-          .where('occurred_on', '>=', prevStart.toISOString())
-          .where('occurred_on', '<=', prevEnd.toISOString())
-          .get();
+        const prevExpenses = await fetchExpenses(prevStart, prevEnd);
 
-        prevWeekQuery.docs.forEach(doc => {
-            const exp = doc.data();
+        prevExpenses.forEach(exp => {
             if (exp.currency === userCurrency) {
-                prevTotalSpent += (Number(exp.amount) || 0);
+                if (exp.type === 'expense' || !exp.type) {
+                    prevTotalSpent += (Number(exp.amount) || 0);
+                }
             }
         });
 
