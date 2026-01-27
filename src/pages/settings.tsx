@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { useQueryClient } from '@tanstack/react-query'
+import { Capacitor } from '@capacitor/core'
+import { LocalNotifications } from '@capacitor/local-notifications'
 
 export default function Settings() {
   const { user, signOut } = useAuth()
@@ -657,15 +659,48 @@ export default function Settings() {
                 <div className="flex items-center justify-between py-2.5 lg:py-3 px-3 lg:px-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                   <div className="flex items-center gap-3">
                     <span className="text-lg">🔔</span>
-                    <span className="text-xs lg:text-sm text-gray-800 dark:text-gray-200 font-medium">Push notifications</span>
+                    <div className="flex flex-col">
+                        <span className="text-xs lg:text-sm text-gray-800 dark:text-gray-200 font-medium">Daily Reminders</span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">Mobile app only (8:00 PM)</span>
+                    </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
                       checked={notifications.push_notifications}
-                      onChange={(e) => {
-                        setNotifications((p) => ({ ...p, push_notifications: e.target.checked }))
-                        markDirty()
+                      onChange={async (e) => {
+                          const isEnabled = e.target.checked
+                          setNotifications((p) => ({ ...p, push_notifications: isEnabled }))
+                          markDirty()
+                          
+                          if (Capacitor.isNativePlatform()) {
+                              if (isEnabled) {
+                                  // Request permission
+                                  const perm = await LocalNotifications.requestPermissions()
+                                  if (perm.display === 'granted') {
+                                      // Schedule daily reminder at 8 PM
+                                      await LocalNotifications.schedule({
+                                          notifications: [{
+                                              id: 1,
+                                              title: "Reminder: Add Expenses",
+                                              body: "Don't forget to track your spending today!",
+                                              schedule: {
+                                                 on: { hour: 20, minute: 0 },
+                                                 repeats: true,
+                                                 every: 'day'
+                                              }
+                                          }]
+                                      })
+                                      alert("Daily reminder set for 8:00 PM")
+                                  } else {
+                                      alert("Notifications permission denied")
+                                      setNotifications((p) => ({ ...p, push_notifications: false }))
+                                  }
+                              } else {
+                                  // Cancel reminder
+                                  await LocalNotifications.cancel({ notifications: [{ id: 1 }] })
+                              }
+                          }
                       }}
                       className="sr-only peer"
                     />

@@ -45,8 +45,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
     } catch (e) { console.error('Failed to fetch user settings', e); }
 
+    // Collect all expense collection references (Legacy + Environments)
+    const expenseCollections: any[] = [];
+    
+    // 1. Legacy/Default path
+    expenseCollections.push(
+        adminDb.collection('expenses').doc(userId).collection('items')
+    );
+
+    // 2. Named Environments
+    const envsSnapshot = await adminDb.collection('users').doc(userId).collection('environments').get();
+    envsSnapshot.docs.forEach(envDoc => {
+        expenseCollections.push(
+            adminDb.collection('users').doc(userId).collection('environments').doc(envDoc.id).collection('expenses')
+        );
+    });
+
+    // Helper to fetch and sum expenses for a date range across all collections
+    const fetchExpenses = async (startDate: Date, endDate: Date) => {
+        const promises = expenseCollections.map(ref => 
+            ref.where('occurred_on', '>=', startDate.toISOString())
+               .where('occurred_on', '<=', endDate.toISOString())
+               .get()
+        );
+        
+        const snapshots = await Promise.all(promises);
+        const allDocs: any[] = [];
+        snapshots.forEach((chap: any) => {
+            if (!chap.empty) {
+                chap.docs.forEach((d: any) => allDocs.push(d.data()));
+            }
+        });
+        return allDocs;
+    };
+
     switch (type) {
-      case 'weekly_reports':
+      case 'weekly_reports': {
         // Calculate stats
         let totalSpent = 0;
         let prevTotalSpent = 0;
@@ -55,31 +89,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         try {
             // 1. Fetch expenses for current week
-            const expensesRef = adminDb.collection('expenses').doc(userId).collection('items');
-            
-            const currentWeekQuery = await expensesRef
-            .where('occurred_on', '>=', weekStart.toISOString())
-            .where('occurred_on', '<=', now.toISOString())
-            .get();
-
+            const currentExpenses = await fetchExpenses(weekStart, now);
             const categoryTotals: Record<string, number> = {};
 
-            currentWeekQuery.docs.forEach(doc => {
-            const exp = doc.data();
-            const amt = Number(exp.amount) || 0;
-            if (exp.currency === userCurrency) {
-                totalSpent += amt;
-                categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
-            }
+            currentExpenses.forEach(exp => {
+                const amt = Number(exp.amount) || 0;
+                if (exp.currency === userCurrency) {
+                    if (exp.type === 'expense' || !exp.type) {
+                        totalSpent += amt;
+                        categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
+                    }
+                }
             });
 
             // Find top category
             let maxCatVal = 0;
             for (const [cat, val] of Object.entries(categoryTotals)) {
-            if (val > maxCatVal) {
-                maxCatVal = val;
-                topCategory = cat;
-            }
+                if (val > maxCatVal) {
+                    maxCatVal = val;
+                    topCategory = cat;
+                }
             }
 
             // 2. Fetch prev week
@@ -87,15 +116,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             prevStart.setDate(prevStart.getDate() - 7);
             const prevEnd = new Date(weekStart);
 
-            const prevWeekQuery = await expensesRef
-            .where('occurred_on', '>=', prevStart.toISOString())
-            .where('occurred_on', '<=', prevEnd.toISOString())
-            .get();
-
-            prevWeekQuery.docs.forEach(doc => {
-                const exp = doc.data();
+            const prevExpenses = await fetchExpenses(prevStart, prevEnd);
+            prevExpenses.forEach(exp => {
                 if (exp.currency === userCurrency) {
-                    prevTotalSpent += (Number(exp.amount) || 0);
+                    if (exp.type === 'expense' || !exp.type) {
+                        prevTotalSpent += (Number(exp.amount) || 0);
+                    }
                 }
             });
 
@@ -110,7 +136,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
 
         } catch (err) {
-            console.error('Error calculating stats', err);
+            console.error('Error calculating weekly stats', err);
         }
         
         const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(totalSpent);
@@ -123,17 +149,78 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           `• Biggest change vs last week: ${biggestChange}\n\n` +
           `Open Expenso to see the full breakdown.`;
         break;
+      }
 
-      case 'analytics':
+      case 'analytics': {
+        // Calculate Monthly stats
+        let totalSpent = 0;
+        let prevTotalSpent = 0;
+        let topCategory = 'None';
+        let trend = 'N/A';
+        
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        const end = new Date(now);
+        const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+        try {
+            // 1. Current Month
+            const currentExpenses = await fetchExpenses(start, end);
+            const categoryTotals: Record<string, number> = {};
+
+            currentExpenses.forEach(exp => {
+                const amt = Number(exp.amount) || 0;
+                if (exp.currency === userCurrency) {
+                    if (exp.type === 'expense' || !exp.type) {
+                        totalSpent += amt;
+                        categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
+                    }
+                }
+            });
+
+            let maxCatVal = 0;
+            for (const [cat, val] of Object.entries(categoryTotals)) {
+                if (val > maxCatVal) {
+                    maxCatVal = val;
+                    topCategory = cat;
+                }
+            }
+
+            // 2. Prev Month
+            const prevExpenses = await fetchExpenses(prevStart, prevEnd);
+            prevExpenses.forEach(exp => {
+                if (exp.currency === userCurrency) {
+                    if (exp.type === 'expense' || !exp.type) {
+                        prevTotalSpent += (Number(exp.amount) || 0);
+                    }
+                }
+            });
+
+            if (prevTotalSpent > 0) {
+                const change = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
+                trend = `${change > 0 ? '+' : ''}${change.toFixed(1)}% vs last month`;
+            } else {
+                trend = 'N/A';
+            }
+
+        } catch(err) {
+            console.error('Error calculating monthly stats', err);
+        }
+
+        const formattedTotal = new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: userCurrency
+        }).format(totalSpent);
+
         subject = `Your Monthly Analytics Report (${currentMonth})`;
         text =
           `Here's your monthly financial snapshot for ${currentMonth}.\n\n` +
-          `• Total expenses: (calculated from your data)\n` +
-          `• Budget performance: (coming soon)\n` +
-          `• Top spending category: (coming soon)\n` +
-          `• Spending trend vs last month: (coming soon)\n\n` +
+          `• Total expenses: ${formattedTotal}\n` +
+          `• Top spending category: ${topCategory}\n` +
+          `• Spending trend: ${trend}\n\n` +
           `Open Expenso to explore detailed insights.`;
         break;
+      }
 
       case 'marketing':
         subject = 'Latest Expenso Updates';

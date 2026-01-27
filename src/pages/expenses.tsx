@@ -197,20 +197,24 @@ export default function Expenses() {
     }
 
     // Prepare CSV headers
-    const headers = ['Date', 'Amount', 'Currency', 'Type', 'Category', 'Merchant', 'Payment Method', 'Note', 'Attachment']
+    const headers = ['Date', 'Amount', 'Currency', 'Type', 'Category', 'Account', 'Merchant', 'Payment Method', 'Note', 'Attachment']
 
     // Prepare CSV rows
-    const rows = expenses.map(expense => [
-      formatDate(expense.occurred_on),
-      expense.amount.toString(),
-      expense.currency,
-      expense.type || 'expense',
-      expense.category || 'Other',
-      expense.merchant || '',
-      expense.payment_method || '',
-      expense.note || '',
-      expense.attachment || ''
-    ])
+    const rows = expenses.map(expense => {
+      const accountName = accounts.find(a => a.id === expense.account_id)?.name || ''
+      return [
+        formatDate(expense.occurred_on),
+        expense.amount.toString(),
+        expense.currency,
+        expense.type || 'expense',
+        expense.category || 'Other',
+        accountName,
+        expense.merchant || '',
+        expense.payment_method || '',
+        expense.note || '',
+        expense.attachment || ''
+      ]
+    })
 
     // Combine headers and rows with proper escaping
     const csvContent = [
@@ -338,6 +342,21 @@ export default function Expenses() {
         id: doc.id,
         name: doc.data().name
       })) as Category[]
+    }
+  })
+
+  // Load accounts for mapping in export
+  const { data: accounts = [] } = useQuery<{ id: string, name: string }[]>({
+    queryKey: ['accounts-list-export', user?.uid, currentEnvironment.id],
+    enabled: !!user?.uid,
+    queryFn: async () => {
+      if (!user?.uid) return []
+      const accountsRef = getCollection('accounts')
+      const snapshot = await getDocs(accountsRef)
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.data().name
+      }))
     }
   })
 
