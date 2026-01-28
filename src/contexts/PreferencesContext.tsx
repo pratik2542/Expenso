@@ -16,7 +16,10 @@ type Prefs = {
   hasOnboarded: boolean | null
   darkMode: boolean
   toggleDarkMode: () => void
+  paymentMethods: string[]
+  setPaymentMethods: (methods: string[]) => void
 }
+
 
 const PreferencesContext = createContext<Prefs | undefined>(undefined)
 
@@ -41,6 +44,9 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     return false
   })
 
+  const [paymentMethods, setPaymentMethods] = useState<string[]>([
+    'Credit Card', 'Debit Card', 'Cash', 'Bank Transfer', 'UPI', 'NEFT', 'Check', 'Other'
+  ])
   const fetchPrefs = useCallback(async () => {
     if (!user?.uid) {
       setLoading(false)
@@ -70,6 +76,10 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
       const envName = data?.default_env_name || 'Personal'
       setDefaultEnvName(envName)
+      // Load payment methods from user_settings if available
+      if (Array.isArray(data?.payment_methods) && data.payment_methods.length > 0) {
+        setPaymentMethods(data.payment_methods)
+      }
     } catch (e) {
       console.error('PreferencesContext: fetch exception', e)
     } finally {
@@ -193,6 +203,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     hasOnboarded,
     darkMode,
     toggleDarkMode,
+    paymentMethods,
+    setPaymentMethods,
   }
 
   return (

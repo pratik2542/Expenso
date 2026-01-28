@@ -19,6 +19,7 @@ type Expense = {
   note?: string
   occurred_on: string
   category: string
+  account_name?: string
 }
 
 type IncomeData = {
@@ -34,6 +35,7 @@ type IncomeRecord = {
   note?: string
   occurred_on: string
   category?: string
+  account_name?: string
 }
 
 type MonthlyIncomeRecord = {
@@ -43,11 +45,18 @@ type MonthlyIncomeRecord = {
   currency: string
 }
 
+type AccountContext = {
+  name: string
+  balance: number
+  currency: string
+}
+
 interface AnalyticsRequest {
   expenses: Expense[]
   income?: IncomeData
   incomeRecords?: IncomeRecord[] // Individual income transactions
   monthlyIncomeRecords?: MonthlyIncomeRecord[] // Monthly income breakdown (for backwards compatibility)
+  accounts?: AccountContext[] // Current account balances
   month: number
   year: number
   currency: string
@@ -123,7 +132,7 @@ interface CalculatedMetrics {
 }
 
 async function generateInsights(data: AnalyticsRequest): Promise<{ text: string; metrics: CalculatedMetrics }> {
-  const { expenses, income, incomeRecords, monthlyIncomeRecords, month, year, currency, question, chatHistory, periodLabel, format = 'json' } = data
+  const { expenses, income, incomeRecords, monthlyIncomeRecords, accounts, month, year, currency, question, chatHistory, periodLabel, format = 'json' } = data
 
   // Calculate some stats
   const totalSpend = expenses.reduce((sum, e) => sum + Math.abs(e.amount), 0)
@@ -193,7 +202,7 @@ ${Object.entries(monthlyCategoryBreakdown)
 Income Records:
 ${incomeRecords
         .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
-        .map(r => `- ${r.occurred_on}: ${Math.abs(r.amount).toFixed(2)} ${r.currency} from ${r.merchant || 'Unknown'} (${r.category || 'Income'})${r.note ? ` - ${r.note}` : ''}`)
+        .map(r => `- ${r.occurred_on}: ${Math.abs(r.amount).toFixed(2)} ${r.currency} from ${r.merchant || 'Unknown'} (${r.category || 'Income'})${r.account_name ? ` [Account: ${r.account_name}]` : ''}${r.note ? ` - ${r.note}` : ''}`)
         .join('\n')}
 
 Total Income for Period: ${totalIncome.toFixed(2)} ${currency}
@@ -257,6 +266,10 @@ Net Savings: ${netSavings.toFixed(2)} ${currency} ${isDeficit ? '(DEFICIT - spen
 Savings Rate: ${savingsRate.toFixed(1)}% ${isDeficit ? '(NEGATIVE - user is overspending!)' : ''}
 Financial Status: ${financialStatus} (${statusColor})
 =============================================================================
+
+${accounts && accounts.length > 0 ? `=== CURRENT ACCOUNT BALANCES (AS OF TODAY) ===
+${accounts.map(a => `Account: ${a.name} | Balance: ${a.balance.toFixed(2)} ${a.currency}`).join('\n')}
+================================================` : ''}
 `
 
   const expensesSummary = `
@@ -285,13 +298,13 @@ ${question
       ? `All Transactions ${isAllTime ? '(sorted by date)' : `for ${timeHeader} (sorted by date)`}:
 ${expenses
         .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
-        .map(e => `- ${e.occurred_on}: ${Math.abs(e.amount).toFixed(2)} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+        .map(e => `- ${e.occurred_on}: ${Math.abs(e.amount).toFixed(2)} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.account_name ? ` [Account: ${e.account_name}]` : ''}${e.note ? ` - ${e.note}` : ''}`)
         .join('\n')}`
       : `Recent Transactions (last 10):
 ${expenses
         .sort((a, b) => new Date(b.occurred_on).getTime() - new Date(a.occurred_on).getTime())
         .slice(0, 10)
-        .map(e => `- ${e.occurred_on}: ${Math.abs(e.amount).toFixed(2)} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.note ? ` - ${e.note}` : ''}`)
+        .map(e => `- ${e.occurred_on}: ${Math.abs(e.amount).toFixed(2)} ${e.currency} at ${e.merchant || 'Unknown'} (${e.category || 'Other'})${e.account_name ? ` [Account: ${e.account_name}]` : ''}${e.note ? ` - ${e.note}` : ''}`)
         .join('\n')}`}
 `
 
@@ -309,11 +322,17 @@ ${expensesSummary}
 User's Question: ${question}
 
 CRITICAL INSTRUCTIONS:
-1. ALL TRANSACTIONS ${isAllTime ? 'across all time' : `for ${timeHeader}`} are listed in the "All Transactions" section above with their EXACT DATES. Use this to answer date-specific questions.
+1. ALL TRANSACTIONS ${isAllTime ? 'across all time' : `for ${timeHeader}`} are listed in the "All Transactions" section above with their EXACT DATES and ACCOUNT NAMES (e.g. [Account: Savings]). Use this to answer account-specific questions.
 2. The "MONTHLY SPENDING BY CATEGORY" section contains EXACT spending amounts for each category in each month.
 3. DO NOT say data is not available if it is clearly provided in the sections above.
 4. For date questions (like "when did I pay rent${isAllTime ? '?' : ' this month?'}"), look in the "All Transactions" section and find the exact transaction with its date.
-5. If the user asks to "generate a graph" or "create a chart", include a special JSON block in your response with the format:
+5. IF ASKED FOR "CURRENT BALANCE" or "REMAINING BALANCE":
+   - CHECK the "CURRENT ACCOUNT BALANCES" section above FIRST.
+   - Return the exact value from that section.
+   - DO NOT attempt to calculate the balance by summing up transactions, as the transaction history may be incomplete or filtered.
+   - Only sum transactions if asked for "Total Spending" or "Total Income" over a specific period.
+6. If the user asks about a specific account (like "Demat" or "Savings"), filter the transactions manually based on the [Account: Name] tag.
+7. If the user asks to "generate a graph" or "create a chart", include a special JSON block in your response with the format:
    \`\`\`chart-data
    {
      "type": "line" | "bar" | "pie",
@@ -509,7 +528,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(429).json({ error: 'Too many requests. Please try again later.' })
   }
 
-  const { expenses, income, incomeRecords, month, year, currency, question, periodLabel, format } = req.body as AnalyticsRequest
+  const { expenses, income, incomeRecords, month, year, currency, question, periodLabel, format, accounts } = req.body as AnalyticsRequest
 
   // Validate inputs
   if (!Array.isArray(expenses)) {
@@ -543,7 +562,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       currency,
       question: sanitizedQuestion,
       periodLabel,
-      format
+      format,
+      accounts
     })
 
     console.log('[AI Insights] Generation successful')

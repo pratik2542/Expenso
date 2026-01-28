@@ -140,7 +140,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   // Ensure there's a default "None" or similar if no accounts exist? 
   // We'll require an account if any exist, effectively.
 
-  const { currency: prefCurrency } = usePreferences()
+  const { currency: prefCurrency, paymentMethods } = usePreferences()
 
   const [formData, setFormData] = useState({
     amount: '',
@@ -1109,13 +1109,9 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                                         className="w-full text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded px-1 py-0.5"
                                       >
                                         <option value="">— detected —</option>
-                                        <option>Credit Card</option>
-                                        <option>Debit Card</option>
-                                        <option>Cash</option>
-                                        <option>Bank Transfer</option>
-                                        <option>UPI</option>
-                                        <option>NEFT</option>
-                                        <option>Imported</option>
+                                        {paymentMethods.map(method => (
+                                          <option key={method} value={method}>{method}</option>
+                                        ))}
                                       </select>
                                     </td>
                                     <td className="px-2 py-2 whitespace-nowrap">
@@ -1181,23 +1177,27 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                             placeholder="0.00"
                           />
                           <div className="absolute inset-y-0 right-0 flex items-center pr-2">
-                            <select
-                              value={formData.currency}
-                              onChange={e => setFormData({ ...formData, currency: e.target.value })}
-                              className="h-10 rounded-xl border-none bg-white dark:bg-gray-800 py-0 pl-3 pr-8 text-sm font-semibold text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-primary-500 shadow-sm"
+                            <div
+                              className="h-10 flex items-center rounded-xl bg-white dark:bg-gray-800 py-0 pl-3 pr-4 text-sm font-semibold text-gray-700 dark:text-gray-200 opacity-60 cursor-not-allowed select-none"
+                              style={{ minWidth: '60px', justifyContent: 'center' }}
                             >
-                              <option value="USD">🇺🇸 USD</option>
-                              <option value="EUR">🇪🇺 EUR</option>
-                              <option value="GBP">🇬🇧 GBP</option>
-                              <option value="CAD">🇨🇦 CAD</option>
-                              <option value="INR">🇮🇳 INR</option>
-                              <option value="AED">🇦🇪 AED</option>
-                              <option value="AUD">🇦🇺 AUD</option>
-                              <option value="JPY">🇯🇵 JPY</option>
-                              <option value="SAR">🇸🇦 SAR</option>
-                              <option value="QAR">🇶🇦 QAR</option>
-                              <option value="SGD">🇸🇬 SGD</option>
-                            </select>
+                              {(() => {
+                                switch(formData.currency) {
+                                  case 'USD': return '🇺🇸 USD';
+                                  case 'EUR': return '🇪🇺 EUR';
+                                  case 'GBP': return '🇬🇧 GBP';
+                                  case 'CAD': return '🇨🇦 CAD';
+                                  case 'INR': return '🇮🇳 INR';
+                                  case 'AED': return '🇦🇪 AED';
+                                  case 'AUD': return '🇦🇺 AUD';
+                                  case 'JPY': return '🇯🇵 JPY';
+                                  case 'SAR': return '🇸🇦 SAR';
+                                  case 'QAR': return '🇶🇦 QAR';
+                                  case 'SGD': return '🇸🇬 SGD';
+                                  default: return formData.currency;
+                                }
+                              })()}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1252,12 +1252,9 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
                             >
                               <option value="">Select Payment Method</option>
-                              <option>Bank Transfer</option>
-                              <option>Wire Transfer</option>
-                              <option>ACH Transfer</option>
-                              <option>NEFT</option>
-                              <option>UPI</option>
-                              <option>Other</option>
+                              {paymentMethods.map(method => (
+                                <option key={method} value={method}>{method}</option>
+                              ))}
                             </select>
                           </div>
                         </>
@@ -1318,14 +1315,9 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all font-medium"
                             >
                               <option value="">Select Payment Method</option>
-                              <option>Credit Card</option>
-                              <option>Debit Card</option>
-                              <option>Cash</option>
-                              <option>Bank Transfer</option>
-                              <option>UPI</option>
-                              <option>NEFT</option>
-                              <option>Check</option>
-                              <option>Other</option>
+                              {paymentMethods.map(method => (
+                                <option key={method} value={method}>{method}</option>
+                              ))}
                             </select>
                           </div>
                         </div>

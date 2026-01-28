@@ -25,6 +25,7 @@ interface Expense {
   category: string
   attachment?: string
   type?: string
+  account_id?: string
 }
 
 function getCurrencySymbol(currency: string): string {
@@ -67,6 +68,38 @@ export default function Analytics() {
   const [userQuestion, setUserQuestion] = useState('')
   const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'ai', content: string }>>([])
   const [chatLoading, setChatLoading] = useState(false)
+  const [showTooltip, setShowTooltip] = useState<{ type: string; value: number } | null>(null)
+
+  // Compact number formatter for analytics boxes
+  const formatCompactNumber = (amount: number, currencyCode: string): string => {
+    const absAmount = Math.abs(amount)
+    
+    // Indian currency (Lakhs and Crores)
+    if (currencyCode === 'INR') {
+      if (absAmount >= 10000000) { // 1 Crore
+        return `${(absAmount / 10000000).toFixed(2)}Cr`
+      }
+      if (absAmount >= 100000) { // 1 Lakh
+        return `${(absAmount / 100000).toFixed(2)}L`
+      }
+      if (absAmount >= 1000) {
+        return `${(absAmount / 1000).toFixed(1)}K`
+      }
+    } else {
+      // Western format (Millions, Billions)
+      if (absAmount >= 1000000000) { // 1 Billion
+        return `${(absAmount / 1000000000).toFixed(2)}B`
+      }
+      if (absAmount >= 1000000) { // 1 Million
+        return `${(absAmount / 1000000).toFixed(2)}M`
+      }
+      if (absAmount >= 1000) {
+        return `${(absAmount / 1000).toFixed(1)}K`
+      }
+    }
+    
+    return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
 
   // Calculate date range based on preset or custom dates
   const { startISO, endISO, periodLabel } = useMemo(() => {
@@ -150,6 +183,26 @@ export default function Analytics() {
     }
   })
 
+  // Load accounts for AI context mapping
+  const { data: accounts = [] } = useQuery<{ id: string, name: string, balance: number, currency: string }[]>({
+    queryKey: ['accounts-list-analytics', user?.uid, currentEnvironment.id],
+    enabled: !!user?.uid,
+    queryFn: async () => {
+      if (!user?.uid) return []
+      const accountsRef = getCollection('accounts')
+      const snapshot = await getDocs(accountsRef)
+      return snapshot.docs.map(doc => {
+        const d = doc.data()
+        return {
+          id: doc.id,
+          name: d.name,
+          balance: d.balance || 0,
+          currency: d.currency || 'USD'
+        }
+      })
+    }
+  })
+
   // Fetch income records for the selected date range (from expenses collection)
   const periodIncomeTotal = useMemo(() => {
     return periodExpenses
@@ -186,7 +239,8 @@ export default function Analytics() {
           payment_method: e.payment_method,
           note: e.note?.substring(0, 100),
           occurred_on: e.occurred_on,
-          category: e.category
+          category: e.category,
+          account_name: accounts.find(a => a.id === e.account_id)?.name || 'Unknown Account'
         }))
 
       const incomeRecords = periodExpenses
@@ -198,7 +252,8 @@ export default function Analytics() {
           merchant: e.merchant,
           note: e.note?.substring(0, 100),
           occurred_on: e.occurred_on,
-          category: e.category
+          category: e.category,
+          account_name: accounts.find(a => a.id === e.account_id)?.name || 'Unknown Account'
         }))
 
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
@@ -248,7 +303,8 @@ export default function Analytics() {
     setChatLoading(true)
 
     try {
-      // Optimize payload - only send essential fields (separate income and expenses)
+      // Optimize payload - only send essential fields
+      // NOTE: We deliberately EXCLUDE 'attachment' string (base64) to prevent token limit errors
       const optimizedExpenses = periodExpenses
         .filter(e => e.type !== 'income')
         .map(e => ({
@@ -259,7 +315,8 @@ export default function Analytics() {
           payment_method: e.payment_method,
           note: e.note?.substring(0, 100),
           occurred_on: e.occurred_on,
-          category: e.category
+          category: e.category,
+          account_name: accounts.find(a => a.id === e.account_id)?.name || 'Unknown Account'
         }))
 
       const incomeRecords = periodExpenses
@@ -271,7 +328,8 @@ export default function Analytics() {
           merchant: e.merchant,
           note: e.note?.substring(0, 100),
           occurred_on: e.occurred_on,
-          category: e.category
+          category: e.category,
+          account_name: accounts.find(a => a.id === e.account_id)?.name || 'Unknown Account'
         }))
 
       const resp = await fetch(getApiUrl('/api/ai/analytics-insights'), {
@@ -285,11 +343,12 @@ export default function Analytics() {
           income: { amount: periodIncomeTotal, currency: viewCurrency },
           incomeRecords,
           currency: viewCurrency,
-          month: now.getMonth() + 1,
-          year: now.getFullYear(),
           question,
           chatHistory: chatHistory.map(msg => ({ role: msg.role, content: msg.content })),
-          periodLabel
+          periodLabel,
+          accounts: accounts.map(a => ({ name: a.name, balance: a.balance, currency: a.currency })),
+          month: now.getMonth() + 1,
+          year: now.getFullYear()
         })
       })
 
@@ -419,7 +478,10 @@ export default function Analytics() {
 
           {/* Quick Stats - Mobile Optimized */}
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-6 mb-4 lg:mb-8">
-            <div className="bg-gradient-to-br from-red-50 to-rose-100 dark:from-red-900/20 dark:to-rose-900/20 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20">
+            <div 
+              className="bg-gradient-to-br from-red-50 to-rose-100 dark:from-red-900/20 dark:to-rose-900/20 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20 cursor-pointer hover:shadow-md transition-shadow relative"
+              onClick={() => setShowTooltip({ type: 'spending', value: spendTotal })}
+            >
               <div className="flex flex-col lg:flex-row lg:items-center">
                 <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-red-100 dark:bg-red-900/30 flex-shrink-0">
                   <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-red-600 dark:text-red-400 font-semibold text-base sm:text-lg">{getCurrencySymbol(viewCurrency)}</span>
@@ -427,13 +489,16 @@ export default function Analytics() {
                 <div className="lg:ml-4">
                   <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Spending</p>
                   <p className="text-base lg:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
-                    {spendTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCompactNumber(spendTotal, viewCurrency)}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20">
+            <div 
+              className="bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setShowTooltip({ type: 'income', value: periodIncomeTotal })}
+            >
               <div className="flex flex-col lg:flex-row lg:items-center">
                 <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-green-100 dark:bg-green-900/30 flex-shrink-0">
                   <TrendingUpIcon className="w-5 h-5 sm:w-6 sm:h-6 text-green-600 dark:text-green-400" />
@@ -441,13 +506,16 @@ export default function Analytics() {
                 <div className="lg:ml-4">
                   <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Income</p>
                   <p className="text-base lg:text-2xl font-bold text-green-600 dark:text-green-400 mt-0.5">
-                    {periodIncomeTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCompactNumber(periodIncomeTotal, viewCurrency)}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-primary-50 to-indigo-100 dark:from-primary-900/30 dark:to-indigo-900/30 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20">
+            <div 
+              className="bg-gradient-to-br from-primary-50 to-indigo-100 dark:from-primary-900/30 dark:to-indigo-900/30 rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => setShowTooltip({ type: 'daily', value: avgDailySpend })}
+            >
               <div className="flex flex-col lg:flex-row lg:items-center">
                 <div className="hidden lg:block p-2 sm:p-3 rounded-full bg-primary-100 dark:bg-primary-900/30 flex-shrink-0">
                   <span className="w-5 h-5 sm:w-6 sm:h-6 inline-flex items-center justify-center text-primary-600 dark:text-primary-400 font-semibold text-base sm:text-lg">📊</span>
@@ -455,13 +523,16 @@ export default function Analytics() {
                 <div className="lg:ml-4">
                   <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Daily Avg</p>
                   <p className="text-base lg:text-2xl font-bold text-primary-600 dark:text-primary-400 mt-0.5">
-                    {avgDailySpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCompactNumber(avgDailySpend, viewCurrency)}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className={`${isOverspending ? 'bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-900/20' : 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20'} rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20`}>
+            <div 
+              className={`${isOverspending ? 'bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-900/20' : 'bg-gradient-to-br from-green-50 to-emerald-100 dark:from-green-900/20 dark:to-emerald-900/20'} rounded-2xl p-3 lg:p-5 shadow-sm dark:shadow-gray-900/20 cursor-pointer hover:shadow-md transition-shadow`}
+              onClick={() => setShowTooltip({ type: isOverspending ? 'deficit' : 'savings', value: Math.abs(savings) })}
+            >
               <div className="flex flex-col lg:flex-row lg:items-center">
                 <div className={`hidden lg:block p-2 sm:p-3 rounded-full flex-shrink-0 ${isOverspending ? 'bg-red-100 dark:bg-red-900/30' : 'bg-success-100 dark:bg-success-900/30'}`}>
                   <TrendingUpIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${isOverspending ? 'text-red-600 dark:text-red-400 rotate-180' : 'text-success-600 dark:text-success-400'}`} />
@@ -469,12 +540,40 @@ export default function Analytics() {
                 <div className="lg:ml-4">
                   <p className="text-[10px] lg:text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{isOverspending ? 'Deficit' : 'Savings'}</p>
                   <p className={`text-base lg:text-2xl font-bold mt-0.5 ${isOverspending ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
-                    {Math.abs(savings).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {formatCompactNumber(Math.abs(savings), viewCurrency)}
                   </p>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Tooltip Modal */}
+          {showTooltip && (
+            <div 
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+              onClick={() => setShowTooltip(null)}
+            >
+              <div 
+                className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-2xl max-w-sm w-full transform transition-all"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 capitalize">
+                    {showTooltip.type}
+                  </h3>
+                  <p className="text-3xl font-bold text-primary-600 dark:text-primary-400 mb-4">
+                    {formatCurrencyExplicit(showTooltip.value, viewCurrency)}
+                  </p>
+                  <button
+                    onClick={() => setShowTooltip(null)}
+                    className="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-medium transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Charts */}
           <Charts startDate={startISO} endDate={endISO} currency={viewCurrency} periodLabel={periodLabel} />

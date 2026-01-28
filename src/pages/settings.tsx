@@ -1,4 +1,5 @@
 import Head from 'next/head'
+import PaymentMethodsManager from '@/components/PaymentMethodsManager'
 import { useState, useEffect, useCallback } from 'react'
 import Layout from '@/components/Layout'
 import { RequireAuth } from '@/components/RequireAuth'
@@ -29,6 +30,7 @@ export default function Settings() {
     full_name: '',
     email: '',
     default_environment_id: 'default',
+    payment_methods: [] as string[],
   })
 
   // Per-environment settings
@@ -80,6 +82,9 @@ export default function Settings() {
         full_name: fullName,
         email: settingsRow?.email || user.email || '',
         default_environment_id: settingsRow?.default_environment_id || 'default',
+        payment_methods: Array.isArray(settingsRow?.payment_methods) ? settingsRow.payment_methods : [
+          'Credit Card', 'Debit Card', 'Cash', 'Bank Transfer', 'UPI', 'NEFT', 'Check', 'Other'
+        ],
       })
 
       setNotifications({
@@ -144,6 +149,7 @@ export default function Settings() {
         full_name: globalSettings.full_name,
         email: user.email || '',
         default_environment_id: globalSettings.default_environment_id,
+        payment_methods: globalSettings.payment_methods,
         ...notifications,
         updated_at: new Date().toISOString(),
       }
@@ -533,6 +539,16 @@ export default function Settings() {
                 </div>
 
                 {/* Default Environment */}
+                                {/* Payment Methods Manager */}
+                                <div>
+                                  <PaymentMethodsManager
+                                    paymentMethods={globalSettings.payment_methods}
+                                    setPaymentMethods={methods => {
+                                      setGlobalSettings(prev => ({ ...prev, payment_methods: methods }));
+                                      markDirty();
+                                    }}
+                                  />
+                                </div>
                 <div>
                   <label className="block text-xs lg:text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">Default Environment</label>
                   <select
