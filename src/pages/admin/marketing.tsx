@@ -2,12 +2,28 @@ import React, { useState } from 'react';
 import Head from 'next/head';
 import Layout from '@/components/Layout';
 import { RequireAuth } from '@/components/RequireAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { Send, Lock, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
 
+
 export default function AdminMarketing() {
+  const { user, loading } = useAuth();
+  // Only allow this email
+  const allowedEmail = 'pratikmak2542@gmail.com';
+  if (!loading && (!user || user.email !== allowedEmail)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-900 p-8 rounded shadow text-center">
+          <div className="text-2xl font-bold mb-2">Access Denied</div>
+          <div className="text-gray-600 dark:text-gray-300">You do not have permission to view this page.</div>
+        </div>
+      </div>
+    );
+  }
   const [secret, setSecret] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [whatsNewMode, setWhatsNewMode] = useState(true);
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [result, setResult] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -23,7 +39,7 @@ export default function AdminMarketing() {
       const res = await fetch('/api/ai/generate-marketing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: aiContext })
+        body: JSON.stringify({ context: aiContext, format: whatsNewMode ? 'whats-new' : 'paragraph' })
       });
       
       if (!res.ok) throw new Error('Failed to generate content');
@@ -165,20 +181,26 @@ export default function AdminMarketing() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                     Message Body
+                    <span className="ml-2 text-xs text-indigo-600 cursor-pointer select-none" onClick={() => setWhatsNewMode(v => !v)}>
+                      {whatsNewMode ? '📝 Whats New Style' : '📄 Paragraph'}
+                    </span>
                   </label>
                   <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    rows={8}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-mono"
-                    placeholder="Write your message here..."
+                    rows={whatsNewMode ? 10 : 8}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-mono bg-indigo-50 dark:bg-indigo-900/10"
+                    placeholder={whatsNewMode ? '• New dark mode UI\n• Analytics now show compact numbers\n• AI answers account-specific questions\n...' : 'Write your message here...'}
                     required
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Plain text message.
+                    {whatsNewMode ? 'Use bullet points or short highlights for a more attractive announcement.' : 'Plain text message.'}
                   </p>
+                  {whatsNewMode && message.trim() && (
+                    <WhatsNewPreview message={message} />
+                  )}
                 </div>
               </div>
 
@@ -244,5 +266,82 @@ export default function AdminMarketing() {
         </div>
       </div>
     </Layout>
+  );
+}
+
+// --- Feature-rich WhatsNewPreview ---
+function WhatsNewPreview({ message }: { message: string }) {
+  // Emojis for common features
+  const featureEmojis: Record<string, string> = {
+    "AI Insights": "🤖",
+    "Expense Analytics": "📊",
+    "Payment Methods": "💳",
+    "Dark Mode": "🌙",
+    "Mobile App": "📱",
+    "Security": "🔒",
+    "Budgeting": "💰",
+    "Notifications": "🔔",
+    "Import/Export": "📥",
+    "Multi-Account": "🏦",
+    "Personalization": "✨",
+    "Quick Add": "⚡",
+    "Reports": "📝",
+    "Reminders": "⏰",
+    "Cloud Sync": "☁️",
+  };
+  // Example snippets for features
+  const featureExamples: Record<string, string> = {
+    "AI Insights": "Get smart suggestions to save more.",
+    "Expense Analytics": "See where your money goes with interactive charts.",
+    "Payment Methods": "Add, edit, or delete your cards and wallets easily.",
+    "Dark Mode": "Switch themes for day or night comfort.",
+    "Mobile App": "Track expenses on the go!",
+    "Security": "Your data is encrypted and safe.",
+    "Budgeting": "Set monthly limits and get alerts.",
+    "Notifications": "Never miss a bill or budget update.",
+    "Import/Export": "Move your data in/out with one click.",
+    "Multi-Account": "Manage business and personal finances separately.",
+    "Personalization": "Customize categories and dashboard.",
+    "Quick Add": "Add expenses in seconds.",
+    "Reports": "Download PDF summaries for tax time.",
+    "Reminders": "Get notified for upcoming payments.",
+    "Cloud Sync": "Access your data anywhere, anytime.",
+  };
+  // Image placeholder for preview
+  const previewImageUrl = "https://images.unsplash.com/photo-1519125323398-675f0ddb6308?auto=format&fit=crop&w=600&q=80";
+  // Parse features from message
+  const features = message.split('\n').filter(line => line.trim()).map(line => line.replace(/^•\s*/, ''));
+  return (
+    <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg border border-indigo-100 dark:border-indigo-700 p-4 shadow-sm">
+      <h4 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 mb-2">Preview</h4>
+      <div className="mb-4 flex justify-center">
+        <img
+          src={previewImageUrl}
+          alt="Expense Tracker Preview"
+          className="rounded-lg shadow-md w-2/3 max-w-md"
+        />
+      </div>
+      <ul className="list-none pl-0">
+        {features.map((feature, idx) => {
+          const main = feature.split(/[:\-]/)[0].trim();
+          const emoji = featureEmojis[main] || "✨";
+          const example = featureExamples[main];
+          return (
+            <li key={idx} className="mb-4 flex items-start">
+              <span className="text-2xl mr-3">{emoji}</span>
+              <div>
+                <span className="font-semibold text-base">{feature}</span>
+                {example && (
+                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{example}</div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-2 text-xs text-center text-gray-400 dark:text-gray-500">
+        (You can replace the image above with your own product screenshot!)
+      </div>
+    </div>
   );
 }

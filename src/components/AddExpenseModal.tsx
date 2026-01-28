@@ -632,23 +632,24 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         let netChange = 0
 
         selected.forEach(exp => {
-          // exp.amount: positive = expense/debit, negative = income/credit
-          const isIncome = exp.amount < 0
-          const isExpense = exp.amount > 0
-
-          // For database storage: negative for income, positive for expense
-          const storedAmount = exp.amount // Keep the sign as-is
-
-          // For balance calculation: income increases balance, expense decreases balance
-          if (isIncome) {
-            netChange += Math.abs(exp.amount) // Add income to balance
+          // Standardize: income as positive, expense as negative
+          let storedAmount = 0;
+          let type = 'expense';
+          if (exp.amount < 0) {
+            // Income: store as positive
+            storedAmount = Math.abs(exp.amount);
+            type = 'income';
+            netChange += storedAmount; // Add income to balance
           } else {
-            netChange -= Math.abs(exp.amount) // Subtract expense from balance
+            // Expense: store as negative
+            storedAmount = -Math.abs(exp.amount);
+            type = 'expense';
+            netChange -= Math.abs(exp.amount); // Subtract expense from balance
           }
 
-          const newRef = doc(getCollection('expenses'))
+          const newRef = doc(getCollection('expenses'));
           transaction.set(newRef, {
-            amount: storedAmount, // Store with sign: negative for income, positive for expense
+            amount: storedAmount, // Store: positive for income, negative for expense
             currency: exp.currency || 'USD',
             merchant: exp.merchant || 'Unknown',
             payment_method: exp.payment_method || 'Imported',
@@ -657,13 +658,13 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
             occurred_on: exp.occurred_on,
             category: exp.category || 'Uncategorized',
             attachment: null,
-            type: isIncome ? 'income' : 'expense',
+            type,
             created_at: new Date().toISOString()
-          })
-        })
+          });
+        });
 
-        transaction.update(accRef, { balance: currentBal + netChange })
-      })
+        transaction.update(accRef, { balance: currentBal + netChange });
+      });
 
       onAdded()
       onClose()
