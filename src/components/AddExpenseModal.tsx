@@ -149,7 +149,11 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     payment_method: '', // Will store Account Name for legacy/display
     account_id: '',
     note: '',
-    occurred_on: new Date().toISOString(),
+    occurred_on: (() => {
+      // For today's date, use current time. For older dates, use start of day
+      const now = new Date()
+      return now.toISOString()
+    })(),
     category: '',
     attachment: '',
     type: 'expense' as 'expense' | 'income' | 'transfer',

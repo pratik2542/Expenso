@@ -38,6 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       let prevTotalSpent = 0;
       let topCategory = 'None';
       let biggestChange = 'N/A';
+      const categoryTotals: Record<string, number> = {};
       
       try {
         // Collect all expense collection references (Legacy + Environments)
@@ -77,16 +78,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // 1. Fetch expenses for current week
         const currentExpenses = await fetchExpenses(start, end);
 
-        const categoryTotals: Record<string, number> = {};
-
         currentExpenses.forEach(exp => {
-          const amt = Number(exp.amount) || 0;
+          const amt = Math.abs(Number(exp.amount) || 0); // Use absolute value
           // Only count expenses matching the user's preferred currency to avoid mixed currency sums
           // Ideally, we would convert currencies here.
           if (exp.currency === userCurrency) {
              // Basic filtering: ensure it's an expense flow (not income)
              // If type is missing, we assume expense (legacy behavior)
-             if (exp.type === 'expense' || !exp.type) {
+             if (exp.type === 'expense' || (!exp.type && exp.amount < 0)) {
                 totalSpent += amt;
                 categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
              }
@@ -111,8 +110,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         prevExpenses.forEach(exp => {
             if (exp.currency === userCurrency) {
-                if (exp.type === 'expense' || !exp.type) {
-                    prevTotalSpent += (Number(exp.amount) || 0);
+                if (exp.type === 'expense' || (!exp.type && exp.amount < 0)) {
+                    prevTotalSpent += Math.abs(Number(exp.amount) || 0); // Use absolute value
                 }
             }
         });
@@ -120,7 +119,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Calculate change
         if (prevTotalSpent > 0) {
             const change = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
-            biggestChange = `${change > 0 ? '+' : ''}${change.toFixed(1)}%`;
+            biggestChange = `${change > 0 ? '+' : ''}${change.toFixed(0)}%`;
         } else if (totalSpent > 0) {
             biggestChange = '+100%'; 
         } else {
@@ -134,14 +133,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Format currency
       const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(totalSpent);
 
+      // Build category breakdown
+      const sortedCategories = Object.entries(categoryTotals)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .slice(0, 5); // Top 5 categories
+
+      let breakdownText = '';
+      if (sortedCategories.length > 0) {
+        breakdownText = '\n\nTop Categories:\n' + sortedCategories
+          .map(([cat, val]) => {
+            const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(val as number);
+            const percentage = totalSpent > 0 ? (((val as number) / totalSpent) * 100).toFixed(0) : 0;
+            return `  • ${cat}: ${formatted} (${percentage}%)`;
+          })
+          .join('\n');
+      }
+
       const reportContent = {
         subject: `Your Weekly Expense Summary (${rangeLabel})`,
         text:
-          `Here’s your weekly snapshot for ${rangeLabel}.\n\n` +
+          `Here's your weekly snapshot for ${rangeLabel}.\n\n` +
           `• Total spent: ${formattedTotal}\n` +
           `• Top category: ${topCategory}\n` +
-          `• Biggest change vs last week: ${biggestChange}\n\n` +
-          `Open Expenso to see the full breakdown.`
+          `• Change vs last week: ${biggestChange}\n` +
+          breakdownText +
+          `\n\nOpen Expenso to see the full breakdown.`
       };
 
       try {
