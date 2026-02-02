@@ -17,10 +17,11 @@ export default function ResetPassword() {
   const [success, setSuccess] = useState(false)
 
   useEffect(() => {
-    if (!token) {
+    // Only set error if router is ready and token is still missing
+    if (router.isReady && !token) {
       setError('Invalid reset link. Please request a new password reset.')
     }
-  }, [token])
+  }, [token, router.isReady])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
