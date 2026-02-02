@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import Head from 'next/head'
-import { EyeIcon, EyeOffIcon } from 'lucide-react'
+import { EyeIcon, EyeOffIcon, MailIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/router'
 import { CalcBrand } from '@/components/Logo'
@@ -15,6 +15,7 @@ export default function Auth() {
   const [resetRequested, setResetRequested] = useState(false)
   const [isRecoveryMode, setIsRecoveryMode] = useState(false)
   const [newPassword, setNewPassword] = useState('')
+  const [sendingResetEmail, setSendingResetEmail] = useState(false)
   const [eyePosition, setEyePosition] = useState({ x: 0, y: 0 })
   const { signIn, signUp, signInWithGoogle, signInWithGitHub, user, resetPassword, updateUserPassword } = useAuth()
   const router = useRouter()
@@ -91,9 +92,11 @@ export default function Auth() {
   const requestPasswordReset = async () => {
     if (!formData.email) { setError('Enter your email first'); return }
     setLoading(true)
+    setSendingResetEmail(true)
     setError(null)
     const { error } = await resetPassword(formData.email)
     setLoading(false)
+    setSendingResetEmail(false)
     if (error) setError(error); else setResetRequested(true)
   }
 
@@ -322,6 +325,20 @@ export default function Auth() {
           </div>
           <div className="card">
             <form className="space-y-6" onSubmit={handleSubmit}>
+              {sendingResetEmail && (
+                <div className="text-sm text-primary-700 bg-primary-50 border border-primary-100 rounded p-3 flex items-center gap-3">
+                  <div className="relative">
+                    <MailIcon className="h-5 w-5 text-primary-600 animate-bounce" />
+                    <div className="absolute -top-1 -right-1 h-2 w-2 bg-primary-600 rounded-full animate-ping"></div>
+                  </div>
+                  <span className="flex-1">Sending password reset email...</span>
+                  <div className="flex gap-1">
+                    <div className="h-2 w-2 bg-primary-600 rounded-full animate-pulse" style={{animationDelay: '0ms'}}></div>
+                    <div className="h-2 w-2 bg-primary-600 rounded-full animate-pulse" style={{animationDelay: '150ms'}}></div>
+                    <div className="h-2 w-2 bg-primary-600 rounded-full animate-pulse" style={{animationDelay: '300ms'}}></div>
+                  </div>
+                </div>
+              )}
               {error && <div className="text-sm text-error-600 bg-error-50 border border-error-100 rounded p-2">{error}</div>}
               {verificationNotice && <div className="text-sm text-primary-700 bg-primary-50 border border-primary-100 rounded p-2">Account created successfully! You can now sign in.</div>}
               {resetRequested && <div className="text-sm text-success-600 bg-success-50 border border-success-100 rounded p-2">Password reset email sent. Check your inbox.</div>}

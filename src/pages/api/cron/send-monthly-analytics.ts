@@ -22,16 +22,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const results = [];
 
     const now = new Date();
-    const currentMonthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     
-    // Define "Current Month" as Month-to-Date
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now); // Up to now
+    // Report on the PREVIOUS month (the month that just ended)
+    // If today is Feb 1, report on January
+    const reportMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const reportMonthLabel = reportMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    
+    // Define "Report Month" - Full previous month
+    const start = new Date(reportMonth.getFullYear(), reportMonth.getMonth(), 1);
+    const end = new Date(reportMonth.getFullYear(), reportMonth.getMonth() + 1, 0, 23, 59, 59); // Last day of report month
 
-    // Define "Previous Month" for comparison (Full month? Or same days?)
-    // Let's do Full Previous Month for context
-    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    // Define "Comparison Month" - Month before the report month
+    const prevStart = new Date(reportMonth.getFullYear(), reportMonth.getMonth() - 1, 1);
+    const prevEnd = new Date(reportMonth.getFullYear(), reportMonth.getMonth(), 0, 23, 59, 59);
 
     for (const doc of usersSnapshot.docs) {
       const data = doc.data();
@@ -132,9 +135,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }).format(totalSpent);
 
       const analyticsContent = {
-        subject: `Your Monthly Analytics Report (${currentMonthLabel})`,
+        subject: `Your Monthly Analytics Report (${reportMonthLabel})`,
         text:
-          `Here's your monthly financial snapshot for ${currentMonthLabel}.\n\n` +
+          `Here's your monthly financial snapshot for ${reportMonthLabel}.\n\n` +
           `• Total expenses: ${formattedTotal}\n` +
           `• Top spending category: ${topCategory}\n` +
           `• Spending trend: ${trend}\n\n` +

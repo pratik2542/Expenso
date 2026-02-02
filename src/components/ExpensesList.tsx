@@ -9,6 +9,7 @@ const expenses = [
     amount: -89.50,
     date: '2025-09-04',
     merchant: 'Whole Foods',
+    account: 'Bank of America',
   },
   {
     id: 2,
@@ -17,6 +18,7 @@ const expenses = [
     amount: -45.20,
     date: '2025-09-03',
     merchant: 'Shell',
+    account: 'Chase',
   },
   {
     id: 3,
@@ -25,6 +27,7 @@ const expenses = [
     amount: -5.75,
     date: '2025-09-03',
     merchant: 'Starbucks',
+    account: 'Cash',
   },
   {
     id: 4,
@@ -33,6 +36,7 @@ const expenses = [
     amount: 3200.00,
     date: '2025-09-01',
     merchant: 'Company Inc.',
+    account: 'Wells Fargo',
   },
   {
     id: 5,
@@ -41,6 +45,7 @@ const expenses = [
     amount: -15.99,
     date: '2025-09-01',
     merchant: 'Netflix',
+    account: 'Credit Card',
   },
 ]
 
@@ -72,6 +77,9 @@ export default function ExpensesList() {
                 </p>
                 <p className="text-sm text-gray-500 truncate">
                   {expense.merchant} • {formatDate(expense.date)}
+                </p>
+                <p className="text-xs text-gray-400 truncate">
+                  Account: {expense.account}
                 </p>
               </div>
               <div className="flex items-center space-x-2">

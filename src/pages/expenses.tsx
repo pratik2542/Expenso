@@ -2132,6 +2132,14 @@ export default function Expenses() {
                 </div>
 
                 <div className="space-y-3">
+                                    {selectedExpense.account_id && (
+                                      <div>
+                                        <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Account</label>
+                                        <p className="mt-1 text-base text-gray-900 dark:text-gray-100">
+                                          {accounts.find(a => a.id === selectedExpense.account_id)?.name || 'Unknown'}
+                                        </p>
+                                      </div>
+                                    )}
                   <div>
                     <label className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</label>
                     <p className="mt-1">

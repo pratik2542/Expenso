@@ -221,10 +221,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function resetPassword(email: string) {
     try {
-      await sendPasswordResetEmail(auth, email)
+      // Use custom password reset API instead of Firebase default
+      const response = await fetch('/api/auth/request-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        return { error: data.error || 'Failed to send reset email' }
+      }
+
       return {}
     } catch (error: any) {
-      return { error: error.message }
+      return { error: error.message || 'Failed to send reset email' }
     }
   }
 

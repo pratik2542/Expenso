@@ -13,6 +13,12 @@
       "memory": 512
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/cleanup-reset-tokens",
+      "schedule": "0 2 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
