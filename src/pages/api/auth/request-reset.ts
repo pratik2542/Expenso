@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { adminDb } from '@/lib/firebaseAdmin'
 import { sendEmail } from '@/lib/email'
+import { getAppBaseUrl } from '@/lib/emailTemplates'
 import crypto from 'crypto'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -44,7 +45,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     })
 
     // Generate reset link
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:3000'
+    const appBaseUrl = getAppBaseUrl()
     const resetLink = `${appBaseUrl}/reset-password?token=${resetToken}`
     const dashboardUrl = appBaseUrl
     const appIconUrl = 'cid:expenso-logo'
