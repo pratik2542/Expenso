@@ -20,6 +20,13 @@ const config: CapacitorConfig = {
       serverClientId: '630618173026-0sit7elnmpdqksl520e79gp5oti8978q.apps.googleusercontent.com',
       forceCodeForRefreshToken: true,
     },
+    PushNotifications: {
+      presentationOptions: ['badge', 'sound', 'alert'],
+    },
+    LocalNotifications: {
+      smallIcon: 'ic_stat_icon_config_sample',
+      iconColor: '#488AFF',
+    },
   },
 };
 
