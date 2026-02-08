@@ -28,7 +28,7 @@ const PaymentMethodsManager: React.FC<PaymentMethodsManagerProps> = ({ paymentMe
             type="text"
             value={newMethod}
             onChange={e => setNewMethod(e.target.value)}
-            className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-lg px-3 py-2 flex-1 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
+            className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 flex-1 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition placeholder:text-gray-400 dark:placeholder:text-gray-500"
             placeholder="Add new method"
           />
           <button type="button" onClick={addMethod} className="bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition">Add</button>
