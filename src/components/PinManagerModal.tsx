@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X, ArrowLeft, Loader2 } from 'lucide-react'
 import { useAppLock } from '@/contexts/AppLockContext'
 
@@ -18,6 +18,17 @@ export default function PinManagerModal({ isOpen, onClose, mode, onSuccess }: Pi
   const [newPinTemp, setNewPinTemp] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setStep(mode === 'setup' ? 'new' : 'current')
+      setPin('')
+      setNewPinTemp('')
+      setError('')
+      setLoading(false)
+    }
+  }, [isOpen, mode])
 
   if (!isOpen) return null
 
