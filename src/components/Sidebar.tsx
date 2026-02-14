@@ -20,7 +20,8 @@ import {
     MoonIcon,
     SunIcon,
     Globe,
-    UploadIcon
+    UploadIcon,
+    MessageSquare,
 } from 'lucide-react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Fragment } from 'react'
@@ -31,6 +32,7 @@ import { Capacitor } from '@capacitor/core'
 import { Keyboard } from '@capacitor/keyboard'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import EnvironmentSwitcher from './EnvironmentSwitcher'
+import FeedbackModal from './FeedbackModal'
 
 // Categorized navigation for desktop
 const navigationGroups = [
@@ -98,6 +100,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     // Create Environment Modal State
     const [showCreateEnv, setShowCreateEnv] = useState(false)
     const [newEnvName, setNewEnvName] = useState('')
+    const [showFeedback, setShowFeedback] = useState(false)
     const [newEnvCurrency, setNewEnvCurrency] = useState('USD')
     const [newEnvCountry, setNewEnvCountry] = useState('')
     const [isCreatingEnv, setIsCreatingEnv] = useState(false)
@@ -663,6 +666,12 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                         </nav>
                         <div className="mt-auto px-4 py-2 border-t border-gray-100 dark:border-gray-700">
 
+                            <button
+                                onClick={() => setShowFeedback(true)}
+                                className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md py-2 mb-1"
+                            >
+                                <MessageSquare className="h-4 w-4" /> Give Feedback
+                            </button>
 
                             <button
                                 onClick={async () => { await signOut(); router.replace('/auth') }}
@@ -886,6 +895,8 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                     </div>
                 </Dialog>
             </Transition>
+            
+            <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} />
         </>
     )
 }

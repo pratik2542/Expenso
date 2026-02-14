@@ -1,12 +1,12 @@
 import Head from 'next/head'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
 import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon, DownloadIcon, Wallet, UploadIcon } from 'lucide-react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState as useReactState } from 'react';
 import { db } from '@/lib/firebaseClient'
-import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, orderBy } from 'firebase/firestore'
+import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, orderBy, limit, startAfter, type QueryDocumentSnapshot, type DocumentData, getAggregateFromServer, sum } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { RequireAuth } from '@/components/RequireAuth'
 import { compressImage, formatBytes } from '@/utils/imageCompression'
@@ -191,7 +191,26 @@ export default function Expenses() {
 
   // CSV Export function
   const exportToCSV = async () => {
-    if (!expenses || expenses.length === 0) {
+    // Important: the UI uses paged loading for performance.
+    // For exports, fetch the complete dataset so output stays identical.
+    const expensesRef = getCollection('expenses')
+    const allExpenses: Expense[] = []
+    let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null
+    const EXPORT_PAGE_SIZE = 1000
+
+    while (true) {
+      const constraints: any[] = [orderBy('occurred_on', 'desc'), limit(EXPORT_PAGE_SIZE)]
+      if (lastDoc) constraints.push(startAfter(lastDoc))
+      const q = query(expensesRef, ...constraints)
+      const snapshot = await getDocs(q)
+      const batch = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Expense[]
+      allExpenses.push(...batch)
+
+      if (snapshot.docs.length < EXPORT_PAGE_SIZE) break
+      lastDoc = snapshot.docs[snapshot.docs.length - 1]
+    }
+
+    if (allExpenses.length === 0) {
       alert('No expenses to export')
       return
     }
@@ -200,7 +219,7 @@ export default function Expenses() {
     const headers = ['Date', 'Amount', 'Currency', 'Type', 'Category', 'Account', 'Merchant', 'Payment Method', 'Note', 'Attachment']
 
     // Prepare CSV rows
-    const rows = expenses.map(expense => {
+    const rows = allExpenses.map(expense => {
       const accountName = accounts.find(a => a.id === expense.account_id)?.name || ''
       return [
         formatDate(expense.occurred_on),
@@ -277,20 +296,94 @@ export default function Expenses() {
     return formatCurrencyExplicit(amount, currencyCode)
   }
 
-  const { data: expenses = [], isLoading } = useQuery<Expense[]>({
+  type ExpensesPage = {
+    items: Expense[]
+    lastDoc: QueryDocumentSnapshot<DocumentData> | null
+  }
+
+  const PAGE_SIZE = 200
+
+  const {
+    data: expensesPages,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery<ExpensesPage>({
     queryKey: ['expenses', user?.uid, currentEnvironment.id],
     enabled: !!user?.uid,
-    queryFn: async () => {
-      if (!user?.uid) return []
+    initialPageParam: null as QueryDocumentSnapshot<DocumentData> | null,
+    queryFn: async ({ pageParam }) => {
+      if (!user?.uid) return { items: [], lastDoc: null }
+
       const expensesRef = getCollection('expenses')
-      const q = query(expensesRef, orderBy('occurred_on', 'desc'))
+      const constraints: any[] = [orderBy('occurred_on', 'desc'), limit(PAGE_SIZE)]
+      if (pageParam) constraints.push(startAfter(pageParam))
+      const q = query(expensesRef, ...constraints)
       const snapshot = await getDocs(q)
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Expense[]
+      const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Expense[]
+      const lastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null
+
+      return { items, lastDoc }
+    },
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.lastDoc) return undefined
+      if (lastPage.items.length < PAGE_SIZE) return undefined
+      return lastPage.lastDoc
     },
   })
+
+  const expenses = useMemo(() => expensesPages?.pages.flatMap(p => p.items) ?? [], [expensesPages])
+
+  const { data: allTotals } = useQuery<{ income: number; expense: number; total: number }>({
+    // Prefix matches existing invalidations (invalidateQueries(['expenses', uid, envId]))
+    queryKey: ['expenses', user?.uid, currentEnvironment.id, 'totals'],
+    enabled: !!user?.uid,
+    queryFn: async () => {
+      if (!user?.uid) return { income: 0, expense: 0, total: 0 }
+
+      const expensesRef = getCollection('expenses')
+
+      // Amount storage contract:
+      // - income: positive amount
+      // - expense: negative amount
+      // - transfer: amount = 0
+      // This lets us compute totals without downloading all docs.
+      const [allAgg, incomeAgg, expenseAgg] = await Promise.all([
+        getAggregateFromServer(query(expensesRef), { total: sum('amount') }),
+        getAggregateFromServer(query(expensesRef, where('amount', '>', 0)), { total: sum('amount') }),
+        getAggregateFromServer(query(expensesRef, where('amount', '<', 0)), { total: sum('amount') }),
+      ])
+
+      const total = Number((allAgg.data() as any)?.total ?? 0)
+      const income = Number((incomeAgg.data() as any)?.total ?? 0)
+      const expenseNeg = Number((expenseAgg.data() as any)?.total ?? 0) // negative
+      const expense = Math.abs(expenseNeg)
+
+      return { income, expense, total }
+    },
+  })
+
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!loadMoreRef.current) return
+    if (!hasNextPage) return
+
+    const el = loadMoreRef.current
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (!entry?.isIntersecting) return
+        if (!hasNextPage || isFetchingNextPage) return
+        fetchNextPage()
+      },
+      { root: null, rootMargin: '400px', threshold: 0 }
+    )
+
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage])
 
   const [searchTerm, setSearchTerm] = useState('')
   // State for AI duplicate detection
@@ -313,6 +406,47 @@ export default function Expenses() {
   const [accountFilter, setAccountFilter] = useState('')
   const [accountName, setAccountName] = useState('')
   const [showFilterModal, setShowFilterModal] = useState(false)
+
+  // Preserve existing UX for filter/search/sort correctness by progressively loading remaining pages
+  // when those features are used.
+  const shouldLoadAllPages =
+    showFilterModal ||
+    searchTerm.trim().length > 0 ||
+    !!categoryFilter ||
+    !!monthFilter ||
+    !!accountFilter ||
+    sortBy !== 'occurred_on' ||
+    sortOrder !== 'desc'
+
+  // If we previously loaded many pages for search/filter correctness,
+  // collapse back to the first page when returning to the default view.
+  // This prevents "clear search" from keeping the entire history loaded.
+  const prevShouldLoadAllPagesRef = useRef<boolean>(false)
+  useEffect(() => {
+    const prev = prevShouldLoadAllPagesRef.current
+    if (prev && !shouldLoadAllPages && user?.uid) {
+      queryClient.setQueryData(['expenses', user.uid, currentEnvironment.id], (data: any) => {
+        const pages = data?.pages
+        const pageParams = data?.pageParams
+        if (!Array.isArray(pages) || pages.length <= 1) return data
+        return {
+          ...data,
+          pages: [pages[0]],
+          pageParams: Array.isArray(pageParams) && pageParams.length > 0 ? [pageParams[0]] : [null]
+        }
+      })
+    }
+    prevShouldLoadAllPagesRef.current = shouldLoadAllPages
+  }, [shouldLoadAllPages, queryClient, user?.uid, currentEnvironment.id])
+
+  useEffect(() => {
+    if (!shouldLoadAllPages) return
+    if (!hasNextPage || isFetchingNextPage) return
+    const t = window.setTimeout(() => {
+      fetchNextPage()
+    }, 50)
+    return () => window.clearTimeout(t)
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, shouldLoadAllPages])
 
   // Scroll to top button visibility
   const [showScrollTop, setShowScrollTop] = useState(false)
@@ -441,6 +575,39 @@ export default function Expenses() {
   }, 0)
   const distinctCurrencies = new Set(sortedExpenses.map(e => e.currency))
   const singleCurrencyCode = distinctCurrencies.size === 1 ? Array.from(distinctCurrencies)[0] : null
+
+  const filteredExpenseTotal = useMemo(() => {
+    // Expenses are stored as negative amounts; ignore transfers (amount=0)
+    const sumNeg = sortedExpenses
+      .filter(e => e.type !== 'income' && e.type !== 'transfer' && e.amount < 0)
+      .reduce((sum, e) => sum + e.amount, 0)
+    return Math.abs(sumNeg)
+  }, [sortedExpenses])
+
+  const filteredIncomeTotal = useMemo(() => {
+    // Income amounts are stored as positive
+    return sortedExpenses
+      .filter(e => e.type === 'income')
+      .reduce((sum, e) => sum + Math.abs(e.amount), 0)
+  }, [sortedExpenses])
+
+  const displayTotals = useMemo(() => {
+    if (shouldLoadAllPages) {
+      return {
+        expense: filteredExpenseTotal,
+        income: filteredIncomeTotal,
+        total: totalAmount,
+        isFiltered: true,
+      }
+    }
+
+    return {
+      expense: allTotals?.expense ?? 0,
+      income: allTotals?.income ?? 0,
+      total: allTotals?.total ?? 0,
+      isFiltered: false,
+    }
+  }, [allTotals?.expense, allTotals?.income, allTotals?.total, categoryFilter, filteredExpenseTotal, filteredIncomeTotal, shouldLoadAllPages, totalAmount])
 
   // Converted total state for single-currency case
   const [convertedTotal, setConvertedTotal] = useState<number | null>(null)
@@ -846,7 +1013,7 @@ export default function Expenses() {
                     <p className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-1">Expense</p>
                     <p className="text-[13px] font-bold text-red-700 dark:text-red-300 truncate">
                       {formatCurrencyExplicit(
-                        Math.abs(sortedExpenses.filter(e => e.type !== 'income' && e.type !== 'transfer' && e.amount < 0).reduce((sum, e) => sum + e.amount, 0)),
+                        Math.abs(displayTotals.expense),
                         currentEnvironment.currency || prefCurrency
                       )}
                     </p>
@@ -857,23 +1024,23 @@ export default function Expenses() {
                     <p className="text-[10px] font-semibold text-green-700 dark:text-green-400 uppercase tracking-wide mb-1">Income</p>
                     <p className="text-[13px] font-bold text-green-800 dark:text-green-300 truncate">
                       {formatCurrencyExplicit(
-                        Math.abs(sortedExpenses.filter(e => e.type === 'income').reduce((sum, e) => sum + Math.abs(e.amount), 0)),
+                        Math.abs(displayTotals.income),
                         currentEnvironment.currency || prefCurrency
                       )}
                     </p>
                   </div>
 
                   {/* Total (Net) - Dynamic color based on profit/loss */}
-                  <div className={`bg-gradient-to-br border rounded-lg p-2.5 overflow-hidden ${(!categoryFilter && totalAmount >= 0) || (categoryFilter && totalAmount >= 0)
+                  <div className={`bg-gradient-to-br border rounded-lg p-2.5 overflow-hidden ${(displayTotals.total ?? 0) >= 0
                     ? 'from-green-100/80 to-emerald-100/80 dark:from-green-900/20 dark:to-emerald-900/20 border-green-200 dark:border-green-800'
                     : 'from-red-50 to-rose-50 dark:from-red-900/20 dark:to-rose-900/20 border-red-100 dark:border-red-800'
                     }`}>
-                    <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${(!categoryFilter && totalAmount >= 0) || (categoryFilter && totalAmount >= 0) ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                    <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${(displayTotals.total ?? 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                       }`}>Total</p>
-                    <p className={`text-[13px] font-bold truncate ${(!categoryFilter && totalAmount >= 0) || (categoryFilter && totalAmount >= 0) ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'
+                    <p className={`text-[13px] font-bold truncate ${(displayTotals.total ?? 0) >= 0 ? 'text-green-800 dark:text-green-300' : 'text-red-700 dark:text-red-300'
                       }`}>
                       {formatCurrencyExplicit(
-                        categoryFilter ? Math.abs(totalAmount) : totalAmount,
+                        displayTotals.total ?? 0,
                         currentEnvironment.currency || prefCurrency
                       )}
                     </p>
@@ -1178,13 +1345,13 @@ export default function Expenses() {
                     <span className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                       {singleCurrencyCode ? (
                         singleCurrencyCode === prefCurrency ? (
-                          <>Total: {formatCurrency(categoryFilter ? Math.abs(totalAmount) : totalAmount)}</>
+                          <>Total: {formatCurrency(displayTotals.total ?? 0)}</>
                         ) : (
-                          <>Total: {formatCurrencyExplicit(categoryFilter ? Math.abs(totalAmount) : totalAmount, singleCurrencyCode)}</>
+                          <>Total: {formatCurrencyExplicit(displayTotals.total ?? 0, singleCurrencyCode)}</>
                         )
                       ) : (
                         // Multi-currency list: keep existing behavior
-                        <>Total: {(categoryFilter ? Math.abs(totalAmount) : totalAmount).toFixed(2)} (mixed)</>
+                        <>Total: {(displayTotals.total ?? 0).toFixed(2)} (mixed)</>
                       )}
                     </span>
                   </div>
@@ -1478,6 +1645,13 @@ export default function Expenses() {
                     </tbody>
                   </table>
                 </div>
+
+                <div ref={loadMoreRef} className="h-6" />
+                {isFetchingNextPage && (
+                  <div className="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                    Loading more...
+                  </div>
+                )}
               </div>
             </div>
           </div>

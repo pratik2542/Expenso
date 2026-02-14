@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from 'react'
 import Sidebar from './Sidebar'
 import OnboardingWizard from './OnboardingWizard'
+import UserGuideModal from './UserGuideModal'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -13,7 +14,9 @@ export default function Layout({ children }: LayoutProps) {
   const { hasOnboarded, loading: prefsLoading } = usePreferences()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showUserGuide, setShowUserGuide] = useState(false)
 
+  // Onboarding Logic
   useEffect(() => {
     if (!prefsLoading && user && hasOnboarded === false) {
       setShowOnboarding(true)
@@ -21,6 +24,25 @@ export default function Layout({ children }: LayoutProps) {
       setShowOnboarding(false)
     }
   }, [hasOnboarded, prefsLoading, user])
+
+  // User Guide Logic - Show if onboarded AND not seen yet
+  useEffect(() => {
+    if (!prefsLoading && user && hasOnboarded === true) {
+       const seenGuide = localStorage.getItem('expenso_seen_guide_v1')
+       if (!seenGuide) {
+           // Small delay to let UI settle if just finished onboarding
+           const timer = setTimeout(() => {
+               setShowUserGuide(true)
+           }, 1000)
+           return () => clearTimeout(timer)
+       }
+    }
+  }, [hasOnboarded, prefsLoading, user])
+
+  const handleCloseGuide = () => {
+      setShowUserGuide(false)
+      localStorage.setItem('expenso_seen_guide_v1', 'true')
+  }
 
   const [touchStart, setTouchStart] = useState<number | null>(null)
   const [touchEnd, setTouchEnd] = useState<number | null>(null)
@@ -77,6 +99,7 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </main>
       <OnboardingWizard open={showOnboarding} onClose={() => setShowOnboarding(false)} />
+      <UserGuideModal isOpen={showUserGuide} onClose={handleCloseGuide} />
     </div>
   )
 }
