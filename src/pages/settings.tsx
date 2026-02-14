@@ -19,7 +19,7 @@ export default function Settings() {
   const { user, signOut } = useAuth()
   const { darkMode, toggleDarkMode, refetch: refetchPrefs } = usePreferences()
   const { currentEnvironment, environments, deleteEnvironment, getCollection, reloadCurrentEnvironment } = useEnvironment()
-  const { hasPin } = useAppLock()
+  const { hasPin, isBiometricAvailable, isBiometricEnabled, toggleBiometrics } = useAppLock()
   const [pinModal, setPinModal] = useState<{ open: boolean; mode: 'setup' | 'change' | 'remove' }>({ 
     open: false, 
     mode: 'setup' 
@@ -689,6 +689,27 @@ export default function Settings() {
                    )}
                  </div>
               </div>
+
+              {hasPin && isBiometricAvailable && (
+                <div className="flex items-center justify-between py-2.5 lg:py-3 px-3 lg:px-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl mt-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">👆</span>
+                    <div className="flex flex-col">
+                        <span className="text-xs lg:text-sm text-gray-800 dark:text-gray-200 font-medium">Biometric Unlock</span>
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">Unlock with Face ID or fingerprint</span>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isBiometricEnabled}
+                      onChange={(e) => toggleBiometrics(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Notifications */}

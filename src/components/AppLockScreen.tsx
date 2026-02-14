@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useAppLock } from '@/contexts/AppLockContext'
-import { Lock, Unlock } from 'lucide-react'
+import { Lock, Unlock, Fingerprint } from 'lucide-react'
 
 export default function AppLockScreen() {
-  const { isLocked, unlock } = useAppLock()
+  const { isLocked, unlock, unlockWithBiometrics, isBiometricEnabled, isBiometricAvailable } = useAppLock()
   const [pin, setPin] = useState('')
   const [error, setError] = useState(false)
   const [animating, setAnimating] = useState(false)
@@ -12,8 +12,13 @@ export default function AppLockScreen() {
     if (!isLocked) {
       setPin('')
       setError(false)
+    } else {
+        // Auto-prompt biometric if enabled
+        if (isBiometricEnabled && isBiometricAvailable) {
+            unlockWithBiometrics()
+        }
     }
-  }, [isLocked])
+  }, [isLocked, isBiometricEnabled, isBiometricAvailable, unlockWithBiometrics])
 
   const handleNumberClick = (num: string) => {
     if (pin.length < 4) {
@@ -76,7 +81,16 @@ export default function AppLockScreen() {
               {num}
             </button>
           ))}
-          <div className="w-16 h-16"></div>
+          <div className="w-16 h-16 flex items-center justify-center">
+            {isBiometricEnabled && isBiometricAvailable && (
+                <button
+                    onClick={unlockWithBiometrics}
+                    className="w-16 h-16 rounded-full text-blue-400 active:text-blue-300 transition-colors flex items-center justify-center outline-none focus:outline-none"
+                >
+                    <Fingerprint size={32} />
+                </button>
+            )}
+          </div>
           <button
             onClick={() => handleNumberClick('0')}
             className="w-16 h-16 rounded-full bg-slate-800 text-white text-2xl font-semibold active:bg-slate-700 transition-colors flex items-center justify-center outline-none focus:outline-none"
@@ -93,6 +107,12 @@ export default function AppLockScreen() {
         
         {error && (
             <p className="text-red-500 mt-6 animate-pulse">Incorrect passcode</p>
+        )}
+        
+        {isBiometricEnabled && isBiometricAvailable && (
+             <button onClick={unlockWithBiometrics} className="mt-8 text-blue-400 text-sm hover:text-blue-300 transition-colors">
+                Use Biometrics
+             </button>
         )}
       </div>
 
