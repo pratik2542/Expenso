@@ -916,10 +916,22 @@ export default function Expenses() {
                       setDuplicateGroups([])
                       setSelectedDuplicateIds(new Set())
                       try {
-                        // Optimizing payload: slice to last 500 AND remove heavy fields like attachment
-                        const expensesToCheck = expenses.slice(0, 500).map(({ id, amount, currency, merchant, occurred_on, category, note }) => ({
-                          id, amount, currency, merchant, occurred_on, category, note
-                        }));
+                        // Fetch a consistent set for AI (independent of infinite scroll)
+                        const expensesRef = getCollection('expenses')
+                        const qRecent = query(expensesRef, orderBy('occurred_on', 'desc'), limit(500))
+                        const snapRecent = await getDocs(qRecent)
+                        const expensesToCheck = snapRecent.docs.map(d => {
+                          const e: any = d.data()
+                          return {
+                            id: d.id,
+                            amount: e.amount,
+                            currency: e.currency,
+                            merchant: e.merchant,
+                            occurred_on: e.occurred_on,
+                            category: e.category,
+                            note: typeof e.note === 'string' ? e.note.slice(0, 100) : ''
+                          }
+                        })
                         const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
@@ -1146,11 +1158,22 @@ export default function Expenses() {
                         setDuplicateGroups([])
                         setSelectedDuplicateIds(new Set())
                         try {
-                          // Chunk expenses to avoid 413 Payload Too Large
-                          // Check reasonably recent expenses and strip heavy fields
-                          const expensesToCheck = expenses.slice(0, 500).map(({ id, amount, currency, merchant, occurred_on, category, note }) => ({
-                            id, amount, currency, merchant, occurred_on, category, note
-                          }));
+                          // Fetch a consistent set for AI (independent of infinite scroll)
+                          const expensesRef = getCollection('expenses')
+                          const qRecent = query(expensesRef, orderBy('occurred_on', 'desc'), limit(500))
+                          const snapRecent = await getDocs(qRecent)
+                          const expensesToCheck = snapRecent.docs.map(d => {
+                            const e: any = d.data()
+                            return {
+                              id: d.id,
+                              amount: e.amount,
+                              currency: e.currency,
+                              merchant: e.merchant,
+                              occurred_on: e.occurred_on,
+                              category: e.category,
+                              note: typeof e.note === 'string' ? e.note.slice(0, 100) : ''
+                            }
+                          })
                           
                           const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                             method: 'POST',
