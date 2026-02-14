@@ -12,6 +12,8 @@ import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
 import UpdateChecker from '@/components/UpdateChecker'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import { AppLockProvider } from '@/contexts/AppLockContext'
+import AppLockScreen from '@/components/AppLockScreen'
 
 const queryClient = new QueryClient()
 
@@ -98,9 +100,12 @@ export default function App({ Component, pageProps }: AppProps) {
       <QueryClientProvider client={queryClient}>
         <PreferencesProvider>
           <EnvironmentProvider>
-            <UpdateChecker />
-            <Component {...pageProps} />
-            <SpeedInsights />
+            <AppLockProvider>
+              <UpdateChecker />
+              <Component {...pageProps} />
+              <AppLockScreen />
+              <SpeedInsights />
+            </AppLockProvider>
           </EnvironmentProvider>
         </PreferencesProvider>
       </QueryClientProvider>

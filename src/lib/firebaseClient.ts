@@ -13,16 +13,6 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 }
 
-// Debug: Log configuration (excluding sensitive keys)
-if (typeof window !== 'undefined') {
-  console.log('Firebase Config:', {
-    projectId: firebaseConfig.projectId,
-    authDomain: firebaseConfig.authDomain,
-    hasApiKey: !!firebaseConfig.apiKey,
-    hasAppId: !!firebaseConfig.appId,
-  })
-}
-
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)

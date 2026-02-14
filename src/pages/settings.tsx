@@ -12,11 +12,18 @@ import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { useQueryClient } from '@tanstack/react-query'
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
+import { useAppLock } from '@/contexts/AppLockContext'
+import PinManagerModal from '@/components/PinManagerModal'
 
 export default function Settings() {
   const { user, signOut } = useAuth()
   const { darkMode, toggleDarkMode, refetch: refetchPrefs } = usePreferences()
   const { currentEnvironment, environments, deleteEnvironment, getCollection, reloadCurrentEnvironment } = useEnvironment()
+  const { hasPin } = useAppLock()
+  const [pinModal, setPinModal] = useState<{ open: boolean; mode: 'setup' | 'change' | 'remove' }>({ 
+    open: false, 
+    mode: 'setup' 
+  })
   const queryClient = useQueryClient()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -639,6 +646,51 @@ export default function Settings() {
               </div>
             </div>
 
+            {/* Security */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 lg:p-6 dark:border dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-4 lg:mb-6">
+                 <div className="w-8 h-8 lg:w-9 lg:h-9 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/30 dark:to-indigo-800/30 flex items-center justify-center">
+                  <span className="text-lg">🔒</span>
+                </div>
+                <h2 className="text-sm lg:text-lg font-semibold text-gray-900 dark:text-white">Security</h2>
+              </div>
+              
+              <div className="flex items-center justify-between py-2.5 lg:py-3 px-3 lg:px-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                 <div>
+                   <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200">App Lock</h3>
+                   <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                     Restrict access to the app with a PIN code
+                   </p>
+                 </div>
+                 
+                 <div className="flex gap-2">
+                   {hasPin ? (
+                     <>
+                        <button
+                          onClick={() => setPinModal({ open: true, mode: 'change' })}
+                          className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          Change PIN
+                        </button>
+                        <button
+                          onClick={() => setPinModal({ open: true, mode: 'remove' })}
+                          className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                        >
+                          Remove
+                        </button>
+                     </>
+                   ) : (
+                      <button
+                        onClick={() => setPinModal({ open: true, mode: 'setup' })}
+                        className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200 dark:shadow-none"
+                      >
+                        Set PIN
+                      </button>
+                   )}
+                 </div>
+              </div>
+            </div>
+
             {/* Notifications */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 lg:p-6 dark:border dark:border-gray-700">
               <div className="flex items-center gap-2 mb-4">
@@ -922,6 +974,11 @@ export default function Settings() {
             </div>
           </div>
         </div>
+        <PinManagerModal 
+          isOpen={pinModal.open} 
+          mode={pinModal.mode} 
+          onClose={() => setPinModal(p => ({ ...p, open: false }))} 
+        />
       </Layout>
     </RequireAuth>
   )
