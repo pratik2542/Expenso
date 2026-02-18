@@ -7,8 +7,8 @@ android {
         applicationId "com.prtk.expenso"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1771382881
-        versionName "1.0.52"
+        versionCode 1771385149
+        versionName "1.0.54"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -27,6 +27,12 @@ android {
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force 'androidx.browser:browser:1.8.0'
     }
 }
 

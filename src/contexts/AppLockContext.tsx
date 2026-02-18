@@ -27,6 +27,7 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
   
   const PIN_KEY = 'expenso_app_lock_pin'
   const BIO_KEY = 'expenso_app_lock_bio'
+  const SKIP_LOCK_UNTIL_KEY = 'expenso_app_lock_skip_until'
 
   // Initialize
   useEffect(() => {
@@ -54,6 +55,16 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     const handleAppStateChange = async (state: { isActive: boolean }) => {
       if (!state.isActive) {
         // App went to background
+        try {
+          const skipUntilRaw = localStorage.getItem(SKIP_LOCK_UNTIL_KEY)
+          const skipUntil = skipUntilRaw ? Number(skipUntilRaw) : 0
+          if (skipUntil && Number.isFinite(skipUntil) && Date.now() < skipUntil) {
+            return
+          }
+        } catch {
+          // ignore
+        }
+
         const storedPin = localStorage.getItem(PIN_KEY)
         if (storedPin) {
           setIsLocked(true)

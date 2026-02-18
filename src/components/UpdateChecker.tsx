@@ -2,7 +2,8 @@ import React, { useEffect, useState, Fragment } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
-import { DownloadIcon, X } from 'lucide-react'
+import { Browser } from '@capacitor/browser'
+import { DownloadIcon } from 'lucide-react'
 
 export default function UpdateChecker() {
   const [showUpdateModal, setShowUpdateModal] = useState(false)
@@ -79,9 +80,18 @@ export default function UpdateChecker() {
     return 0
   }
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    // Avoid triggering a re-lock when the app is backgrounded to open the browser.
+    // (Android/Capacitor briefly background/foregrounds the app when launching external intents.)
+    try {
+      const SKIP_LOCK_UNTIL_KEY = 'expenso_app_lock_skip_until'
+      localStorage.setItem(SKIP_LOCK_UNTIL_KEY, String(Date.now() + 2 * 60 * 1000))
+    } catch {
+      // ignore
+    }
+
     // Open the website in the system browser to download the APK
-    window.open('https://expense-ai-manager.vercel.app/Expenso.apk', '_system')
+    await Browser.open({ url: 'https://expense-ai-manager.vercel.app/Expenso.apk' })
     setShowUpdateModal(false)
   }
 

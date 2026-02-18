@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { setCorsHeaders } from '@/lib/cors'
+import { getCategoryIcon } from '@/lib/defaultCategories'
 
 // Fallback function to try Perplexity API
 async function tryPerplexity(categoryName: string, perplexityKey: string): Promise<string | null> {
@@ -58,6 +59,11 @@ async function tryPerplexity(categoryName: string, perplexityKey: string): Promi
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   setCorsHeaders(res)
 
+  // Handle CORS preflight for native (cross-origin) calls.
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
@@ -71,9 +77,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const geminiKey = process.env.GEMINI_API_KEY
     const perplexityKey = process.env.PERPLEXITY_API_KEY
-    
+
+    // If AI keys aren't configured in the deployment, don't fail the UI.
+    // Return a deterministic fallback emoji instead.
     if (!geminiKey && !perplexityKey) {
-      return res.status(500).json({ error: 'No AI API keys configured' })
+      const fallback = getCategoryIcon(categoryName) || '📦'
+      return res.status(200).json({ emoji: fallback, source: 'fallback' })
     }
 
     let emoji: string | null = null
@@ -144,12 +153,14 @@ Return only the emoji character. No text, no explanation.`
       emoji = await tryPerplexity(categoryName, perplexityKey)
     }
 
-    // Return emoji or default
-    const finalEmoji = emoji || '📦'
+    // Return emoji or deterministic default
+    const finalEmoji = emoji || getCategoryIcon(categoryName) || '📦'
     console.log('Final emoji:', finalEmoji)
     return res.status(200).json({ emoji: finalEmoji })
   } catch (error: any) {
     console.error('Error generating emoji:', error)
-    return res.status(500).json({ error: 'Failed to generate emoji suggestion', details: error.message })
+    const categoryName = typeof req.body?.categoryName === 'string' ? req.body.categoryName : ''
+    const fallback = getCategoryIcon(categoryName) || '📦'
+    return res.status(200).json({ emoji: fallback, source: 'fallback' })
   }
 }
