@@ -4,13 +4,14 @@ import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
 import { PlusIcon, EditIcon, TrashIcon, TagIcon, SearchIcon } from 'lucide-react'
 import { db } from '@/lib/firebaseClient'
-import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy } from 'firebase/firestore'
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, orderBy, writeBatch, limit, startAfter, type QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RequireAuth } from '@/components/RequireAuth'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { DEFAULT_CATEGORIES, getCategoryIcon } from '@/lib/defaultCategories'
+import { getApiUrl } from '@/lib/config'
 
 interface Category {
   id: string
@@ -154,13 +155,44 @@ export default function CategoriesPage() {
     setSaving(true)
     setError(null)
     try {
+      const existing = categories.find(c => c.id === id)
+      const oldName = existing?.name || ''
+      const newName = editingName.trim()
+
       const categoryDocRef = doc(getCollection('categories'), id)
       await updateDoc(categoryDocRef, {
-        name: editingName.trim(),
+        name: newName,
         icon: editingIcon,
         type: editingType
       })
+
+      // If category name changed, update all associated expenses to use the new name.
+      // This prevents renamed categories from appearing as "Other" in transaction lists.
+      if (oldName && oldName !== newName) {
+        const expensesRef = getCollection('expenses')
+        let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null
+        const PAGE_SIZE = 500
+
+        while (true) {
+          const constraints: any[] = [where('category', '==', oldName), limit(PAGE_SIZE)]
+          if (lastDoc) constraints.push(startAfter(lastDoc))
+          const qExp = query(expensesRef, ...constraints)
+          const snap = await getDocs(qExp)
+          if (snap.empty) break
+
+          const batch = writeBatch(db)
+          snap.docs.forEach(d => {
+            batch.update(d.ref, { category: newName })
+          })
+          await batch.commit()
+
+          if (snap.docs.length < PAGE_SIZE) break
+          lastDoc = snap.docs[snap.docs.length - 1]
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
+      queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
       setEditingId(null)
       setEditingName('')
       setEditingIcon('')
@@ -188,10 +220,11 @@ export default function CategoriesPage() {
 
     setGeneratingEmoji(true)
     try {
-      const response = await fetch('/api/ai/suggest-emoji', {
+      const response = await fetch(getApiUrl('/api/ai/suggest-emoji'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-User-Id': user?.uid || 'anonymous'
         },
         body: JSON.stringify({ categoryName: categoryName.trim() }),
       })
