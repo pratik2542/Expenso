@@ -34,7 +34,21 @@ export function AppLockProvider({ children }: { children: React.ReactNode }) {
     const storedPin = localStorage.getItem(PIN_KEY)
     if (storedPin) {
       setHasPin(true)
-      setIsLocked(true) // Always lock on startup if PIN exists
+
+      // If we just intentionally opened an external flow (e.g. update download),
+      // avoid immediately re-locking on a WebView reload/app restart.
+      let shouldLock = true
+      try {
+        const skipUntilRaw = localStorage.getItem(SKIP_LOCK_UNTIL_KEY)
+        const skipUntil = skipUntilRaw ? Number(skipUntilRaw) : 0
+        if (skipUntil && Number.isFinite(skipUntil) && Date.now() < skipUntil) {
+          shouldLock = false
+        }
+      } catch {
+        // ignore
+      }
+
+      setIsLocked(shouldLock)
     }
     
     const storedBio = localStorage.getItem(BIO_KEY)

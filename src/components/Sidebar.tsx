@@ -435,6 +435,19 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                 </div>
                                                 <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Settings</span>
                                             </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    setShowQuickActions(false)
+                                                    setShowFeedback(true)
+                                                }}
+                                                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/10 dark:to-blue-900/20 hover:from-blue-100 hover:to-blue-200 active:scale-95 transition-all"
+                                            >
+                                                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                                                    <MessageSquare className="h-5 w-5 text-white" strokeWidth={2.5} />
+                                                </div>
+                                                <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Feedback</span>
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
