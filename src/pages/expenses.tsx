@@ -86,7 +86,7 @@ const CATEGORY_MAP: Record<string, string> = {
 }
 
 function normalizeCategory(raw?: string, definedCategories?: string[], type?: string): string {
-  if (type === 'transfer') return 'Transfer'
+  if (type === 'transfer') return raw || 'Transfer'
   if (!raw) return 'Other'
   const lower = raw.trim().toLowerCase()
   // Direct match to defined categories
@@ -227,7 +227,7 @@ export default function Expenses() {
         expense.amount.toString(),
         expense.currency,
         expense.type || 'expense',
-        expense.type === 'transfer' ? 'Transfer' : (expense.category || 'Other'),
+        expense.type === 'transfer' ? (expense.category || 'Transfer') : (expense.category || 'Other'),
         accountName,
         expense.merchant || '',
         expense.payment_method || '',

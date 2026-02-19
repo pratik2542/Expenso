@@ -211,7 +211,9 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           account_id: expense.account_id || '',
           note: expense.note || '',
           occurred_on: formatDateToISO(expense.occurred_on),
-          category: normalizeCategory(expense.category, definedCategoryNames) || '',
+          category: expense.type === 'transfer'
+            ? (expense.category || 'Transfer')
+            : (normalizeCategory(expense.category, definedCategoryNames) || ''),
           attachment: expense.attachment || '',
           type: expense.type || 'expense',
           toAccountId: expense.toAccountId || ''
@@ -258,9 +260,16 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     }
   }, [currentEnvironment.currency, mode])
 
+  // When switching to transfer type, default category to 'Transfer'
+  useEffect(() => {
+    if (formData.type === 'transfer' && !formData.category) {
+      setFormData(prev => ({ ...prev, category: 'Transfer' }))
+    }
+  }, [formData.type])
+
   // Clear category if it doesn't exist in the new type's categories when switching between income/expense
   useEffect(() => {
-    if (formData.category && !definedCategoryNames.includes(formData.category) && formData.category !== 'Other') {
+    if (formData.category && !definedCategoryNames.includes(formData.category) && formData.category !== 'Other' && formData.type !== 'transfer') {
       setFormData(prev => ({ ...prev, category: '' }))
     }
   }, [formData.type, definedCategoryNames])
@@ -440,7 +449,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               account_id: formData.account_id,
               note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
               occurred_on: formData.occurred_on,
-              category: 'Transfer',
+              category: formData.category || 'Transfer',
               type: 'transfer',
               toAccountId: formData.toAccountId,
               transferAmount: amountVal
@@ -473,7 +482,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
               account_id: formData.account_id,
               note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
               occurred_on: formData.occurred_on,
-              category: 'Transfer',
+              category: formData.category || 'Transfer',
               type: 'transfer',
               toAccountId: formData.toAccountId,
               transferAmount: amountVal,
@@ -1249,18 +1258,33 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                               </select>
                             </div>
                           </div>
-                          <div className="space-y-1">
-                            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Payment Method</label>
-                            <select
-                              value={formData.payment_method || ''}
-                              onChange={e => setFormData({ ...formData, payment_method: e.target.value })}
-                              className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
-                            >
-                              <option value="">Select Payment Method</option>
-                              {paymentMethods.map(method => (
-                                <option key={method} value={method}>{method}</option>
-                              ))}
-                            </select>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Payment Method</label>
+                              <select
+                                value={formData.payment_method || ''}
+                                onChange={e => setFormData({ ...formData, payment_method: e.target.value })}
+                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
+                              >
+                                <option value="">Select Payment Method</option>
+                                {paymentMethods.map(method => (
+                                  <option key={method} value={method}>{method}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider ml-1">Category</label>
+                              <select
+                                value={formData.category}
+                                onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-blue-500 focus:ring-0 transition-all font-medium"
+                              >
+                                <option value="Transfer">Transfer</option>
+                                {expenseCategories.filter(c => c !== 'Transfer').map(c => (
+                                  <option key={c} value={c}>{c}</option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </>
                       ) : (

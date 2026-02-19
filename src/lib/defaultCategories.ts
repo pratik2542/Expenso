@@ -26,6 +26,7 @@ export const DEFAULT_CATEGORIES: CategoryWithIcon[] = [
   { name: 'Subscriptions', icon: '📱', emoji: '📱' },
   { name: 'Pet Care', icon: '🐾', emoji: '🐾' },
   { name: 'Coffee & Drinks', icon: '☕', emoji: '☕' },
+  { name: 'Transfer', icon: '↔️', emoji: '↔️' },
   { name: 'Other', icon: '📦', emoji: '📦' },
 ]
 
