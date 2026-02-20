@@ -6,9 +6,9 @@ export default function ExpenseTrackerPage() {
   return (
     <>
       <Head>
-        <title>Expense Tracker & AI Expense Manager | Expenso</title>
-        <meta name="description" content="Expenso is an AI expense tracker and expense manager app. Track expenses, manage budgets, and get smart insights in minutes." />
-        <meta name="keywords" content="expense tracker, expense manager, ai expense tracker, expense ai manager, budget tracker, personal finance app" />
+        <title>AI Expense Tracker | Expenso</title>
+        <meta name="description" content="Expenso is an AI expense tracker that helps you track expenses, manage budgets, and understand spending with smart insights." />
+        <meta name="keywords" content="ai expense tracker, expense tracker, expense manager, expense ai manager, budget tracker, personal finance app" />
         <link rel="canonical" href="https://expense-ai-manager.vercel.app/expense-tracker" />
       </Head>
 
@@ -18,10 +18,10 @@ export default function ExpenseTrackerPage() {
             Expense Tracker
           </div>
           <h1 className="text-3xl sm:text-4xl font-semibold text-gray-900 mb-4">
-            Expense tracker with AI insights
+            AI expense tracker with smart insights
           </h1>
           <p className="text-base sm:text-lg text-gray-600 mb-8">
-            Expenso is a modern expense manager app designed for daily use. Track expenses quickly, set budgets, and get clear AI insights on your spending.
+            Expenso is a modern AI expense tracker designed for daily use. Track expenses quickly, set budgets, and get clear insights on your spending.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
             <Link

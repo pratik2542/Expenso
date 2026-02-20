@@ -157,7 +157,7 @@ export default function LandingPage() {
               <span>AI insights that feel personal</span>
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-gray-900 mb-5 leading-tight">
-              The <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">expense tracker</span> that feels simple,
+              The <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">AI expense tracker</span> that feels simple,
               <span className="hidden sm:inline"> with AI that feels smart</span>
             </h1>
             <p className="max-w-2xl mx-auto text-base sm:text-lg text-gray-600 mb-8 leading-relaxed">

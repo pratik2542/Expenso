@@ -655,15 +655,21 @@ function DashboardContent() {
 export default function Home() {
   const { user, loading } = useAuth()
   const router = useRouter()
+  const isNative = Capacitor.isNativePlatform()
 
   useEffect(() => {
     // If on mobile (native) and not logged in, redirect to auth immediately
-    if (!loading && !user && Capacitor.isNativePlatform()) {
+    if (!loading && !user && isNative) {
       router.replace('/auth')
     }
-  }, [loading, user, router])
+  }, [loading, user, router, isNative])
 
   if (loading) {
+    // On web, prefer rendering the SEO landing page immediately so crawlers (and users)
+    // see meaningful content instead of a blank spinner while auth initializes.
+    if (!isNative) {
+      return <LandingPage />
+    }
     return (
       <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
@@ -673,7 +679,7 @@ export default function Home() {
 
   if (!user) {
     // On native, show nothing (or spinner) while redirecting to avoid flashing Landing Page
-    if (Capacitor.isNativePlatform()) {
+    if (isNative) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-900">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 dark:border-primary-400"></div>
