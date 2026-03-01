@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { sendNotification } from '@/lib/email';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { spendingDelta } from '@/lib/transactions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Secure this endpoint with a secret key
@@ -22,6 +23,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const results = [];
 
     const now = new Date();
+
+    const toYmd = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const isRelevantForSpending = (row: any) => spendingDelta(row) !== 0;
     
     // Report on the PREVIOUS month (the month that just ended)
     // If today is Feb 1, report on January
@@ -30,11 +40,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     
     // Define "Report Month" - Full previous month
     const start = new Date(reportMonth.getFullYear(), reportMonth.getMonth(), 1);
-    const end = new Date(reportMonth.getFullYear(), reportMonth.getMonth() + 1, 0, 23, 59, 59); // Last day of report month
+    const end = new Date(reportMonth.getFullYear(), reportMonth.getMonth() + 1, 0); // Last day of report month
+    const startYmd = toYmd(start);
+    const endYmd = toYmd(end);
 
     // Define "Comparison Month" - Month before the report month
     const prevStart = new Date(reportMonth.getFullYear(), reportMonth.getMonth() - 1, 1);
-    const prevEnd = new Date(reportMonth.getFullYear(), reportMonth.getMonth(), 0, 23, 59, 59);
+    const prevEnd = new Date(reportMonth.getFullYear(), reportMonth.getMonth(), 0);
+    const prevStartYmd = toYmd(prevStart);
+    const prevEndYmd = toYmd(prevEnd);
 
     for (const doc of usersSnapshot.docs) {
       const data = doc.data();
@@ -65,10 +79,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
 
         // Helper to fetch and sum expenses for a date range across all collections
-        const fetchExpenses = async (startDate: Date, endDate: Date) => {
+        const fetchExpenses = async (startDateYmd: string, endDateYmd: string) => {
             const promises = expenseCollections.map(ref => 
-                ref.where('occurred_on', '>=', startDate.toISOString())
-                   .where('occurred_on', '<=', endDate.toISOString())
+            ref.where('occurred_on', '>=', startDateYmd)
+               .where('occurred_on', '<=', endDateYmd)
                    .get()
             );
             
@@ -83,43 +97,50 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         };
 
         // 1. Fetch expenses for current month
-        const currentExpenses = await fetchExpenses(start, end);
+        const currentExpenses = await fetchExpenses(startYmd, endYmd);
 
         const categoryTotals: Record<string, number> = {};
 
         currentExpenses.forEach(exp => {
-          const amt = Number(exp.amount) || 0;
-          if (exp.currency === userCurrency) {
-             if (exp.type === 'expense' || !exp.type) {
-                totalSpent += amt;
-                categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
-             }
-          }
+          if (!isRelevantForSpending(exp)) return;
+
+          const expCurrency = exp.currency || userCurrency;
+          if (expCurrency !== userCurrency) return;
+
+          const delta = spendingDelta(exp);
+          totalSpent += delta;
+          const category = exp.category || 'Other';
+          categoryTotals[category] = (categoryTotals[category] || 0) + delta;
         });
 
         // Find top category
         let maxCatVal = 0;
         for (const [cat, val] of Object.entries(categoryTotals)) {
-          if (val > maxCatVal) {
-            maxCatVal = val;
+          const numVal = Number(val) || 0;
+          if (numVal > maxCatVal) {
+            maxCatVal = numVal;
             topCategory = cat;
           }
         }
 
         // 2. Fetch expenses for previous month
-        const prevExpenses = await fetchExpenses(prevStart, prevEnd);
+        const prevExpenses = await fetchExpenses(prevStartYmd, prevEndYmd);
 
         prevExpenses.forEach(exp => {
-            if (exp.currency === userCurrency) {
-                if (exp.type === 'expense' || !exp.type) {
-                    prevTotalSpent += (Number(exp.amount) || 0);
-                }
-            }
+          if (!isRelevantForSpending(exp)) return;
+
+          const expCurrency = exp.currency || userCurrency;
+          if (expCurrency !== userCurrency) return;
+
+          prevTotalSpent += spendingDelta(exp);
         });
 
         // Calculate change
-        if (prevTotalSpent > 0) {
-            const change = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
+        const safeTotalSpent = Math.max(0, totalSpent);
+        const safePrevTotalSpent = Math.max(0, prevTotalSpent);
+
+        if (safePrevTotalSpent > 0) {
+          const change = ((safeTotalSpent - safePrevTotalSpent) / safePrevTotalSpent) * 100;
             trend = `${change > 0 ? '+' : ''}${change.toFixed(1)}% vs last month`;
         } else {
             trend = 'N/A';
@@ -132,7 +153,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const formattedTotal = new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: userCurrency
-      }).format(totalSpent);
+      }).format(Math.max(0, totalSpent));
 
       const analyticsContent = {
         subject: `Your Monthly Analytics Report (${reportMonthLabel})`,

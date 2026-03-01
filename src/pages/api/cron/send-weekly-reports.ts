@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { sendNotification } from '@/lib/email';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { spendingDelta } from '@/lib/transactions';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Secure this endpoint with a secret key (e.g., CRON_SECRET)
@@ -27,6 +28,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const start = new Date(now);
     start.setDate(start.getDate() - 7);
     const rangeLabel = `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
+
+    const toYmd = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const startYmd = toYmd(start);
+    const endYmd = toYmd(end);
 
     for (const doc of usersSnapshot.docs) {
       const data = doc.data();
@@ -58,10 +69,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
 
         // Helper to fetch and sum expenses for a date range across all collections
-        const fetchExpenses = async (startDate: Date, endDate: Date) => {
+        const fetchExpenses = async (startDateYmd: string, endDateYmd: string) => {
             const promises = expenseCollections.map(ref => 
-                ref.where('occurred_on', '>=', startDate.toISOString())
-                   .where('occurred_on', '<=', endDate.toISOString())
+            ref.where('occurred_on', '>=', startDateYmd)
+               .where('occurred_on', '<=', endDateYmd)
                    .get()
             );
             
@@ -76,20 +87,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         };
 
         // 1. Fetch expenses for current week
-        const currentExpenses = await fetchExpenses(start, end);
+        const currentExpenses = await fetchExpenses(startYmd, endYmd);
 
         currentExpenses.forEach(exp => {
-          const amt = Math.abs(Number(exp.amount) || 0); // Use absolute value
-          // Only count expenses matching the user's preferred currency to avoid mixed currency sums
-          // Ideally, we would convert currencies here.
-          if (exp.currency === userCurrency) {
-             // Basic filtering: ensure it's an expense flow (not income)
-             // If type is missing, we assume expense (legacy behavior)
-             if (exp.type === 'expense' || (!exp.type && exp.amount < 0)) {
-                totalSpent += amt;
-                categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + amt;
-             }
-          }
+          const expCurrency = exp.currency || userCurrency;
+          if (expCurrency !== userCurrency) return;
+
+          const delta = spendingDelta(exp);
+          if (delta === 0) return;
+
+          totalSpent += delta;
+          categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + delta;
         });
 
         // Find top category
@@ -106,21 +114,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         prevStart.setDate(prevStart.getDate() - 7);
         const prevEnd = new Date(start); // Start of current week is end of prev week
 
-        const prevExpenses = await fetchExpenses(prevStart, prevEnd);
+        const prevExpenses = await fetchExpenses(toYmd(prevStart), toYmd(prevEnd));
 
         prevExpenses.forEach(exp => {
-            if (exp.currency === userCurrency) {
-                if (exp.type === 'expense' || (!exp.type && exp.amount < 0)) {
-                    prevTotalSpent += Math.abs(Number(exp.amount) || 0); // Use absolute value
-                }
-            }
+          const expCurrency = exp.currency || userCurrency;
+          if (expCurrency !== userCurrency) return;
+
+          const delta = spendingDelta(exp);
+          if (delta !== 0) prevTotalSpent += delta;
         });
 
         // Calculate change
-        if (prevTotalSpent > 0) {
-            const change = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
+        const safeTotalSpent = Math.max(0, totalSpent);
+        const safePrevTotalSpent = Math.max(0, prevTotalSpent);
+
+        if (safePrevTotalSpent > 0) {
+          const change = ((safeTotalSpent - safePrevTotalSpent) / safePrevTotalSpent) * 100;
             biggestChange = `${change > 0 ? '+' : ''}${change.toFixed(0)}%`;
-        } else if (totalSpent > 0) {
+        } else if (safeTotalSpent > 0) {
             biggestChange = '+100%'; 
         } else {
             biggestChange = '0%';
@@ -131,10 +142,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Format currency
-      const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(totalSpent);
+      const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(Math.max(0, totalSpent));
 
       // Build category breakdown
       const sortedCategories = Object.entries(categoryTotals)
+        .filter(([, v]) => (v as number) > 0)
         .sort(([, a], [, b]) => (b as number) - (a as number))
         .slice(0, 5); // Top 5 categories
 
@@ -143,7 +155,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         breakdownText = '\n\nTop Categories:\n' + sortedCategories
           .map(([cat, val]) => {
             const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(val as number);
-            const percentage = totalSpent > 0 ? (((val as number) / totalSpent) * 100).toFixed(0) : 0;
+            const safeTotal = Math.max(0, totalSpent);
+            const percentage = safeTotal > 0 ? (((val as number) / safeTotal) * 100).toFixed(0) : 0;
             return `  • ${cat}: ${formatted} (${percentage}%)`;
           })
           .join('\n');

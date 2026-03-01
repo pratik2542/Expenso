@@ -13,6 +13,7 @@ import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { isIncomeLike, spendingDelta } from '@/lib/transactions'
 
 interface Expense {
   id: string
@@ -206,15 +207,13 @@ export default function Analytics() {
   // Fetch income records for the selected date range (from expenses collection)
   const periodIncomeTotal = useMemo(() => {
     return periodExpenses
-      .filter(exp => exp.type === 'income')
+      .filter(exp => isIncomeLike(exp))
       .reduce((acc, exp) => acc + Math.abs(Number(exp.amount || 0)), 0)
   }, [periodExpenses])
 
   // Calculate total spending (exclude income records)
   const spendTotal = useMemo(() => {
-    return periodExpenses
-      .filter(exp => exp.type !== 'income')
-      .reduce((acc, exp) => acc + Math.abs(Number(exp.amount || 0)), 0)
+    return periodExpenses.reduce((acc, exp) => acc + spendingDelta(exp), 0)
   }, [periodExpenses])
 
   // Function to generate AI insights
@@ -230,10 +229,11 @@ export default function Analytics() {
     try {
       // Optimize payload - only send essential fields (separate income and expenses)
       const optimizedExpenses = periodExpenses
-        .filter(e => e.type !== 'income')
+        .filter(e => spendingDelta(e) !== 0)
         .map(e => ({
           id: e.id,
-          amount: e.amount,
+          // Refund-aware: pass refunds as negative amounts so AI summaries match UI totals.
+          amount: spendingDelta(e) < 0 ? -Math.abs(Number(e.amount || 0)) : Math.abs(Number(e.amount || 0)),
           currency: e.currency,
           merchant: e.merchant,
           payment_method: e.payment_method,
@@ -244,7 +244,7 @@ export default function Analytics() {
         }))
 
       const incomeRecords = periodExpenses
-        .filter(e => e.type === 'income')
+        .filter(e => isIncomeLike(e))
         .map(e => ({
           id: e.id,
           amount: e.amount,

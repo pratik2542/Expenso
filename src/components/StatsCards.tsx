@@ -6,6 +6,7 @@ import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firesto
 import { useState, useEffect } from 'react'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
+import { isIncomeLike, spendingDelta } from '@/lib/transactions'
 
 function startEndOfMonth(d = new Date()) {
   const start = new Date(d.getFullYear(), d.getMonth(), 1)
@@ -86,18 +87,14 @@ export default function StatsCards({
 
       snapshot.docs.forEach(doc => {
         const data = doc.data()
-        const amount = Number(data.amount || 0)
-        const isIncome = data.type === 'income'
+        const amountAbs = Math.abs(Number(data.amount || 0))
 
-        if (isIncome) {
-          incomeTotal += Math.abs(amount)
-        } else {
-          // It's an expense if it's not income and not a transfer
-          // Note: transfers are usually handled differently or filtered out here
-          if (data.type !== 'transfer') {
-            spendingTotal += Math.abs(amount)
-          }
+        if (isIncomeLike(data)) {
+          incomeTotal += amountAbs
+          return
         }
+
+        spendingTotal += spendingDelta(data)
       })
 
       return { spending: spendingTotal, income: incomeTotal, currency: viewCurrency }

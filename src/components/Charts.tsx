@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
+import { isIncomeLike, spendingDelta } from '@/lib/transactions'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
@@ -107,20 +108,17 @@ export default function Charts({ startDate, endDate, currency, periodLabel }: { 
       const map: Record<string, number> = {}
       snapshot.docs.forEach(doc => {
         const data = doc.data()
-        const amount = Number(data.amount || 0)
-
-        // Only include expenses (exclude income and transfers)
-        const isIncome = data.type === 'income'
-        const isTransfer = data.type === 'transfer'
-        if (isIncome || isTransfer) return
+        const delta = spendingDelta(data)
+        if (delta === 0) return
 
         const rawCategory = data.category
         // Normalize the category to combine duplicates
         const normalizedCategory = normalizeCategory(rawCategory, definedCategoryNames)
-        const absAmount = Math.abs(amount)
-        map[normalizedCategory] = (map[normalizedCategory] || 0) + absAmount
+        map[normalizedCategory] = (map[normalizedCategory] || 0) + delta
       })
-      const items = Object.entries(map).map(([name, value]) => ({ name, value }))
+      const items = Object.entries(map)
+        .filter(([, value]) => (value as number) > 0)
+        .map(([name, value]) => ({ name, value }))
       items.sort((a, b) => b.value - a.value)
       return items
     }
@@ -158,14 +156,16 @@ export default function Charts({ startDate, endDate, currency, periodLabel }: { 
 
         expenseSnapshot.docs.forEach(doc => {
           const data = doc.data()
-          const amount = Math.abs(Number(data.amount || 0))
+          const rawAbs = Math.abs(Number(data.amount || 0))
 
-          // Separate income from expenses
-          if (data.type === 'income') {
-            incomeTotal += amount
-          } else if (data.type === 'expense' || data.amount < 0) {
-            spendingTotal += amount
+          // Separate income from net spending (refund-aware)
+          if (isIncomeLike(data)) {
+            incomeTotal += rawAbs
+            return
           }
+
+          const delta = spendingDelta(data)
+          if (delta !== 0) spendingTotal += delta
         })
 
         console.log(`Chart data for ${currentMonth}/${currentYear}:`, {

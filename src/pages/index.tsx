@@ -27,6 +27,7 @@ import { getApiUrl } from '@/lib/config'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { useRouter } from 'next/router'
 import { Capacitor } from '@capacitor/core'
+import { spendingDelta } from '@/lib/transactions'
 
 const palette = ['#ef4444', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#06b6d4', '#22c55e', '#eab308', '#f97316']
 
@@ -149,16 +150,16 @@ function DashboardContent() {
       const map: Record<string, number> = {}
       snapshot.docs.forEach(doc => {
         const data = doc.data()
-        // Only include expenses (negative amounts or type='expense')
-        const isExpense = data.type === 'expense' || (!data.type && data.amount < 0) || data.amount < 0
-        if (!isExpense) return
+        const delta = spendingDelta(data)
+        if (delta === 0) return
 
         const c = data.category || 'Other'
-        const originalAmount = Math.abs(Number(data.amount || 0))
-        map[c] = (map[c] || 0) + originalAmount
+        map[c] = (map[c] || 0) + delta
       })
 
-      const items = Object.entries(map).map(([name, value]) => ({ name, value }))
+      const items = Object.entries(map)
+        .filter(([, value]) => (value as number) > 0)
+        .map(([name, value]) => ({ name, value }))
       items.sort((a, b) => b.value - a.value)
       return items.slice(0, 8) // Top 8 categories
     }
@@ -194,11 +195,7 @@ function DashboardContent() {
           const data = doc.data()
           const occurredOn = data.occurred_on
           if (occurredOn >= startStr && occurredOn <= endStr) {
-            // Only include expenses (negative amounts or type='expense')
-            const isExpense = data.type === 'expense' || (!data.type && data.amount < 0) || data.amount < 0
-            if (isExpense) {
-              return acc + Math.abs(Number(data.amount || 0))
-            }
+            return acc + spendingDelta(data)
           }
           return acc
         }, 0)
