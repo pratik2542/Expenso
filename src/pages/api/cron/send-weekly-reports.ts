@@ -45,8 +45,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const userCurrency = data.currency || 'CAD'; // Default to CAD if not set
 
       // Calculate stats
-      let totalSpent = 0;
-      let prevTotalSpent = 0;
+      let netSpent = 0;
+      let prevNetSpent = 0;
+      let grossSpent = 0;
+      let refundsTotal = 0;
       let topCategory = 'None';
       let biggestChange = 'N/A';
       const categoryTotals: Record<string, number> = {};
@@ -96,7 +98,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const delta = spendingDelta(exp);
           if (delta === 0) return;
 
-          totalSpent += delta;
+          netSpent += delta;
+          if (delta > 0) grossSpent += delta;
+          else refundsTotal += Math.abs(delta);
+
           categoryTotals[exp.category || 'Other'] = (categoryTotals[exp.category || 'Other'] || 0) + delta;
         });
 
@@ -121,12 +126,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (expCurrency !== userCurrency) return;
 
           const delta = spendingDelta(exp);
-          if (delta !== 0) prevTotalSpent += delta;
+          if (delta !== 0) prevNetSpent += delta;
         });
 
         // Calculate change
-        const safeTotalSpent = Math.max(0, totalSpent);
-        const safePrevTotalSpent = Math.max(0, prevTotalSpent);
+        const safeTotalSpent = Math.max(0, netSpent);
+        const safePrevTotalSpent = Math.max(0, prevNetSpent);
 
         if (safePrevTotalSpent > 0) {
           const change = ((safeTotalSpent - safePrevTotalSpent) / safePrevTotalSpent) * 100;
@@ -142,7 +147,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       // Format currency
-      const formattedTotal = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(Math.max(0, totalSpent));
+      const formattedNet = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(Math.max(0, netSpent));
+      const formattedRefunds = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(refundsTotal);
 
       // Build category breakdown
       const sortedCategories = Object.entries(categoryTotals)
@@ -155,8 +161,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         breakdownText = '\n\nTop Categories:\n' + sortedCategories
           .map(([cat, val]) => {
             const formatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: userCurrency }).format(val as number);
-            const safeTotal = Math.max(0, totalSpent);
-            const percentage = safeTotal > 0 ? (((val as number) / safeTotal) * 100).toFixed(0) : 0;
+            const denom = grossSpent > 0 ? grossSpent : Math.max(0, netSpent);
+            const percentage = denom > 0 ? (((val as number) / denom) * 100).toFixed(0) : 0;
             return `  • ${cat}: ${formatted} (${percentage}%)`;
           })
           .join('\n');
@@ -166,7 +172,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         subject: `Your Weekly Expense Summary (${rangeLabel})`,
         text:
           `Here's your weekly snapshot for ${rangeLabel}.\n\n` +
-          `• Total spent: ${formattedTotal}\n` +
+          `• Total spent (net): ${formattedNet}\n` +
+          (refundsTotal > 0 ? `• Refunds & credits: -${formattedRefunds}\n` : '') +
           `• Top category: ${topCategory}\n` +
           `• Change vs last week: ${biggestChange}\n` +
           breakdownText +
