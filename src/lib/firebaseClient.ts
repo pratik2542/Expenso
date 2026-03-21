@@ -17,15 +17,11 @@ const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
 
-// Initialize Firebase Analytics (client-side only)
-let analytics: any = null
-if (typeof window !== 'undefined') {
-  isSupported().then((supported) => {
-    if (supported) {
-      analytics = getAnalytics(app)
-    }
-  })
-}
+// Initialize Firebase Analytics (client-side only).
+// Expose a promise so callers don't race the async support check.
+export const analyticsPromise: Promise<ReturnType<typeof getAnalytics> | null> =
+  typeof window === 'undefined'
+    ? Promise.resolve(null)
+    : isSupported().then((supported) => (supported ? getAnalytics(app) : null))
 
-export { analytics }
 export default app

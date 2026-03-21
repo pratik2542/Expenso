@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { PreferencesProvider } from '@/contexts/PreferencesContext'
 import { EnvironmentProvider } from '@/contexts/EnvironmentContext'
-import { analytics } from '@/lib/firebaseClient'
+import { analyticsPromise } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
 import { Capacitor } from '@capacitor/core'
 import { App as CapacitorApp } from '@capacitor/app'
@@ -76,12 +76,17 @@ export default function App({ Component, pageProps }: AppProps) {
   // Track page views
   useEffect(() => {
     const handleRouteChange = (url: string) => {
-      if (analytics) {
-        logEvent(analytics, 'page_view', {
-          page_path: url,
-          page_title: document.title,
+      analyticsPromise
+        .then((a) => {
+          if (!a) return
+          logEvent(a, 'page_view', {
+            page_path: url,
+            page_title: document.title,
+          })
         })
-      }
+        .catch(() => {
+          // ignore analytics errors
+        })
     }
 
     // Track initial page load
