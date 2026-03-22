@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { SparklesIcon, RefreshCwIcon, AlertTriangleIcon, CheckCircleIcon, InfoIcon } from 'lucide-react'
 import { getApiUrl } from '@/lib/config'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
+import { spendingDelta } from '@/lib/transactions'
 
 interface AIInsightsWidgetProps {
   month: number
@@ -164,16 +165,19 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
       console.log('Fetching insights from:', apiUrl)
 
       // Optimize payload - only send essential fields to reduce size
-      const optimizedExpenses = monthlyData.expenses.map(e => ({
-        id: e.id,
-        amount: e.amount,
-        currency: e.currency,
-        merchant: e.merchant,
-        payment_method: e.payment_method,
-        note: e.note?.substring(0, 100), // Limit note length to 100 chars
-        occurred_on: e.occurred_on,
-        category: e.category
-      }))
+      const optimizedExpenses = monthlyData.expenses
+        .filter(e => spendingDelta(e) !== 0)
+        .map(e => ({
+          id: e.id,
+          // Refund-aware: send spending as positive, refunds/credits as negative.
+          amount: spendingDelta(e) < 0 ? -Math.abs(Number(e.amount || 0)) : Math.abs(Number(e.amount || 0)),
+          currency: e.currency,
+          merchant: e.merchant,
+          payment_method: e.payment_method,
+          note: e.note?.substring(0, 100),
+          occurred_on: e.occurred_on,
+          category: e.category
+        }))
 
       const res = await fetch(apiUrl, {
         method: 'POST',

@@ -134,35 +134,53 @@ interface CalculatedMetrics {
 async function generateInsights(data: AnalyticsRequest): Promise<{ text: string; metrics: CalculatedMetrics }> {
   const { expenses, income, incomeRecords, monthlyIncomeRecords, accounts, month, year, currency, question, chatHistory, periodLabel, format = 'json' } = data
 
-  // Calculate some stats
-  const totalSpend = expenses.reduce((sum, e) => sum + Math.abs(e.amount), 0)
-  const categorySpend = expenses.reduce((acc, e) => {
+  // Calculate some stats.
+  // IMPORTANT: callers may send amounts in either format:
+  // 1) Raw DB convention: expenses are negative, income/refunds are positive.
+  // 2) Signed spending convention: spending is positive, refunds/credits are negative.
+  const positiveCount = expenses.reduce((n, e) => n + (Number(e.amount) > 0 ? 1 : 0), 0)
+  const negativeCount = expenses.reduce((n, e) => n + (Number(e.amount) < 0 ? 1 : 0), 0)
+  const usesSignedSpendingConvention = positiveCount >= negativeCount
+
+  const spendingEntries = usesSignedSpendingConvention
+    ? expenses.filter(e => Number(e.amount) > 0)
+    : expenses.filter(e => Number(e.amount) < 0)
+
+  const refundEntries = usesSignedSpendingConvention
+    ? expenses.filter(e => Number(e.amount) < 0)
+    : []
+
+  const grossSpend = spendingEntries.reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0)
+  const refundsTotal = refundEntries.reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0)
+  const netSpend = grossSpend - refundsTotal
+
+  const categorySpend = spendingEntries.reduce((acc, e) => {
     const cat = e.category || 'Other'
-    acc[cat] = (acc[cat] || 0) + Math.abs(e.amount)
+    acc[cat] = (acc[cat] || 0) + Math.abs(Number(e.amount) || 0)
     return acc
   }, {} as Record<string, number>)
 
-  const merchantSpend = expenses.reduce((acc, e) => {
+  const merchantSpend = spendingEntries.reduce((acc, e) => {
     const merchant = e.merchant || 'Unknown'
-    acc[merchant] = (acc[merchant] || 0) + Math.abs(e.amount)
+    acc[merchant] = (acc[merchant] || 0) + Math.abs(Number(e.amount) || 0)
     return acc
   }, {} as Record<string, number>)
 
   // Calculate monthly breakdown of expenses for all-time analysis
-  const monthlyExpenseBreakdown = expenses.reduce((acc, e) => {
+  const monthlyExpenseBreakdown = spendingEntries.reduce((acc, e) => {
     const date = new Date(e.occurred_on)
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-    acc[key] = (acc[key] || 0) + Math.abs(e.amount)
+    acc[key] = (acc[key] || 0) + Math.abs(Number(e.amount) || 0)
     return acc
   }, {} as Record<string, number>)
 
   // Calculate monthly breakdown by category (for answering questions like "how much did I spend on groceries in October?")
-  const monthlyCategoryBreakdown = expenses.reduce((acc, e) => {
+  const monthlyCategoryBreakdown = spendingEntries.reduce((acc, e) => {
     const date = new Date(e.occurred_on)
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
     const cat = e.category || 'Other'
     if (!acc[monthKey]) acc[monthKey] = {}
-    acc[monthKey][cat] = (acc[monthKey][cat] || 0) + Math.abs(e.amount)
+    acc[monthKey][cat] = (acc[monthKey][cat] || 0) + Math.abs(Number(e.amount) || 0)
     return acc
   }, {} as Record<string, Record<string, number>>)
 
@@ -210,12 +228,11 @@ Total Income for Period: ${totalIncome.toFixed(2)} ${currency}
     incomeSection = `Monthly Income: ${totalIncome.toFixed(2)} ${currency}`
   } else if (monthlyIncomeRecords && monthlyIncomeRecords.length > 0) {
     const totalIncome = monthlyIncomeRecords.reduce((sum, r) => sum + r.amount, 0)
-    // Avoid double counting if using absolute values for expenses
-    const overallSavingsRate = totalIncome > 0 ? ((totalIncome - totalSpend) / totalIncome * 100) : 0
+    const overallSavingsRate = totalIncome > 0 ? ((totalIncome - netSpend) / totalIncome * 100) : 0
 
     incomeSection = `Total Income (All Time): ${totalIncome.toFixed(2)} ${currency}
 Overall Savings Rate: ${overallSavingsRate.toFixed(1)}%
-Total Saved: ${(totalIncome - totalSpend).toFixed(2)} ${currency}
+Total Saved: ${(totalIncome - netSpend).toFixed(2)} ${currency}
 
 Monthly Income Records:
 ${monthlyIncomeRecords
@@ -239,6 +256,9 @@ ${monthlyIncomeRecords
       ? monthlyIncomeRecords.reduce((sum, r) => sum + r.amount, 0)
       : (income?.amount || 0)
 
+  // Rebase deficit math on net spending (refund-aware when signed convention is used).
+  // Keep the variable name `totalSpend` for backward compatibility with UI expectations.
+  const totalSpend = netSpend
   const netSavings = totalIncome - totalSpend
   const savingsRate = totalIncome > 0 ? ((netSavings / totalIncome) * 100) : 0
   const isDeficit = netSavings < 0
@@ -261,7 +281,9 @@ ${monthlyIncomeRecords
   const calculatedMetrics = `
 === PRE-CALCULATED METRICS (USE THESE EXACT VALUES - DO NOT RECALCULATE) ===
 Total Income: ${totalIncome.toFixed(2)} ${currency}
-Total Spending: ${totalSpend.toFixed(2)} ${currency}
+Total Spending (Net): ${totalSpend.toFixed(2)} ${currency}
+Gross Spending: ${grossSpend.toFixed(2)} ${currency}
+Refunds & Credits: ${refundsTotal.toFixed(2)} ${currency}
 Net Savings: ${netSavings.toFixed(2)} ${currency} ${isDeficit ? '(DEFICIT - spending exceeds income!)' : ''}
 Savings Rate: ${savingsRate.toFixed(1)}% ${isDeficit ? '(NEGATIVE - user is overspending!)' : ''}
 Financial Status: ${financialStatus} (${statusColor})
@@ -284,7 +306,7 @@ ${monthlyCategorySection}
 Spending by Category (All Time Totals):
 ${Object.entries(categorySpend)
       .sort((a, b) => b[1] - a[1])
-      .map(([cat, amt]) => `- ${cat}: ${amt.toFixed(2)} ${currency} (${((amt / totalSpend) * 100).toFixed(1)}%)`)
+  .map(([cat, amt]) => `- ${cat}: ${amt.toFixed(2)} ${currency} (${(grossSpend > 0 ? ((amt / grossSpend) * 100).toFixed(1) : '0.0')}%)`)
       .join('\n')}
 
 Top Merchants/Payees:
