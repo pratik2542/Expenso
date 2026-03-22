@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react'
-import { auth, db } from '@/lib/firebaseClient'
-import { analytics } from '@/lib/firebaseClient'
+import { auth, db, analyticsPromise } from '@/lib/firebaseClient'
 import { Capacitor } from '@capacitor/core'
 import { initializeDefaultCategories } from '@/lib/defaultCategories'
 // import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth' // Removed static import
@@ -74,14 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const email = firebaseUser.email
         
         // Track login event
-        if (analytics && typeof window !== 'undefined') {
-          try {
-            logEvent(analytics as any, 'login', {
-              method: firebaseUser.providerData[0]?.providerId || 'email'
+        if (typeof window !== 'undefined') {
+          void analyticsPromise
+            .then((analytics) => {
+              if (!analytics) return
+              logEvent(analytics as any, 'login', {
+                method: firebaseUser.providerData[0]?.providerId || 'email',
+              })
             })
-          } catch (analyticsError) {
-            console.error('Analytics error:', analyticsError)
-          }
+            .catch((analyticsError) => {
+              console.error('Analytics error:', analyticsError)
+            })
         }
         
         // Save user info asynchronously - don't block auth state
@@ -135,10 +137,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       
       // Track signup event
-      if (analytics && typeof window !== 'undefined') {
-        logEvent(analytics as any, 'sign_up', {
-          method: 'email'
-        })
+      if (typeof window !== 'undefined') {
+        void analyticsPromise
+          .then((analytics) => {
+            if (!analytics) return
+            logEvent(analytics as any, 'sign_up', { method: 'email' })
+          })
+          .catch((analyticsError) => {
+            console.error('Analytics error:', analyticsError)
+          })
       }
       
       // Save full name and email to user_settings if provided

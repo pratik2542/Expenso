@@ -3,7 +3,7 @@ import { Dialog, Transition } from '@headlessui/react'
 import { X, ExternalLink, ArrowDownCircle, ArrowUpCircle, Upload, Check, AlertCircle, FileSpreadsheet, FileText } from 'lucide-react'
 import { usePreferences } from '@/contexts/PreferencesContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { analytics } from '@/lib/firebaseClient'
+import { analyticsPromise } from '@/lib/firebaseClient'
 import { logEvent } from 'firebase/analytics'
 import { compressImage, formatBytes } from '@/utils/imageCompression'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -12,6 +12,17 @@ import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy,
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { Account } from '@/types/models'
 import { getApiUrl } from '@/lib/config'
+
+function safeLogEvent(eventName: string, params?: Record<string, any>) {
+  analyticsPromise
+    .then((a) => {
+      if (!a) return
+      logEvent(a, eventName, params)
+    })
+    .catch(() => {
+      // ignore analytics errors
+    })
+}
 
 interface AddExpenseModalProps {
   open: boolean
