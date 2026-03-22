@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { SparklesIcon, RefreshCwIcon, AlertTriangleIcon, CheckCircleIcon, InfoIcon } from 'lucide-react'
 import { getApiUrl } from '@/lib/config'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
-import { spendingDelta } from '@/lib/transactions'
+import { isIncomeLike, spendingDelta } from '@/lib/transactions'
 
 interface AIInsightsWidgetProps {
   month: number
@@ -105,7 +105,7 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
         )
         const incSnap = await getDocs(qInc)
         if (!incSnap.empty) {
-          totalIncome = Number(incSnap.docs[0].data().amount || 0)
+          totalIncome = incSnap.docs.reduce((sum, d) => sum + Number(d.data().amount || 0), 0)
         }
       } else {
         // For historical periods (30 days, 6 months, 1 year), sum all income in that range
@@ -130,6 +130,14 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
             totalIncome += Number(data.amount || 0)
           }
         })
+      }
+
+      // Fallback: if monthly_income is missing/zero, compute from income transactions in `expenses`.
+      // This prevents showing Income: 0 when the user tracks income via transactions instead of monthly_income.
+      if (!totalIncome && expenses.length > 0) {
+        totalIncome = expenses
+          .filter(e => isIncomeLike(e))
+          .reduce((sum, e) => sum + Math.abs(Number(e.amount || 0)), 0)
       }
 
       return { expenses, income: { amount: totalIncome, currency }, periodLabel }
