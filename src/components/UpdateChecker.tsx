@@ -90,8 +90,9 @@ export default function UpdateChecker() {
       // ignore
     }
 
-    // Open the website in the system browser to download the APK
-    await Browser.open({ url: 'https://expense-ai-manager.vercel.app/Expenso.apk' })
+    // Open a versioned APK URL to avoid stale browser/CDN cache.
+    const apkUrl = `https://expense-ai-manager.vercel.app/Expenso.apk?v=${encodeURIComponent(latestVersion || String(Date.now()))}`
+    await Browser.open({ url: apkUrl })
     setShowUpdateModal(false)
   }
 
