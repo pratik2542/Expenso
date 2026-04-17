@@ -296,6 +296,29 @@ a {
   --tw-ring-color: rgba(148, 163, 184, 0.58) !important;
 }
 
+/* High-contrast switch states in black theme (used in Settings). */
+.theme-black .settings-toggle {
+  background: #1f2937 !important;
+  border-color: #6b7280 !important;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+
+.theme-black .peer:checked + .settings-toggle {
+  background: linear-gradient(90deg, #059669 0%, #10b981 100%) !important;
+  border-color: #34d399 !important;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.55), 0 0 14px rgba(16, 185, 129, 0.22);
+}
+
+.theme-black .settings-toggle::after {
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+}
+
+.theme-black .peer:checked + .settings-toggle::after {
+  background: #ffffff !important;
+  border-color: #d1fae5 !important;
+}
+
 /* Brand visibility in black mode (web + mobile). */
 .theme-black .calc-logo-wrap {
   padding: 2px;
