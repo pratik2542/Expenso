@@ -344,6 +344,12 @@ a {
   border-color: #d1fae5 !important;
 }
 
+/* Ensure update modal is readable in true black mode. */
+.theme-black .update-modal-card {
+  background: #0a0f16 !important;
+  border-color: #4b5565 !important;
+}
+
 /* Improve merchant/source input readability in Add Transaction modal for black theme. */
 .theme-black .transaction-merchant-input {
   color: #e8efff !important;
