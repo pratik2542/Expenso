@@ -1,6 +1,7 @@
 import Head from 'next/head'
 import PaymentMethodsManager from '@/components/PaymentMethodsManager'
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/router'
 import Layout from '@/components/Layout'
 import { RequireAuth } from '@/components/RequireAuth'
 import { UserIcon, Globe } from 'lucide-react'
@@ -16,6 +17,7 @@ import { useAppLock } from '@/contexts/AppLockContext'
 import PinManagerModal from '@/components/PinManagerModal'
 
 export default function Settings() {
+  const router = useRouter()
   const { user, signOut } = useAuth()
   const { themeMode, setThemeMode, refetch: refetchPrefs } = usePreferences()
   const { currentEnvironment, environments, deleteEnvironment, getCollection, reloadCurrentEnvironment } = useEnvironment()
@@ -31,6 +33,7 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null)
   const [sendingWeekly, setSendingWeekly] = useState(false)
   const [sendingAnalytics, setSendingAnalytics] = useState(false)
+  const [highlightAppearance, setHighlightAppearance] = useState(false)
 
   // Global app settings
   const [globalSettings, setGlobalSettings] = useState({
@@ -145,6 +148,23 @@ export default function Settings() {
   }, [user, currentEnvironment])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (!router.isReady) return
+
+    if (router.query.focus === 'appearance') {
+      const target = document.getElementById('appearance-section')
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+
+      if (router.query.highlight === 'whats-new') {
+        setHighlightAppearance(true)
+        const timer = setTimeout(() => setHighlightAppearance(false), 3500)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [router.isReady, router.query.focus, router.query.highlight])
 
   const markDirty = () => { if (!dirty) setDirty(true) }
   const markEnvDirty = () => { if (!envDirty) setEnvDirty(true) }
@@ -621,13 +641,25 @@ export default function Settings() {
             </div>
 
             {/* Appearance */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 lg:p-6 dark:border dark:border-gray-700">
+            <div
+              id="appearance-section"
+              className={`bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-4 lg:p-6 dark:border transition-all ${highlightAppearance
+                ? 'ring-2 ring-primary-500 border-primary-400 dark:border-primary-500 shadow-lg shadow-primary-500/20'
+                : 'border-gray-200 dark:border-gray-700'
+                }`}
+            >
               <div className="flex items-center gap-2 mb-4 lg:mb-6">
                 <div className="w-8 h-8 lg:w-9 lg:h-9 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900/30 dark:to-indigo-800/30 flex items-center justify-center">
                   <span className="text-lg">🌓</span>
                 </div>
                 <h2 className="text-sm lg:text-lg font-semibold text-gray-900 dark:text-white">Appearance</h2>
               </div>
+
+              {highlightAppearance && (
+                <div className="mb-4 rounded-xl border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 px-3 py-2 text-xs text-primary-800 dark:text-primary-200">
+                  This is the updated section from What&apos;s New: Theme Mode now includes improved Black theme visuals.
+                </div>
+              )}
 
               <div className="flex items-center justify-between py-2.5 lg:py-3 px-3 lg:px-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                 <div className="flex items-center gap-3">

@@ -3,8 +3,10 @@ import { Dialog, Transition } from '@headlessui/react'
 import { Capacitor } from '@capacitor/core'
 import { App } from '@capacitor/app'
 import { SparklesIcon, SettingsIcon } from 'lucide-react'
+import { useRouter } from 'next/router'
 
 export default function WhatsNewModal() {
+  const router = useRouter()
   const [showModal, setShowModal] = useState(false)
   const [appVersion, setAppVersion] = useState<string | null>(null)
 
@@ -44,7 +46,13 @@ export default function WhatsNewModal() {
       localStorage.setItem(`expenso_seen_whats_new_${appVersion}`, 'true')
     }
     setShowModal(false)
-    window.location.href = '/settings'
+    router.push({
+      pathname: '/settings',
+      query: {
+        focus: 'appearance',
+        highlight: 'whats-new'
+      }
+    })
   }
 
   if (!showModal) return null
