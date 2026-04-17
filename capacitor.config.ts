@@ -11,7 +11,6 @@ const config: CapacitorConfig = {
       'https://expenso-pdfexcel.vercel.app',
       'https://*.googleapis.com',
       'https://generativelanguage.googleapis.com',
-      'https://api.perplexity.ai'
     ]
   },
   plugins: {

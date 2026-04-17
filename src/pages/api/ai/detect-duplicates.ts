@@ -1,4 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next'
+import { groqChatCompletion } from '@/lib/groq'
+import { trackUsageForRequest } from '@/lib/usageMetrics'
 
 export const config = {
   api: {
@@ -36,10 +38,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: 'Missing or invalid expenses array' });
   }
 
+  await trackUsageForRequest(req, 'ai_duplicates')
+
   const apiKey = process.env.GEMINI_API_KEY;
-  const perplexityKey = process.env.PERPLEXITY_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
   
-  if (!apiKey && !perplexityKey) {
+  if (!apiKey && !groqKey) {
     return res.status(500).json({ error: 'Missing AI API keys' });
   }
 
@@ -119,40 +123,21 @@ ${expensesList}`;
         }
       } catch (geminiError: any) {
         console.error('Gemini failed:', geminiError.message);
-        if (!perplexityKey) throw geminiError;
-        // Fall through to Perplexity
+        if (!groqKey) throw geminiError;
+        // Fall through to Groq
       }
     }
 
-    // Try Perplexity if Gemini failed or wasn't available
-    if (!result && perplexityKey) {
-      console.log(attemptedGemini ? 'Falling back to Perplexity' : 'Using Perplexity');
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${perplexityKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'sonar',
-          messages: [{
-            role: 'user',
-            content: prompt
-          }],
-          temperature: 0.1,
-          max_tokens: 4000,
-        })
-      });
+    // Try Groq if Gemini failed or wasn't available
+    if (!result && groqKey) {
+      console.log(attemptedGemini ? 'Falling back to Groq' : 'Using Groq');
+      const content = await groqChatCompletion({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 4000,
+      })
 
-      if (!response.ok) {
-        throw new Error(`Perplexity API error: ${response.status}`);
-      }
-
-      const perplexityResult = await response.json();
-      const content = perplexityResult?.choices?.[0]?.message?.content || '{}';
-      
-      // Parse Perplexity response
-      let text = content.replace(/```json\n?|\n?```/g, '').trim();
+      let text = (content || '{}').replace(/```json\n?|\n?```/g, '').trim();
       const json = JSON.parse(text);
       return res.status(200).json(json);
     }

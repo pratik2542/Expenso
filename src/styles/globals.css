@@ -232,3 +232,88 @@ a {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
 }
+
+/* True black theme mode with layered surfaces and visible boundaries. */
+.theme-black,
+.theme-black body {
+  background-color: #000000 !important;
+  color: #f5f7fb;
+}
+
+/* Tier 1 surfaces (main cards/sections). */
+.theme-black [class*="bg-white"],
+.theme-black [class*="bg-gray-50"],
+.theme-black [class*="bg-gray-800"] {
+  background: #0d1117 !important;
+}
+
+/* Tier 2 surfaces (inner panels, controls, grouped rows). */
+.theme-black [class*="bg-gray-100"],
+.theme-black [class*="bg-gray-200"],
+.theme-black [class*="bg-gray-700"],
+.theme-black [class*="bg-gray-700/50"],
+.theme-black [class*="bg-gray-900"] {
+  background: #141a24 !important;
+}
+
+/* Preserve gradient feel while keeping black-mode identity. */
+.theme-black [class*="bg-gradient-to"],
+.theme-black [class*="from-purple-900"],
+.theme-black [class*="from-indigo-900"],
+.theme-black [class*="to-purple-900"],
+.theme-black [class*="to-indigo-900"] {
+  background-image: linear-gradient(160deg, #0d1117 0%, #161d2a 100%) !important;
+}
+
+/* Improve muted text readability in black mode. */
+.theme-black [class*="text-gray-400"] {
+  color: #a3adba !important;
+}
+
+.theme-black [class*="text-gray-500"] {
+  color: #9aa6b4 !important;
+}
+
+/* Ensure borders are visible everywhere in pure black mode. */
+.theme-black [class*="border"] {
+  border-color: #4b5565 !important;
+}
+
+/* Give cards and sections visible separation from page background. */
+.theme-black .shadow-sm,
+.theme-black .shadow,
+.theme-black .shadow-lg,
+.theme-black .shadow-xl,
+.theme-black .shadow-2xl {
+  box-shadow: 0 0 0 1px rgba(92, 106, 128, 0.55), 0 10px 26px rgba(0, 0, 0, 0.45) !important;
+}
+
+.theme-black [class*="divide-"] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #4b5565 !important;
+}
+
+.theme-black [class*="ring-"] {
+  --tw-ring-color: rgba(148, 163, 184, 0.58) !important;
+}
+
+/* Brand visibility in black mode (web + mobile). */
+.theme-black .calc-logo-wrap {
+  padding: 2px;
+  background: linear-gradient(145deg, rgba(248, 250, 252, 0.16), rgba(148, 163, 184, 0.12));
+  border: 1px solid rgba(203, 213, 225, 0.35);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+}
+
+.theme-black .calc-logo-img {
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.2));
+}
+
+.theme-black .brand-wordmark {
+  background-image: linear-gradient(to right, #93c5fd, #c4b5fd) !important;
+}
+
+@media (max-width: 1023px) {
+  .theme-black .calc-logo-wrap {
+    padding: 3px;
+  }
+}

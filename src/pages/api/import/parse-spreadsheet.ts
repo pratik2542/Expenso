@@ -3,6 +3,8 @@ import formidable, { File as FormidableFile } from 'formidable'
 import fs from 'fs'
 import * as XLSX from 'xlsx'
 import crypto from 'crypto'
+import { groqChatCompletion } from '@/lib/groq'
+import { trackUsageForRequest } from '@/lib/usageMetrics'
 
 export const config = {
   api: {
@@ -190,6 +192,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     res.setHeader('Allow', 'POST')
     return res.status(405).json({ success: false, error: 'Method Not Allowed' })
   }
+
+  await trackUsageForRequest(req, 'import_csv')
   const form = formidable({ maxFileSize: 15 * 1024 * 1024, multiples: false })
 
   try {
@@ -602,9 +606,7 @@ Output valid JSON with this structure:
       throw lastError || new Error('All Gemini models failed')
     }
 
-    async function callPerplexity(prompt: string): Promise<ParsedExpense[]> {
-      const apiKey = process.env.PERPLEXITY_API_KEY
-      if (!apiKey) throw new Error('Missing PERPLEXITY_API_KEY')
+    async function callGroq(prompt: string): Promise<ParsedExpense[]> {
       const system = `You are an expert finance assistant specialized in parsing bank and credit card statements from ANY bank worldwide. You can intelligently understand different statement formats, column structures, date formats, currency formats, and transaction types regardless of language or header names. Return structured JSON only. Do not include any personally identifiable information (PII) and do not extract account summaries.`
       const user = `Below is a bank/credit card statement exported from Excel/CSV. The format may be from ANY bank in the world with ANY column names in ANY language.
 
@@ -677,38 +679,19 @@ EXTRACTION RULES:
 
 Output must be valid JSON with this structure:
 {"expenses": [{"amount": number, "currency": string, "occurred_on": string, "line_index": number, "merchant"?: string, "payment_method"?: string, "note"?: string, "category"?: string, "direction"?: "debit"|"credit"}]}`
-      const url = 'https://api.perplexity.ai/chat/completions'
-      // Use sonar-pro for better JSON support, fallback to sonar
-      const model = process.env.PERPLEXITY_MODEL || 'sonar-pro'
-      if (debugEnabled()) console.log('[AI Parse XLS Debug] calling Perplexity', { model, promptHash: hashOf(prompt), chars: prompt.length })
+      if (debugEnabled()) console.log('[AI Parse XLS Debug] calling Groq', { model: process.env.GROQ_MODEL, promptHash: hashOf(prompt), chars: prompt.length })
 
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-          temperature: 0,
-          max_tokens: 8192,
-        }),
+      const content = await groqChatCompletion({
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        temperature: 0,
+        max_tokens: 8192,
       })
 
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '')
-        throw new Error(`Perplexity API error: ${resp.status} ${text}`)
-      }
-
-      const json = await resp.json()
-      const content = json?.choices?.[0]?.message?.content || '{}'
-
       if (debugEnabled()) {
-        console.log('[AI Parse Perplexity] Response preview:', typeof content === 'string' ? content.substring(0, 200) : content)
+        console.log('[AI Parse Groq] Response preview:', typeof content === 'string' ? content.substring(0, 200) : content)
       }
 
       let parsed: any
@@ -733,14 +716,14 @@ Output must be valid JSON with this structure:
         
         parsed = JSON.parse(jsonContent)
       } catch (e) {
-        console.error('[AI Parse Perplexity] Failed to parse JSON. Content:', content.substring(0, 500))
-        throw new Error(`Model returned non-JSON output: ${content.substring(0, 100)}...`)
+        console.error('[AI Parse Groq] Failed to parse JSON. Content:', String(content).substring(0, 500))
+        throw new Error(`Model returned non-JSON output: ${String(content).substring(0, 100)}...`)
       }
 
       const arr: any[] = Array.isArray(parsed?.expenses) ? parsed.expenses : []
 
       if (arr.length === 0) {
-        console.warn('[AI Parse Perplexity] Parsed successfully but got 0 expenses. Response:', JSON.stringify(parsed).substring(0, 200))
+        console.warn('[AI Parse Groq] Parsed successfully but got 0 expenses. Response:', JSON.stringify(parsed).substring(0, 200))
       }
 
       return processRawExpenses(arr)
@@ -808,59 +791,55 @@ Output must be valid JSON with this structure:
     }
 
     let extracted: ParsedExpense[] = []
-    let perplexityError: any = null
+    let geminiError: any = null
 
-    // Try Perplexity first
+    // Try Gemini first
     try {
       // Reduced threshold for chunking to handle verbose descriptions better
-      // 64 rows with long descriptions can easily exceed token limits
       if (prepared.length <= 15000) {
-        extracted = await callPerplexity(prepared)
+        extracted = await callGemini(prepared)
       } else {
-        console.log(`[AI Parse] File is large (${prepared.length} chars), chunking into smaller pieces...`)
+        console.log(`[AI Parse Gemini] File is large (${prepared.length} chars), chunking into smaller pieces...`)
         const chunks = chunkText(prepared, 6000)
-        console.log(`[AI Parse] Split into ${chunks.length} chunks`)
+        console.log(`[AI Parse Gemini] Split into ${chunks.length} chunks`)
         const all: ParsedExpense[] = []
         for (let i = 0; i < chunks.length; i++) {
-          console.log(`[AI Parse] Processing chunk ${i + 1}/${chunks.length}...`)
-          const part = await callPerplexity(chunks[i])
+          console.log(`[AI Parse Gemini] Processing chunk ${i + 1}/${chunks.length}...`)
+          const part = await callGemini(chunks[i])
           all.push(...part)
         }
         extracted = all
       }
-      
-      // If Perplexity returned empty results, treat it as a failure and try Gemini
-      if (extracted.length === 0) {
-        console.warn('[AI Parse] Perplexity returned 0 expenses, trying Gemini fallback')
-        perplexityError = new Error('Perplexity returned empty expenses array')
-        throw perplexityError
-      }
-    } catch (perplexError: any) {
-      console.warn('[AI Parse] Perplexity failed, trying Gemini fallback:', perplexError.message)
-      perplexityError = perplexError
 
-      // Try Gemini as fallback
+      if (extracted.length === 0) {
+        console.warn('[AI Parse] Gemini returned 0 expenses, trying Groq fallback')
+        throw new Error('Gemini returned empty expenses array')
+      }
+    } catch (err: any) {
+      geminiError = err
+      console.warn('[AI Parse] Gemini failed, trying Groq fallback:', err.message)
+
+      // Try Groq as fallback
       try {
-        // Use same chunking strategy for Gemini
         if (prepared.length <= 15000) {
-          extracted = await callGemini(prepared)
+          extracted = await callGroq(prepared)
         } else {
-          console.log(`[AI Parse Gemini] File is large (${prepared.length} chars), chunking into smaller pieces...`)
+          console.log(`[AI Parse Groq] File is large (${prepared.length} chars), chunking into smaller pieces...`)
           const chunks = chunkText(prepared, 6000)
-          console.log(`[AI Parse Gemini] Split into ${chunks.length} chunks`)
+          console.log(`[AI Parse Groq] Split into ${chunks.length} chunks`)
           const all: ParsedExpense[] = []
           for (let i = 0; i < chunks.length; i++) {
-            console.log(`[AI Parse Gemini] Processing chunk ${i + 1}/${chunks.length}...`)
-            const part = await callGemini(chunks[i])
+            console.log(`[AI Parse Groq] Processing chunk ${i + 1}/${chunks.length}...`)
+            const part = await callGroq(chunks[i])
             all.push(...part)
           }
           extracted = all
         }
-      } catch (geminiError: any) {
+      } catch (groqError: any) {
         console.error('[AI Parse] All AI models failed')
         return res.status(500).json({
           success: false,
-          error: `Failed to parse spreadsheet. Perplexity error: ${perplexityError?.message || 'Unknown error'}. Gemini error: ${geminiError.message}`
+          error: `Failed to parse spreadsheet. Gemini error: ${geminiError?.message || 'Unknown error'}. Groq error: ${groqError.message}`
         })
       }
     }

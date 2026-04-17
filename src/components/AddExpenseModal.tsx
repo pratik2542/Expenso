@@ -8,7 +8,7 @@ import { logEvent } from 'firebase/analytics'
 import { compressImage, formatBytes } from '@/utils/imageCompression'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
-import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy, runTransaction, getDoc } from 'firebase/firestore'
+import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy, runTransaction, getDoc, setDoc, serverTimestamp, increment, arrayUnion } from 'firebase/firestore'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { Account } from '@/types/models'
 import { getApiUrl } from '@/lib/config'
@@ -205,6 +205,22 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
   const [pdfModalOpen, setPdfModalOpen] = useState(false)
   const [debugStatus, setDebugStatus] = useState<string>('')
 
+  const trackPdfImportUsage = async () => {
+    if (!user?.uid) return
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      await setDoc(doc(db, 'user_usage_metrics', user.uid), {
+        user_id: user.uid,
+        import_pdf_requests_total: increment(1),
+        import_pdf_days: arrayUnion(today),
+        last_import_pdf_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      }, { merge: true })
+    } catch (error) {
+      console.error('Failed to track PDF import usage:', error)
+    }
+  }
+
   // Initialize form
   useEffect(() => {
     if (open) {
@@ -328,6 +344,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         // Close modal and show results
         setPdfModalOpen(false)
         setIsImportMode(true)
+        void trackPdfImportUsage()
       }
       // Handle the PDF tool's format: {type: "TRANSACTIONS_EXTRACTED", transactions: [...]}
       else if (data && data.type === 'TRANSACTIONS_EXTRACTED' && Array.isArray(data.transactions)) {
@@ -365,6 +382,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         // Close modal and show results
         setPdfModalOpen(false)
         setIsImportMode(true)
+        void trackPdfImportUsage()
       }
       else {
         // Log generic objects to debug status to see what we're getting
@@ -620,6 +638,9 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
 
       const res = await fetch(endpoint, {
         method: 'POST',
+        headers: {
+          'X-User-Id': user?.uid || 'anonymous'
+        },
         body: formData
       })
 

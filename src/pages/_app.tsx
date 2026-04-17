@@ -14,6 +14,8 @@ import UpdateChecker from '@/components/UpdateChecker'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import { AppLockProvider } from '@/contexts/AppLockContext'
 import AppLockScreen from '@/components/AppLockScreen'
+import WhatsNewModal from '@/components/WhatsNewModal'
+import UserActivityTracker from '@/components/UserActivityTracker'
 
 const queryClient = new QueryClient()
 
@@ -107,6 +109,8 @@ export default function App({ Component, pageProps }: AppProps) {
           <EnvironmentProvider>
             <AppLockProvider>
               <UpdateChecker />
+              <WhatsNewModal />
+              <UserActivityTracker />
               <Component {...pageProps} />
               <AppLockScreen />
               <SpeedInsights />

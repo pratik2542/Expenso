@@ -1,57 +1,43 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { setCorsHeaders } from '@/lib/cors'
 import { getCategoryIcon } from '@/lib/defaultCategories'
+import { groqChatCompletion } from '@/lib/groq'
+import { trackUsageForRequest } from '@/lib/usageMetrics'
 
-// Fallback function to try Perplexity API
-async function tryPerplexity(categoryName: string, perplexityKey: string): Promise<string | null> {
+// Fallback function to try Groq API
+async function tryGroq(categoryName: string): Promise<string | null> {
   try {
-    console.log('Trying Perplexity API as fallback...')
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${perplexityKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an emoji suggestion assistant. Reply with only one emoji character, nothing else.'
-          },
-          {
-            role: 'user',
-            content: `Suggest one emoji for the category: "${categoryName}"`
-          }
-        ],
-        max_tokens: 10,
-        temperature: 0.3,
-      }),
+    console.log('Trying Groq API as fallback...')
+    const generatedText = await groqChatCompletion({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an emoji suggestion assistant. Reply with only one emoji character, nothing else.'
+        },
+        {
+          role: 'user',
+          content: `Suggest one emoji for the category: "${categoryName}"`
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 10,
+      model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
     })
 
-    if (!response.ok) {
-      console.error('Perplexity API error:', response.status)
-      return null
-    }
-
-    const data = await response.json()
-    console.log('Perplexity response:', JSON.stringify(data, null, 2))
-    
-    const generatedText = data.choices?.[0]?.message?.content || ''
-    console.log('Perplexity generated text:', generatedText)
+    console.log('Groq generated text:', generatedText)
     
     if (generatedText) {
       // Extract emoji from response
       const emojiRegex = /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)/gu
       const emojiMatches = generatedText.match(emojiRegex)
       const emoji = emojiMatches && emojiMatches.length > 0 ? emojiMatches[0] : null
-      console.log('Extracted emoji from Perplexity:', emoji)
+      console.log('Extracted emoji from Groq:', emoji)
       return emoji
     }
     
     return null
   } catch (error: any) {
-    console.error('Perplexity API error:', error.message)
+    console.error('Groq API error:', error.message)
     return null
   }
 }
@@ -75,12 +61,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Category name is required' })
     }
 
+    await trackUsageForRequest(req, 'ai_emoji')
+
     const geminiKey = process.env.GEMINI_API_KEY
-    const perplexityKey = process.env.PERPLEXITY_API_KEY
+    const groqKey = process.env.GROQ_API_KEY
 
     // If AI keys aren't configured in the deployment, don't fail the UI.
     // Return a deterministic fallback emoji instead.
-    if (!geminiKey && !perplexityKey) {
+    if (!geminiKey && !groqKey) {
       const fallback = getCategoryIcon(categoryName) || '📦'
       return res.status(200).json({ emoji: fallback, source: 'fallback' })
     }
@@ -140,7 +128,7 @@ Return only the emoji character. No text, no explanation.`
           
           // Check if it's a rate limit or quota error
           if (response.status === 429 || response.status === 403) {
-            console.log('Gemini rate limit/quota exceeded, trying Perplexity...')
+            console.log('Gemini rate limit/quota exceeded, trying Groq...')
           }
         }
       } catch (error: any) {
@@ -148,9 +136,9 @@ Return only the emoji character. No text, no explanation.`
       }
     }
 
-    // If Gemini failed or no emoji, try Perplexity
-    if (!emoji && perplexityKey) {
-      emoji = await tryPerplexity(categoryName, perplexityKey)
+    // If Gemini failed or no emoji, try Groq
+    if (!emoji && groqKey) {
+      emoji = await tryGroq(categoryName)
     }
 
     // Return emoji or deterministic default

@@ -1,4 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next'
+import { groqChatCompletion } from '@/lib/groq'
+import { trackUsageForRequest } from '@/lib/usageMetrics'
 
 export const config = {
   maxDuration: 30,
@@ -27,143 +29,62 @@ Requirements:
 Generate one 4-letter code now:`
 
   try {
-    const body = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.8,
-        maxOutputTokens: 1000, // Gemini 2.5 uses ~100 tokens for thinking, need extra for output
-      }
-    };
-
-    let response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
       }
     )
 
-    if (!response.ok && response.status === 503) {
-      console.warn('Gemini 2.5 Flash overloaded, falling back to 1.5 Flash')
-      response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        }
-      )
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No error details')
-      console.error('❌ Gemini API Error:', response.status, errorText)
-      throw new Error(`Gemini API failed: ${response.status} ${errorText}`)
-    }
-
     const result = await response.json()
+    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.toUpperCase()?.replace(/[^A-Z]/g, '') || ''
     
-    // Log full response for debugging
-    console.log('🔍 Full Gemini Response:', JSON.stringify(result, null, 2))
-    
-    let text = ''
-    const candidate = result?.candidates?.[0]
-    if (candidate?.content?.parts) {
-      for (const part of candidate.content.parts) {
-        if (part.text) {
-          text = part.text.trim()
-          break
-        }
-      }
-    }
-
-    console.log('🤖 AI Raw Response:', text || '(EMPTY - AI returned nothing!)')
-    
-    // If AI returned empty, throw error to trigger fallback
-    if (!text || text.length === 0) {
-      throw new Error('AI returned empty response')
-    }
-
-    // Clean up - extract only letters
-    text = text.toUpperCase().replace(/[^A-Z]/g, '')
-    
-    console.log('📝 After cleanup (letters only):', text)
-    
-    // Try to get first 4 letters
     if (text.length >= 4) {
-      const final = text.slice(0, 4)
-      console.log('✅ Generated 4-letter code:', final, `(for: ${fullName})`)
-      return final
+      return text.slice(0, 4)
     }
-    
-    // If AI response is too short, pad with letters from name
-    const nameLetters = fullName.toUpperCase().replace(/[^A-Z]/g, '')
-    text = (text + nameLetters).slice(0, 4)
-    
-    console.log('⚠️ AI response too short, padded with name letters:', text)
-    
-    if (text.length === 4) {
-      console.log('✅ Generated 4-letter code:', text, `(for: ${fullName})`)
-      return text
-    }
-
-    // Last resort fallback
-    throw new Error('Could not generate 4-letter code')
+    throw new Error('Gemini response invalid')
 
   } catch (geminiError) {
-    console.warn('❌ Gemini failed, trying Perplexity fallback:', geminiError)
-    
-    // Try Perplexity as fallback
+    console.warn('❌ Gemini failed, trying Groq fallback:', geminiError)
+
+    // Try Groq as fallback
     try {
-      const perplexityKey = process.env.PERPLEXITY_API_KEY
-      if (!perplexityKey) throw new Error('No Perplexity API key')
-      
-      // Add randomness to prompt to get different results each time
       const randomSeed = Math.random().toString(36).substring(7)
       const randomExamples = ['CASH', 'GOLD', 'MINT', 'SAGE', 'APEX', 'FLUX', 'COIN', 'BANK', 'RICH', 'SAVE', 'EARN', 'GAIN']
         .sort(() => Math.random() - 0.5)
         .slice(0, 5)
         .join(', ')
-      
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${perplexityKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'sonar',
-          messages: [
-            { 
-              role: 'system', 
-              content: 'You are a creative assistant. Output ONLY the 4-letter code, nothing else. Be creative and unique!' 
-            },
-            { 
-              role: 'user', 
-              content: `Generate a unique, creative 4-letter finance-related nickname code for: ${fullName}\n\nSome examples (but create something NEW and different): ${randomExamples}\n\nSeed: ${randomSeed}\n\nOutput only the 4-letter code:` 
-            }
-          ],
-          temperature: 1.0,
-          max_tokens: 20
-        })
+
+      let text = await groqChatCompletion({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a creative assistant. Output ONLY the 4-letter code, nothing else. Be creative and unique!'
+          },
+          {
+            role: 'user',
+            content: `Generate a unique, creative 4-letter finance-related nickname code for: ${fullName}\n\nSome examples (but create something NEW and different): ${randomExamples}\n\nSeed: ${randomSeed}\n\nOutput only the 4-letter code:`
+          }
+        ],
+        temperature: 1.0,
+        max_tokens: 20,
+        model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
       })
-      
-      if (!response.ok) throw new Error('Perplexity API failed')
-      
-      const result = await response.json()
-      let text = result.choices[0]?.message?.content || ''
+
       text = text.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4)
       
       if (text.length === 4) {
-        console.log('✅ Perplexity generated code:', text, `(for: ${fullName})`)
         return text
       }
       
-      throw new Error('Perplexity response invalid')
+      throw new Error('Groq response invalid')
       
-    } catch (perplexityError) {
-      console.error('❌ Perplexity also failed:', perplexityError)
+    } catch (groqError) {
+      console.error('❌ Groq also failed:', groqError)
       
       // Final fallback: use finance-related 4-letter codes
       const financeWords = ['CASH', 'GOLD', 'MINT', 'SAGE', 'APEX', 'FLUX', 'COIN', 'BANK', 'RICH', 'SAVE', 'EARN', 'GAIN', 'FUND', 'DEBT', 'PAYS', 'DEAL', 'EDGE', 'RISK', 'BULL', 'BEAR']
@@ -176,10 +97,7 @@ Generate one 4-letter code now:`
       }
       
       const index = Math.abs(hash) % financeWords.length
-      const code = financeWords[index]
-      
-      console.log('💡 Using smart fallback code:', code, `(for: ${fullName})`)
-      return code
+      return financeWords[index]
     }
   }
 }
@@ -201,6 +119,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!fullName || typeof fullName !== 'string') {
     return res.status(400).json({ error: 'Full name is required' })
   }
+
+  await trackUsageForRequest(req, 'ai_nickname')
 
   try {
     const nickname = await generateNickname(fullName)

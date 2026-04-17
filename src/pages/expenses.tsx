@@ -938,7 +938,10 @@ export default function Expenses() {
                         })
                         const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                           method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'X-User-Id': user?.uid || 'anonymous'
+                          },
                           body: JSON.stringify({ expenses: expensesToCheck })
                         })
                         if (!resp.ok) throw new Error('Failed to detect duplicates')
@@ -1181,7 +1184,10 @@ export default function Expenses() {
                           
                           const resp = await fetch(getApiUrl('/api/ai/detect-duplicates'), {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'X-User-Id': user?.uid || 'anonymous'
+                            },
                             body: JSON.stringify({ expenses: expensesToCheck })
                           })
                           if (!resp.ok) throw new Error('Failed to detect duplicates')

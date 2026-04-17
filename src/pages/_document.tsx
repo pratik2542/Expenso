@@ -18,7 +18,7 @@ export default function Document() {
         <meta name="theme-color" content="#3b82f6" />
         
         {/* Content Security Policy for native app */}
-        <meta httpEquiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:; connect-src * 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app https://expense-ai-manager.vercel.app/ https://www.google-analytics.com https://*.firebaseapp.com https://*.firebase.com; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; style-src * 'self' 'unsafe-inline'; frame-src https://expenso-pdfexcel.vercel.app https://*.firebaseapp.com https://accounts.google.com;" />
+        <meta httpEquiv="Content-Security-Policy" content="default-src * 'self' 'unsafe-inline' 'unsafe-eval' data: gap: content:; connect-src * 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://*.vercel.app https://expense-ai-manager.vercel.app/ https://www.google-analytics.com https://*.firebaseapp.com https://*.firebase.com; script-src * 'self' 'unsafe-inline' 'unsafe-eval'; style-src * 'self' 'unsafe-inline'; frame-src https://expenso-pdfexcel.vercel.app https://*.firebaseapp.com https://accounts.google.com;" />
         {/* Use login page logo as favicon */}
         <link rel="icon" type="image/png" href="/calculatorImg.png" />
         <link rel="shortcut icon" href="/calculatorImg.png" />

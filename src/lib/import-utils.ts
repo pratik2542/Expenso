@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { groqChatCompletion } from '@/lib/groq'
 
 export type ParsedExpense = {
     amount: number
@@ -25,10 +26,7 @@ function hashOf(text: string): string {
     }
 }
 
-export async function callPerplexity(prompt: string, contextType: 'spreadsheet' | 'pdf' = 'spreadsheet'): Promise<ParsedExpense[]> {
-    const apiKey = process.env.PERPLEXITY_API_KEY
-    if (!apiKey) throw new Error('Missing PERPLEXITY_API_KEY')
-
+export async function callGroq(prompt: string, contextType: 'spreadsheet' | 'pdf' = 'spreadsheet'): Promise<ParsedExpense[]> {
     const system = `You are a finance assistant. Extract all expense transactions from the provided ${contextType === 'pdf' ? 'bank statement text' : 'spreadsheet rows'}. Return structured JSON only. Do not include any PII.`
 
     let userInstruction = ''
@@ -38,67 +36,17 @@ export async function callPerplexity(prompt: string, contextType: 'spreadsheet' 
         userInstruction = `The input below is raw text from a PDF bank statement. Extract distinct transactions.\n\n${prompt}\n\nRules:\n- Output an "expenses" array.\n- Use ISO date YYYY-MM-DD.\n- Currency codes must be ISO 4217.\n- Signs: Purchases positive, refunds/credits negative (look for 'CR' or negative signs).\n- Note: Short description.\n- Do not halluciante transactions not in the text.`
     }
 
-    const url = 'https://api.perplexity.ai/chat/completions'
-    const model = process.env.PERPLEXITY_MODEL || 'sonar'
-
-    if (debugEnabled()) console.log(`[AI Parse ${contextType} Debug] calling Perplexity`, { promptHash: hashOf(prompt), chars: prompt.length })
+    if (debugEnabled()) console.log(`[AI Parse ${contextType} Debug] calling Groq`, { model: process.env.GROQ_MODEL, promptHash: hashOf(prompt), chars: prompt.length })
 
     try {
-        const resp = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: system },
-                    { role: 'user', content: userInstruction },
-                ],
-                temperature: 0,
-                response_format: {
-                    type: 'json_schema',
-                    json_schema: {
-                        name: 'expenses_schema',
-                        schema: {
-                            type: 'object',
-                            additionalProperties: false,
-                            properties: {
-                                expenses: {
-                                    type: 'array',
-                                    items: {
-                                        type: 'object',
-                                        additionalProperties: false,
-                                        properties: {
-                                            amount: { type: 'number' },
-                                            currency: { type: 'string' },
-                                            direction: { type: 'string', enum: ['debit', 'credit'] },
-                                            merchant: { type: 'string' },
-                                            payment_method: { type: 'string' },
-                                            note: { type: 'string' },
-                                            occurred_on: { type: 'string' },
-                                            category: { type: 'string' },
-                                            line_index: { type: 'integer' }
-                                        },
-                                        required: ['amount', 'currency', 'occurred_on']
-                                    }
-                                }
-                            },
-                            required: ['expenses']
-                        }
-                    },
-                },
-            }),
+        const content = await groqChatCompletion({
+            messages: [
+                { role: 'system', content: system },
+                { role: 'user', content: userInstruction },
+            ],
+            temperature: 0,
+            max_tokens: 4096,
         })
-
-        if (!resp.ok) {
-            const text = await resp.text().catch(() => '')
-            throw new Error(`Perplexity API error: ${resp.status} ${text}`)
-        }
-
-        const json = await resp.json()
-        const content = json?.choices?.[0]?.message?.content || '{}'
         let parsed: any
         try {
             parsed = typeof content === 'string' ? JSON.parse(content) : content

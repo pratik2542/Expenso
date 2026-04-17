@@ -1,5 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { checkRateLimit, sanitizeInput, validateExpense, sanitizeError } from '@/lib/security'
+import { groqChatCompletion } from '@/lib/groq'
+import { trackUsageForRequest } from '@/lib/usageMetrics'
 
 export const config = {
   maxDuration: 60, // Increase timeout to 60 seconds for AI processing
@@ -66,20 +68,20 @@ interface AnalyticsRequest {
   format?: 'json' | 'markdown' // Output format: 'json' for dashboard widget, 'markdown' for analytics page
 }
 
-async function callPerplexityForInsights(prompt: string, isJson: boolean = true, conversationHistory?: Array<{ role: string, content: string }>): Promise<string> {
-  const apiKey = process.env.PERPLEXITY_API_KEY
-  if (!apiKey) throw new Error('Missing Perplexity API key')
-
-  // Build messages array with conversation history
-  const messages: Array<{ role: string, content: string }> = [
+async function callGroqForInsights(
+  prompt: string,
+  isJson: boolean = true,
+  conversationHistory?: Array<{ role: string, content: string }>
+): Promise<string> {
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     {
-      role: 'system', content: isJson
+      role: 'system',
+      content: isJson
         ? 'You are a high-performance financial intelligence engine. Provide brutal, data-driven accuracy. Return ONLY valid JSON. No conversational filler.'
         : 'You are a senior financial analyst. Provide concise, high-signal insights using tight markdown. No fluff.'
     }
   ]
 
-  // Add conversation history if provided (for follow-up questions)
   if (conversationHistory && conversationHistory.length > 0) {
     conversationHistory.forEach(msg => {
       messages.push({
@@ -89,31 +91,14 @@ async function callPerplexityForInsights(prompt: string, isJson: boolean = true,
     })
   }
 
-  // Add the current prompt
   messages.push({ role: 'user', content: prompt })
 
-  const response = await fetch('https://api.perplexity.ai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'sonar',
-      messages,
-      temperature: 0.2
-    })
+  let text = await groqChatCompletion({
+    messages,
+    temperature: 0.2,
+    max_tokens: isJson ? 4096 : 2048,
   })
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '')
-    throw new Error(`Perplexity API error: ${response.status} ${errorText}`)
-  }
-
-  const result = await response.json()
-  let text = result.choices[0]?.message?.content || ''
-
-  // Clean up markdown code blocks if JSON format
   if (isJson) {
     text = text.replace(/```json/g, '').replace(/```/g, '').trim()
   }
@@ -508,11 +493,11 @@ IMPORTANT: Total income, spending, and savings rate are PROVIDED in PRE-CALCULAT
 
   } catch (geminiError: any) {
     console.error('[AI Insights] Gemini failed:', geminiError.message)
-    // Fallback to Perplexity
+    // Fallback to Groq
     try {
-      console.log('[AI Insights] Trying Perplexity API...')
-      const perplexityText = await callPerplexityForInsights(prompt, useJsonFormat, chatHistory)
-      console.log('[AI Insights] Perplexity successful')
+      console.log('[AI Insights] Trying Groq API...')
+      const groqText = await callGroqForInsights(prompt, useJsonFormat, chatHistory)
+      console.log('[AI Insights] Groq successful')
       const metrics: CalculatedMetrics = {
         totalIncome,
         totalSpend,
@@ -522,9 +507,9 @@ IMPORTANT: Total income, spending, and savings rate are PROVIDED in PRE-CALCULAT
         financialStatus,
         statusColor
       }
-      return { text: perplexityText, metrics }
-    } catch (perplexityError: any) {
-      console.error('[AI Insights] Perplexity also failed:', perplexityError.message)
+      return { text: groqText, metrics }
+    } catch (groqError: any) {
+      console.error('[AI Insights] Groq also failed:', groqError.message)
       throw new Error('AI service temporarily unavailable')
     }
   }
@@ -560,6 +545,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!month || !year || !currency) {
     return res.status(400).json({ error: 'Invalid request' })
   }
+
+  await trackUsageForRequest(req, 'ai_analytics')
 
   // Validate expense data structure
   const invalidExpenses = expenses.filter(e => !validateExpense(e))

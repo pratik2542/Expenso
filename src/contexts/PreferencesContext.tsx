@@ -15,6 +15,8 @@ type Prefs = {
   defaultEnvName: string
   hasOnboarded: boolean | null
   darkMode: boolean
+  themeMode: 'light' | 'dark' | 'black'
+  setThemeMode: (mode: 'light' | 'dark' | 'black') => void
   toggleDarkMode: () => void
   paymentMethods: string[]
   setPaymentMethods: (methods: string[]) => void
@@ -22,6 +24,27 @@ type Prefs = {
 
 
 const PreferencesContext = createContext<Prefs | undefined>(undefined)
+
+type ThemeMode = 'light' | 'dark' | 'black'
+
+function applyThemeClasses(mode: ThemeMode) {
+  if (typeof window === 'undefined') return
+
+  const root = document.documentElement
+  const isDarkFamily = mode === 'dark' || mode === 'black'
+
+  if (isDarkFamily) {
+    root.classList.add('dark')
+  } else {
+    root.classList.remove('dark')
+  }
+
+  if (mode === 'black') {
+    root.classList.add('theme-black')
+  } else {
+    root.classList.remove('theme-black')
+  }
+}
 
 export function PreferencesProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
@@ -36,12 +59,20 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [defaultEnvName, setDefaultEnvName] = useState('Personal')
   const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
-  const [darkMode, setDarkMode] = useState(() => {
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('darkMode')
-      return saved ? JSON.parse(saved) : false
+      const savedThemeMode = localStorage.getItem('themeMode')
+      if (savedThemeMode === 'light' || savedThemeMode === 'dark' || savedThemeMode === 'black') {
+        return savedThemeMode
+      }
+
+      // Migrate legacy darkMode boolean to the new theme system.
+      const savedDarkMode = localStorage.getItem('darkMode')
+      if (savedDarkMode) {
+        return JSON.parse(savedDarkMode) ? 'dark' : 'light'
+      }
     }
-    return false
+    return 'light'
   })
 
   const [paymentMethods, setPaymentMethods] = useState<string[]>([
@@ -161,31 +192,25 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     }
   }, [timeZone])
 
-  const toggleDarkMode = useCallback(() => {
-    setDarkMode((prev: boolean) => {
-      const newValue = !prev
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('darkMode', JSON.stringify(newValue))
-        if (newValue) {
-          document.documentElement.classList.add('dark')
-        } else {
-          document.documentElement.classList.remove('dark')
-        }
-      }
-      return newValue
-    })
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('themeMode', mode)
+      localStorage.setItem('darkMode', JSON.stringify(mode !== 'light'))
+      applyThemeClasses(mode)
+    }
   }, [])
 
-  // Apply dark mode on mount and when it changes
+  const darkMode = themeMode !== 'light'
+
+  const toggleDarkMode = useCallback(() => {
+    setThemeMode(themeMode === 'light' ? 'dark' : 'light')
+  }, [themeMode, setThemeMode])
+
+  // Apply theme classes on mount and whenever the mode changes.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (darkMode) {
-        document.documentElement.classList.add('dark')
-      } else {
-        document.documentElement.classList.remove('dark')
-      }
-    }
-  }, [darkMode])
+    applyThemeClasses(themeMode)
+  }, [themeMode])
 
   const value: Prefs = {
     currency,
@@ -202,6 +227,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     defaultEnvName,
     hasOnboarded,
     darkMode,
+    themeMode,
+    setThemeMode,
     toggleDarkMode,
     paymentMethods,
     setPaymentMethods,

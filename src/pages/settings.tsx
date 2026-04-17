@@ -17,7 +17,7 @@ import PinManagerModal from '@/components/PinManagerModal'
 
 export default function Settings() {
   const { user, signOut } = useAuth()
-  const { darkMode, toggleDarkMode, refetch: refetchPrefs } = usePreferences()
+  const { themeMode, setThemeMode, refetch: refetchPrefs } = usePreferences()
   const { currentEnvironment, environments, deleteEnvironment, getCollection, reloadCurrentEnvironment } = useEnvironment()
   const { hasPin, isBiometricAvailable, isBiometricEnabled, toggleBiometrics } = useAppLock()
   const [pinModal, setPinModal] = useState<{ open: boolean; mode: 'setup' | 'change' | 'remove' }>({ 
@@ -630,19 +630,42 @@ export default function Settings() {
               <div className="flex items-center justify-between py-2.5 lg:py-3 px-3 lg:px-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col">
-                    <span className="text-xs lg:text-sm text-gray-800 dark:text-gray-200 font-medium">Dark Mode</span>
-                    <span className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Switch between light and dark themes</span>
+                    <span className="text-xs lg:text-sm text-gray-800 dark:text-gray-200 font-medium">Theme Mode</span>
+                    <span className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400">Choose light, dark, or pure black theme</span>
                   </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={darkMode}
-                    onChange={toggleDarkMode}
-                    className="sr-only peer"
-                  />
-                  <div className="w-10 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600">
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('light')}
+                    className={`px-2.5 py-1.5 text-[10px] lg:text-xs font-medium rounded-lg transition-colors ${themeMode === 'light'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                  >
+                    Light
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('dark')}
+                    className={`px-2.5 py-1.5 text-[10px] lg:text-xs font-medium rounded-lg transition-colors ${themeMode === 'dark'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                  >
+                    Dark
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setThemeMode('black')}
+                    className={`px-2.5 py-1.5 text-[10px] lg:text-xs font-medium rounded-lg transition-colors ${themeMode === 'black'
+                      ? 'bg-black text-white border border-gray-700'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                  >
+                    Black
+                  </button>
+                </div>
               </div>
             </div>
 

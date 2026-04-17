@@ -253,7 +253,10 @@ function DashboardContent() {
         console.log('🎲 Generating new nickname for:', userFullName)
         const response = await fetch(getApiUrl('/api/ai/generate-nickname'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-User-Id': user.uid
+          },
           body: JSON.stringify({ fullName: userFullName })
         })
         if (!response.ok) throw new Error('Failed to generate nickname')

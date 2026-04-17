@@ -6,7 +6,7 @@
 // Server-side only environment variables (never exposed to client)
 const serverEnvVars = [
   'GOOGLE_GEMINI_API_KEY',
-  'PERPLEXITY_API_KEY',
+  'GROQ_API_KEY',
 ] as const
 
 // Client-side environment variables (exposed via NEXT_PUBLIC_)

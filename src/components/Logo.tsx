@@ -41,7 +41,7 @@ export function Logo({ size = 32 }: { size?: number }) {
 
 export function Wordmark({ className = '' }: { className?: string }) {
   return (
-    <span className={`font-bold tracking-tight bg-gradient-to-r from-primary-600 to-violet-500 bg-clip-text text-transparent ${className}`}>Expenso</span>
+    <span className={`brand-wordmark font-bold tracking-tight bg-gradient-to-r from-primary-600 to-violet-500 bg-clip-text text-transparent ${className}`}>Expenso</span>
   )
 }
 
@@ -59,14 +59,16 @@ export default Brand
 // Calculator image based logo (PNG) for user preference
 export function CalcLogo({ size = 28 }: { size?: number }) {
   return (
-    <Image
-      src="/calculatorImg.png"
-      alt="Expenso logo"
-      width={size}
-      height={size}
-      className="rounded-md object-contain"
-      priority={false}
-    />
+    <span className="calc-logo-wrap inline-flex items-center justify-center rounded-md">
+      <Image
+        src="/calculatorImg.png"
+        alt="Expenso logo"
+        width={size}
+        height={size}
+        className="calc-logo-img rounded-md object-contain"
+        priority={false}
+      />
+    </span>
   )
 }
 

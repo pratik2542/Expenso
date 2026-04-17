@@ -189,7 +189,10 @@ export default function AIInsightsWidget({ month, year, currency }: AIInsightsWi
 
       const res = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': user.uid
+        },
         body: JSON.stringify({
           expenses: optimizedExpenses,
           income: monthlyData.income,

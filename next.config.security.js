@@ -30,11 +30,12 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com https://www.googletagmanager.com", // Required for Next.js and Google scripts
+      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com https://www.googletagmanager.com https://va.vercel-scripts.com", // Required for Next.js and Google scripts
+      "script-src-elem 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com https://www.googletagmanager.com https://va.vercel-scripts.com",
       "style-src 'self' 'unsafe-inline'", // Required for styled components
       "img-src 'self' data: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://api.perplexity.ai https://*.vercel.app https://www.google-analytics.com https://*.firebaseapp.com https://*.firebase.com",
+      "connect-src 'self' https://*.googleapis.com https://generativelanguage.googleapis.com https://*.vercel.app https://www.google-analytics.com https://*.firebaseapp.com https://*.firebase.com https://vitals.vercel-insights.com",
       "frame-src https://expenso-pdfexcel.vercel.app https://*.firebaseapp.com https://accounts.google.com", // Allow PDF converter iframe and Firebase auth popups
       "frame-ancestors 'none'",
       "base-uri 'self'",
