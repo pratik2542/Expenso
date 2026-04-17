@@ -1,6 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { sendNotification } from '@/lib/email';
 import { adminDb } from '@/lib/firebaseAdmin';
+import { getAppBaseUrl } from '@/lib/emailTemplates';
+import { buildMarketingEmail } from '@/lib/marketingEmail';
 
 /**
  * Admin-only endpoint to send marketing emails when a new feature is released.
@@ -18,11 +20,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { subject, message } = req.body;
+    const { subject, message, imageUrls, ctaText, ctaUrl } = req.body;
 
     if (!subject || !message) {
       return res.status(400).json({ error: 'Missing subject or message' });
     }
+
+    const builtEmail = buildMarketingEmail({
+      subject,
+      message,
+      imageUrls: Array.isArray(imageUrls) ? imageUrls : [],
+      ctaText: typeof ctaText === 'string' ? ctaText : 'Open Expenso',
+      ctaUrl: typeof ctaUrl === 'string' ? ctaUrl : '/',
+      baseUrl: getAppBaseUrl(),
+    });
 
     // Get all users to allow soft opt-in (send unless explicitly disabled)
     const usersSnapshot = await adminDb.collection('user_settings').get();
@@ -41,7 +52,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       try {
         const result = await sendNotification(userId, 'marketing', {
           subject,
-          text: message
+          text: builtEmail.text,
+          html: builtEmail.html,
         });
         results.push({ userId, result });
       } catch (err) {

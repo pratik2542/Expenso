@@ -1394,7 +1394,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                             type="text"
                             value={formData.merchant}
                             onChange={e => setFormData({ ...formData, merchant: e.target.value })}
-                            className="block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 font-medium"
+                            className="transaction-merchant-input block w-full rounded-xl border-2 border-gray-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-white px-4 py-2.5 text-sm focus:border-primary-500 focus:ring-0 transition-all placeholder:text-gray-400 dark:placeholder:text-gray-600 font-medium"
                             placeholder={formData.type === 'income' ? 'e.g. Employer, Client' : 'e.g. Uber, Walmart'}
                           />
                         </div>

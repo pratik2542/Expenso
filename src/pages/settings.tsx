@@ -299,8 +299,8 @@ export default function Settings() {
           <div className="lg:hidden mb-4">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-                <p className="text-xs text-gray-500 mt-0.5">Manage your preferences</p>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">Settings</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Manage your preferences</p>
               </div>
             </div>
             {(dirty || envDirty) && !saving && (

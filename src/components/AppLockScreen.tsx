@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { useAppLock } from '@/contexts/AppLockContext'
+import { usePreferences } from '@/contexts/PreferencesContext'
 import { Lock, Unlock, Fingerprint } from 'lucide-react'
 
 export default function AppLockScreen() {
   const { isLocked, unlock, unlockWithBiometrics, isBiometricEnabled, isBiometricAvailable } = useAppLock()
+  const { themeMode } = usePreferences()
   const [pin, setPin] = useState('')
   const [error, setError] = useState(false)
   const [animating, setAnimating] = useState(false)
+  const isBlackTheme = themeMode === 'black'
 
   useEffect(() => {
     if (!isLocked) {
@@ -50,9 +53,9 @@ export default function AppLockScreen() {
   if (!isLocked) return null
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-900 flex flex-col items-center justify-center p-4">
+    <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center p-4 ${isBlackTheme ? 'bg-black' : 'bg-slate-900'}`}>
       <div className={`flex flex-col items-center max-w-sm w-full transition-transform ${animating ? 'animate-shake' : ''}`}>
-        <div className="mb-8 p-4 bg-slate-800 rounded-full">
+        <div className={`mb-8 p-4 rounded-full ${isBlackTheme ? 'bg-[#0b0f14] border border-[#2c3442]' : 'bg-slate-800'}`}>
           <Lock className="w-8 h-8 text-blue-500" />
         </div>
         
@@ -76,7 +79,7 @@ export default function AppLockScreen() {
             <button
               key={num}
               onClick={() => handleNumberClick(num.toString())}
-              className="w-16 h-16 rounded-full bg-slate-800 text-white text-2xl font-semibold active:bg-slate-700 transition-colors flex items-center justify-center outline-none focus:outline-none"
+              className={`w-16 h-16 rounded-full text-white text-2xl font-semibold transition-colors flex items-center justify-center outline-none focus:outline-none ${isBlackTheme ? 'bg-[#0b0f14] border border-[#2c3442] active:bg-[#121821]' : 'bg-slate-800 active:bg-slate-700'}`}
             >
               {num}
             </button>
@@ -93,13 +96,13 @@ export default function AppLockScreen() {
           </div>
           <button
             onClick={() => handleNumberClick('0')}
-            className="w-16 h-16 rounded-full bg-slate-800 text-white text-2xl font-semibold active:bg-slate-700 transition-colors flex items-center justify-center outline-none focus:outline-none"
+            className={`w-16 h-16 rounded-full text-white text-2xl font-semibold transition-colors flex items-center justify-center outline-none focus:outline-none ${isBlackTheme ? 'bg-[#0b0f14] border border-[#2c3442] active:bg-[#121821]' : 'bg-slate-800 active:bg-slate-700'}`}
           >
             0
           </button>
           <button
             onClick={handleDelete}
-            className="w-16 h-16 rounded-full text-slate-400 active:text-white transition-colors flex items-center justify-center outline-none focus:outline-none"
+            className={`w-16 h-16 rounded-full transition-colors flex items-center justify-center outline-none focus:outline-none ${isBlackTheme ? 'text-slate-300 active:text-white' : 'text-slate-400 active:text-white'}`}
           >
             Delete
           </button>

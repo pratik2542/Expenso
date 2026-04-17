@@ -1,15 +1,76 @@
-import React, { useState } from 'react';
-import Head from 'next/head';
-import Layout from '@/components/Layout';
-import { RequireAuth } from '@/components/RequireAuth';
-import { useAuth } from '@/contexts/AuthContext';
-import { Send, Lock, CheckCircle, AlertCircle, Sparkles } from 'lucide-react';
+import React, { useMemo, useState } from 'react'
+import Head from 'next/head'
+import Layout from '@/components/Layout'
+import { RequireAuth } from '@/components/RequireAuth'
+import { useAuth } from '@/contexts/AuthContext'
+import { Send, Lock, CheckCircle, AlertCircle, Sparkles, ImagePlus, Eye, Smartphone, Monitor, Moon, Sun } from 'lucide-react'
+import { buildMarketingEmail } from '@/lib/marketingEmail'
 
+type PreviewDevice = 'desktop' | 'mobile'
+type PreviewTheme = 'light' | 'dark'
+
+type AppScreen = 'settings' | 'analytics' | 'dashboard' | 'expenses' | 'budget' | 'categories' | 'ai-insights'
 
 export default function AdminMarketing() {
-  const { user, loading } = useAuth();
-  // Only allow this email
-  const allowedEmail = 'pratikmak2542@gmail.com';
+  const { user, loading } = useAuth()
+  const allowedEmail = 'pratikmak2542@gmail.com'
+
+  const [secret, setSecret] = useState('')
+  const [subject, setSubject] = useState('')
+  const [message, setMessage] = useState('')
+  const [ctaText, setCtaText] = useState('Open Expenso')
+  const [ctaUrl, setCtaUrl] = useState('/')
+  const [imageInput, setImageInput] = useState('')
+  const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [imageContext, setImageContext] = useState('')
+  const [imageScreen, setImageScreen] = useState<AppScreen>('settings')
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false)
+
+  const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
+  const [result, setResult] = useState<any>(null)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const [aiContext, setAiContext] = useState('')
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop')
+  const [previewTheme, setPreviewTheme] = useState<PreviewTheme>('light')
+
+  const previewBase = typeof window !== 'undefined' ? window.location.origin : 'https://expense-ai-manager.vercel.app'
+
+  const previewHtml = useMemo(() => {
+    return buildMarketingEmail({
+      subject: subject || 'Expenso Product Update',
+      message: message || 'We shipped improvements to performance, dark mode readability, and update flow.',
+      imageUrls,
+      ctaText: ctaText || 'Open Expenso',
+      ctaUrl: ctaUrl || '/',
+      baseUrl: previewBase,
+      forceTheme: previewTheme,
+      useInlineLogo: false,
+    }).html
+  }, [subject, message, imageUrls, ctaText, ctaUrl, previewBase, previewTheme])
+
+  const previewConfig = useMemo(() => {
+    if (previewDevice === 'mobile') {
+      const frameWidth = 390
+      const contentHeight = 760
+      return {
+        frameWidth,
+        contentHeight,
+        frameHeight: contentHeight,
+      }
+    }
+
+    const frameWidth = 560
+    const contentHeight = 760
+    return {
+      frameWidth,
+      contentHeight,
+      frameHeight: contentHeight,
+    }
+  }, [previewDevice])
+
   if (!loading && (!user || user.email !== allowedEmail)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -18,330 +79,410 @@ export default function AdminMarketing() {
           <div className="text-gray-600 dark:text-gray-300">You do not have permission to view this page.</div>
         </div>
       </div>
-    );
+    )
   }
-  const [secret, setSecret] = useState('');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
-  const [whatsNewMode, setWhatsNewMode] = useState(true);
-  const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
-  const [result, setResult] = useState<any>(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  
-  // AI Generation State
-  const [aiContext, setAiContext] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+
+  const addImageUrl = () => {
+    const trimmed = imageInput.trim()
+    if (!trimmed) return
+    if (!/^https?:\/\//i.test(trimmed) && !/^data:image\//i.test(trimmed)) {
+      alert('Please enter a valid image URL or a data:image value.')
+      return
+    }
+    setImageUrls((prev) => Array.from(new Set([...prev, trimmed])).slice(0, 6))
+    setImageInput('')
+  }
+
+  const handleGenerateAppImage = async () => {
+    const context = imageContext.trim() || aiContext.trim() || subject.trim() || message.trim()
+    if (!context) {
+      alert('Add image context first, e.g. "Dark theme added in settings".')
+      return
+    }
+
+    setIsGeneratingImage(true)
+    try {
+      const res = await fetch('/api/ai/generate-marketing-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context,
+          screen: imageScreen,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.details || data?.error || 'Failed to generate app image')
+
+      if (!data.imageDataUrl) {
+        throw new Error('Gemini did not return an image')
+      }
+
+      setImageUrls((prev) => Array.from(new Set([data.imageDataUrl, ...prev])).slice(0, 6))
+    } catch (error: any) {
+      console.error('App image generation error:', error)
+      alert(error?.message || 'Failed to generate app image')
+    } finally {
+      setIsGeneratingImage(false)
+    }
+  }
 
   const handleGenerateAI = async () => {
-    if (!aiContext) return;
-    setIsGenerating(true);
+    if (!aiContext.trim()) return
+
+    setIsGenerating(true)
     try {
       const res = await fetch('/api/ai/generate-marketing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: aiContext, format: whatsNewMode ? 'whats-new' : 'paragraph' })
-      });
-      
-      if (!res.ok) throw new Error('Failed to generate content');
-      
-      const data = await res.json();
-      if (data.subject) setSubject(data.subject);
-      if (data.message) setMessage(data.message);
+        body: JSON.stringify({ context: aiContext }),
+      })
+
+      if (!res.ok) throw new Error('Failed to generate content')
+      const data = await res.json()
+
+      if (data.subject) setSubject(data.subject)
+      if (data.message) setMessage(data.message)
     } catch (error) {
-      console.error('AI Error:', error);
-      alert('Failed to generate content. Please try again.');
+      console.error('AI generation error:', error)
+      alert('Failed to generate content. Please try again.')
     } finally {
-      setIsGenerating(false);
+      setIsGenerating(false)
     }
-  };
+  }
 
   const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!secret || !subject || !message) return;
+    e.preventDefault()
+    if (!secret || !subject.trim() || !message.trim()) return
 
-    setStatus('sending');
-    setResult(null);
-    setErrorMsg('');
+    setStatus('sending')
+    setErrorMsg('')
+    setResult(null)
 
     try {
       const res = await fetch('/api/admin/send-marketing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${secret}`
+          'Authorization': `Bearer ${secret}`,
         },
-        body: JSON.stringify({ subject, message })
-      });
+        body: JSON.stringify({
+          subject,
+          message,
+          imageUrls,
+          ctaText,
+          ctaUrl,
+        }),
+      })
 
-      const data = await res.json();
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to send emails')
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to send emails');
-      }
-
-      setResult(data);
-      setStatus('success');
+      setResult(data)
+      setStatus('success')
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(err.message);
-      setStatus('error');
+      console.error(err)
+      setErrorMsg(err.message || 'Failed to send emails')
+      setStatus('error')
     }
-  };
+  }
 
   return (
-    <Layout>
-      <Head>
-        <title>Admin Marketing - Expenso</title>
-      </Head>
-      
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+    <RequireAuth>
+      <Layout>
+        <Head>
+          <title>Admin Marketing - Expenso</title>
+        </Head>
+
+        <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+          <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
               <Send className="h-6 w-6 text-primary-600" />
-              Send Marketing Emails
+              Marketing Campaign Builder
             </h1>
-            <p className="text-gray-600 dark:text-gray-300 mt-1">
-              Send a broadcast email to all users who have opted in to marketing notifications.
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              Compose a release email, include images, and preview exactly how it looks on desktop/mobile in light and dark modes.
             </p>
           </div>
 
-          <div className="p-6">
-            <form onSubmit={handleSend} className="space-y-6">
-              
-              {/* Admin Secret */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <form onSubmit={handleSend} className="space-y-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                  Admin Secret Key
-                </label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Admin Secret</label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="h-5 w-5 text-gray-400 dark:text-gray-500" />
-                  </div>
+                  <Lock className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="password"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="Enter ADMIN_SECRET"
+                    className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
                     required
                   />
                 </div>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  Required to authorize this action.
-                </p>
               </div>
 
-              <div className="border-t border-gray-200 dark:border-gray-700 pt-6"></div>
-
-              {/* AI Generation Section */}
-              <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-xl p-4 border border-indigo-100 dark:border-indigo-900/60">
-                <div className="flex items-start gap-3">
-                  <Sparkles className="h-5 w-5 text-indigo-600 mt-1" />
-                  <div className="flex-1">
-                    <h3 className="text-sm font-medium text-indigo-900 dark:text-indigo-200">Generate with AI</h3>
-                    <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1 mb-3">
-                      Describe the update (e.g., "Added dark mode and new charts") and let AI write the email for you.
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={aiContext}
-                        onChange={(e) => setAiContext(e.target.value)}
-                        className="block w-full px-3 py-2 border border-indigo-200 dark:border-indigo-700 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                        placeholder="What's new in this update?"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleGenerateAI}
-                        disabled={!aiContext || isGenerating}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                      >
-                        {isGenerating ? 'Generating...' : 'Generate'}
-                      </button>
-                    </div>
-                  </div>
+              <div className="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 p-4">
+                <div className="flex items-center gap-2 text-indigo-800 dark:text-indigo-200 text-sm font-semibold mb-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Draft Assistant
                 </div>
-              </div>
-
-              {/* Email Content */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                    Email Subject
-                  </label>
+                <div className="flex gap-2">
                   <input
                     type="text"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    placeholder="e.g., New Feature: AI Insights"
-                    required
+                    value={aiContext}
+                    onChange={(e) => setAiContext(e.target.value)}
+                    placeholder="Describe what changed in this release"
+                    className="flex-1 px-3 py-2 rounded-lg border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1 flex items-center gap-2">
-                    Message Body
-                    <span className="ml-2 text-xs text-indigo-600 dark:text-indigo-300 cursor-pointer select-none" onClick={() => setWhatsNewMode(v => !v)}>
-                      {whatsNewMode ? '📝 Whats New Style' : '📄 Paragraph'}
-                    </span>
-                  </label>
-                  <textarea
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    rows={whatsNewMode ? 10 : 8}
-                    className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-mono bg-indigo-50 dark:bg-indigo-950/20 text-gray-900 dark:text-gray-100"
-                    placeholder={whatsNewMode ? '• New dark mode UI\n• Analytics now show compact numbers\n• AI answers account-specific questions\n...' : 'Write your message here...'}
-                    required
-                  />
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    {whatsNewMode ? 'Use bullet points or short highlights for a more attractive announcement.' : 'Plain text message.'}
-                  </p>
-                  {whatsNewMode && message.trim() && (
-                    <WhatsNewPreview message={message} />
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleGenerateAI}
+                    disabled={!aiContext.trim() || isGenerating}
+                    className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {isGenerating ? 'Generating...' : 'Generate'}
+                  </button>
                 </div>
               </div>
 
-              {/* Status Messages */}
-              {status === 'error' && (
-                <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 p-4">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Error sending emails</h3>
-                      <div className="mt-2 text-sm text-red-700 dark:text-red-300">
-                        <p>{errorMsg}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="e.g., New Black Theme + Better Update Experience"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Message</label>
+                <textarea
+                  rows={8}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder={'Use plain text or bullets.\n- New black theme contrast\n- Better APK update flow'}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CTA Text</label>
+                  <input
+                    type="text"
+                    value={ctaText}
+                    onChange={(e) => setCtaText(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                    placeholder="Open Expenso"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CTA URL</label>
+                  <input
+                    type="text"
+                    value={ctaUrl}
+                    onChange={(e) => setCtaUrl(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                    placeholder="/settings"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <ImagePlus className="h-4 w-4 text-blue-600" />
+                    Campaign Images
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={imageContext}
+                    onChange={(e) => setImageContext(e.target.value)}
+                    placeholder="e.g. Dark theme added in settings"
+                    className="md:col-span-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                  />
+                  <select
+                    value={imageScreen}
+                    onChange={(e) => setImageScreen(e.target.value as AppScreen)}
+                    className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="settings">Settings</option>
+                    <option value="analytics">Analytics</option>
+                    <option value="dashboard">Dashboard</option>
+                    <option value="expenses">Expenses</option>
+                    <option value="budget">Budget</option>
+                    <option value="categories">Categories</option>
+                    <option value="ai-insights">AI Insights</option>
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGenerateAppImage}
+                  disabled={isGeneratingImage}
+                  className="w-full text-xs px-3 py-2 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/50 disabled:opacity-60"
+                >
+                  {isGeneratingImage ? 'Generating App Image...' : 'Generate App Image (Gemini from your app screenshot)'}
+                </button>
+
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Tip: Use a precise prompt like "Show Settings page with black theme enabled".
+                </p>
+
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={imageInput}
+                    onChange={(e) => setImageInput(e.target.value)}
+                    placeholder="https://.../image.png"
+                    className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-gray-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={addImageUrl}
+                    className="px-3 py-2 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-900"
+                  >
+                    Add
+                  </button>
+                </div>
+
+                {imageUrls.length > 0 && (
+                  <div className="space-y-2">
+                    {imageUrls.map((url, idx) => (
+                      <div key={`${url}-${idx}`} className="flex items-center gap-2">
+                        <input
+                          value={url}
+                          onChange={(e) => {
+                            const next = [...imageUrls]
+                            next[idx] = e.target.value
+                            setImageUrls(next)
+                          }}
+                          className="flex-1 px-2 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-xs text-gray-900 dark:text-gray-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setImageUrls((prev) => prev.filter((_, i) => i !== idx))}
+                          className="text-xs px-2 py-1.5 rounded-md bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
+                        >
+                          Remove
+                        </button>
                       </div>
-                    </div>
+                    ))}
                   </div>
+                )}
+              </div>
+
+              {status === 'error' && (
+                <div className="rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />
+                  {errorMsg}
                 </div>
               )}
 
               {status === 'success' && result && (
-                <div className="rounded-md bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/50 p-4">
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      <CheckCircle className="h-5 w-5 text-green-400" aria-hidden="true" />
-                    </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-green-800 dark:text-green-300">Emails Sent Successfully</h3>
-                      <div className="mt-2 text-sm text-green-700 dark:text-green-300">
-                        <p>Processed: {result.processed} users</p>
-                      </div>
-                    </div>
-                  </div>
+                <div className="rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-sm text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Campaign sent. Processed {result.processed} users.
                 </div>
               )}
 
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={status === 'sending'}
-                  className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 ${
-                    status === 'sending' ? 'opacity-75 cursor-not-allowed' : ''
-                  }`}
-                >
-                  {status === 'sending' ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="-ml-1 mr-2 h-5 w-5" />
-                      Send Broadcast
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={status === 'sending'}
+                className="w-full inline-flex justify-center items-center gap-2 px-4 py-2.5 rounded-lg bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-60"
+              >
+                <Send className="h-4 w-4" />
+                {status === 'sending' ? 'Sending...' : 'Send Broadcast'}
+              </button>
             </form>
+
+            <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-primary-600" />
+                  Email Preview
+                </h2>
+
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDevice('desktop')}
+                      className={`px-2.5 py-1.5 text-xs font-medium inline-flex items-center gap-1 ${previewDevice === 'desktop' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200'}`}
+                    >
+                      <Monitor className="h-3.5 w-3.5" /> Desktop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDevice('mobile')}
+                      className={`px-2.5 py-1.5 text-xs font-medium inline-flex items-center gap-1 ${previewDevice === 'mobile' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200'}`}
+                    >
+                      <Smartphone className="h-3.5 w-3.5" /> Mobile
+                    </button>
+                  </div>
+
+                  <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTheme('light')}
+                      className={`px-2.5 py-1.5 text-xs font-medium inline-flex items-center gap-1 ${previewTheme === 'light' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200'}`}
+                    >
+                      <Sun className="h-3.5 w-3.5" /> Light
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTheme('dark')}
+                      className={`px-2.5 py-1.5 text-xs font-medium inline-flex items-center gap-1 ${previewTheme === 'dark' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-200'}`}
+                    >
+                      <Moon className="h-3.5 w-3.5" /> Dark
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                This preview simulates desktop/mobile and light/dark email appearance before sending.
+              </p>
+
+              <div className="rounded-xl bg-gray-100 dark:bg-gray-900 p-3 overflow-auto">
+                <div
+                  className={`mx-auto ${previewDevice === 'mobile' ? 'rounded-[28px] border-[10px] border-gray-800 shadow-2xl' : 'rounded-xl border border-gray-300 dark:border-gray-700 shadow-lg'} bg-black`}
+                  style={{ width: `${previewConfig.frameWidth}px`, maxWidth: '100%' }}
+                >
+                  <div
+                    className="overflow-hidden"
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      height: `${previewConfig.frameHeight}px`,
+                      borderRadius: previewDevice === 'mobile' ? '18px' : '10px',
+                    }}
+                  >
+                    <iframe
+                      title="Marketing Email Preview"
+                      srcDoc={previewHtml}
+                      className="border-0 bg-white w-full"
+                      style={{
+                        width: '100%',
+                        height: `${previewConfig.contentHeight}px`,
+                      }}
+                      sandbox="allow-same-origin"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </Layout>
-  );
-}
-
-// --- Feature-rich WhatsNewPreview ---
-function WhatsNewPreview({ message }: { message: string }) {
-  // Emojis for common features
-  const featureEmojis: Record<string, string> = {
-    "AI Insights": "🤖",
-    "Expense Analytics": "📊",
-    "Payment Methods": "💳",
-    "Dark Mode": "🌙",
-    "Mobile App": "📱",
-    "Security": "🔒",
-    "Budgeting": "💰",
-    "Notifications": "🔔",
-    "Import/Export": "📥",
-    "Multi-Account": "🏦",
-    "Personalization": "✨",
-    "Quick Add": "⚡",
-    "Reports": "📝",
-    "Reminders": "⏰",
-    "Cloud Sync": "☁️",
-  };
-  // Example snippets for features
-  const featureExamples: Record<string, string> = {
-    "AI Insights": "Get smart suggestions to save more.",
-    "Expense Analytics": "See where your money goes with interactive charts.",
-    "Payment Methods": "Add, edit, or delete your cards and wallets easily.",
-    "Dark Mode": "Switch themes for day or night comfort.",
-    "Mobile App": "Track expenses on the go!",
-    "Security": "Your data is encrypted and safe.",
-    "Budgeting": "Set monthly limits and get alerts.",
-    "Notifications": "Never miss a bill or budget update.",
-    "Import/Export": "Move your data in/out with one click.",
-    "Multi-Account": "Manage business and personal finances separately.",
-    "Personalization": "Customize categories and dashboard.",
-    "Quick Add": "Add expenses in seconds.",
-    "Reports": "Download PDF summaries for tax time.",
-    "Reminders": "Get notified for upcoming payments.",
-    "Cloud Sync": "Access your data anywhere, anytime.",
-  };
-  // Image placeholder for preview
-  const previewImageUrl = "https://images.unsplash.com/photo-1519125323398-675f0ddb6308?auto=format&fit=crop&w=600&q=80";
-  // Parse features from message
-  const features = message.split('\n').filter(line => line.trim()).map(line => line.replace(/^•\s*/, ''));
-  return (
-    <div className="mt-4 bg-white dark:bg-gray-900 rounded-xl border border-indigo-100 dark:border-indigo-800 p-4 shadow-sm">
-      <h4 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 mb-2">Preview</h4>
-      <div className="mb-4 flex justify-center">
-        <img
-          src={previewImageUrl}
-          alt="Expense Tracker Preview"
-          className="rounded-lg shadow-md w-2/3 max-w-md"
-        />
-      </div>
-      <ul className="list-none pl-0">
-        {features.map((feature, idx) => {
-          const main = feature.split(/[:\-]/)[0].trim();
-          const emoji = featureEmojis[main] || "✨";
-          const example = featureExamples[main];
-          return (
-            <li key={idx} className="mb-4 flex items-start">
-              <span className="text-2xl mr-3">{emoji}</span>
-              <div>
-                <span className="font-semibold text-base text-gray-900 dark:text-gray-100">{feature}</span>
-                {example && (
-                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{example}</div>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="mt-2 text-xs text-center text-gray-400 dark:text-gray-500">
-        (You can replace the image above with your own product screenshot!)
-      </div>
-    </div>
-  );
+      </Layout>
+    </RequireAuth>
+  )
 }

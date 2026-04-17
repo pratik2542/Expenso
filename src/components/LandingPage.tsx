@@ -95,7 +95,7 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="landing-page min-h-screen bg-white dark:bg-[#050b14]">
       <Head>
         <title>AI Expense Tracker</title>
         <meta name="description" content="Expenso is the smart AI expense tracker that helps you master your money. Track daily spending, get AI insights, and manage budgets effortlessly." />
@@ -130,7 +130,7 @@ export default function LandingPage() {
       </Head>
 
       {/* Header */}
-      <header className="fixed w-full bg-white/90 backdrop-blur-md z-50 border-b border-gray-100">
+      <header className="fixed w-full bg-white/90 dark:bg-gray-950/80 backdrop-blur-md z-50 border-b border-gray-100 dark:border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <CalcBrand size={28} />
           <nav className="flex items-center gap-3">
@@ -157,7 +157,7 @@ export default function LandingPage() {
               <span>AI insights that feel personal</span>
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-gray-900 mb-5 leading-tight">
-              The <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">AI expense tracker</span> that feels simple,
+              The <span className="landing-hero-gradient text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">AI expense tracker</span> that feels simple,
               <span className="hidden sm:inline"> with AI that feels smart</span>
             </h1>
             <p className="max-w-2xl mx-auto text-base sm:text-lg text-gray-600 mb-8 leading-relaxed">
@@ -172,14 +172,14 @@ export default function LandingPage() {
               </Link>
               <a
                 href="/Expenso.apk"
-                className="w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg font-semibold text-sm transition-colors"
+                className="landing-secondary-btn w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg font-semibold text-sm transition-colors"
                 download
               >
                 Download APK
               </a>
               <Link 
                 href="#features" 
-                className="w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg font-semibold text-sm transition-colors"
+                className="landing-secondary-btn w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 rounded-lg font-semibold text-sm transition-colors"
                 onClick={(e) => {
                   e.preventDefault();
                   document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
@@ -301,18 +301,18 @@ export default function LandingPage() {
             </div>
 
             <div className="relative max-w-5xl mx-auto">
-              <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white aspect-[16/10]">
+              <div className="landing-screenshot-frame relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200 bg-white aspect-[16/10]">
                 {screenshots.map((item) => (
                   <div
                     key={item.id}
-                    className={`absolute inset-0 transition-opacity duration-500 ease-in-out flex items-center justify-center bg-gray-50 ${
+                    className={`landing-screenshot-slide absolute inset-0 transition-opacity duration-500 ease-in-out flex items-center justify-center bg-gray-50 ${
                       activeTab === item.id ? 'opacity-100 z-10' : 'opacity-0 z-0'
                     }`}
                   >
                     <img 
                       src={item.src} 
                       alt={item.alt}
-                      className="w-full h-full object-contain"
+                      className="landing-screenshot-img w-full h-full object-contain"
                       loading="lazy"
                     />
                   </div>
@@ -382,7 +382,7 @@ export default function LandingPage() {
           </div>
           <p className="mb-4">&copy; {new Date().getFullYear()} Expenso. All rights reserved.</p>
           <div className="flex justify-center gap-6 text-sm">
-            <a href="mailto:pratikincanada@gmail.com" className="hover:text-primary-600 transition-colors">Contact Support</a>
+            <Link href="/feedback" className="hover:text-primary-600 transition-colors">Contact Support</Link>
           </div>
         </div>
       </footer>

@@ -394,8 +394,8 @@ export default function Analytics() {
           <div className="mb-4 lg:mb-8">
             {/* Mobile Header */}
             <div className="lg:hidden">
-              <h1 className="text-xl font-bold text-gray-900">Analytics</h1>
-              <p className="text-sm text-gray-500 mt-0.5">Spending insights & trends</p>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Analytics</h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Spending insights & trends</p>
             </div>
 
             {/* Desktop Header */}

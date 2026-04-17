@@ -319,12 +319,21 @@ a {
   border-color: #d1fae5 !important;
 }
 
+/* Improve merchant/source input readability in Add Transaction modal for black theme. */
+.theme-black .transaction-merchant-input {
+  color: #e8efff !important;
+}
+
+.theme-black .transaction-merchant-input::placeholder {
+  color: #9ba9bf !important;
+}
+
 /* Brand visibility in black mode (web + mobile). */
 .theme-black .calc-logo-wrap {
-  padding: 2px;
-  background: linear-gradient(145deg, rgba(248, 250, 252, 0.16), rgba(148, 163, 184, 0.12));
-  border: 1px solid rgba(203, 213, 225, 0.35);
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .theme-black .calc-logo-img {
@@ -337,6 +346,97 @@ a {
 
 @media (max-width: 1023px) {
   .theme-black .calc-logo-wrap {
-    padding: 3px;
+    padding: 0;
   }
+}
+
+/* Landing page only: black-theme refinements for cleaner visual hierarchy. */
+.theme-black .landing-page {
+  background: radial-gradient(circle at 8% 10%, rgba(59, 130, 246, 0.12), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(99, 102, 241, 0.1), transparent 30%),
+    #020712 !important;
+}
+
+.theme-black .landing-page [class*="text-gray-900"] {
+  color: #eef4ff !important;
+}
+
+.theme-black .landing-page [class*="text-gray-600"] {
+  color: #c0cadd !important;
+}
+
+.theme-black .landing-page [class*="text-gray-700"] {
+  color: #d6e2f7 !important;
+}
+
+.theme-black .landing-page [class*="text-gray-500"] {
+  color: #9dacbf !important;
+}
+
+.theme-black .landing-page [class*="bg-white"] {
+  background: #0a1220 !important;
+}
+
+.theme-black .landing-page [class*="bg-gray-50"] {
+  background: #111a2a !important;
+}
+
+.theme-black .landing-page [class*="border-gray-100"],
+.theme-black .landing-page [class*="border-gray-200"] {
+  border-color: #3f4f67 !important;
+}
+
+.theme-black .landing-page [class*="shadow-primary-200"] {
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.3) !important;
+}
+
+.theme-black .landing-page [class*="bg-primary-50"] {
+  background: rgba(37, 99, 235, 0.2) !important;
+}
+
+.theme-black .landing-page [class*="text-primary-700"] {
+  color: #c8dcff !important;
+}
+
+.theme-black .landing-page [class*="border-primary-100"] {
+  border-color: rgba(96, 165, 250, 0.45) !important;
+}
+
+.theme-black .landing-page [class*="bg-primary-600"] {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
+}
+
+.theme-black .landing-page [class*="bg-primary-600"]:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+}
+
+.theme-black .landing-page .landing-hero-gradient {
+  background-image: linear-gradient(90deg, #60a5fa 0%, #818cf8 52%, #a78bfa 100%) !important;
+  -webkit-text-fill-color: transparent;
+}
+
+.theme-black .landing-page .landing-secondary-btn {
+  background: #132238 !important;
+  border-color: #3f5a80 !important;
+  color: #dbeafe !important;
+}
+
+.theme-black .landing-page .landing-secondary-btn:hover {
+  background: #1a2f4d !important;
+  border-color: #5b7fb1 !important;
+}
+
+.theme-black .landing-page .landing-screenshot-frame {
+  background: #081120 !important;
+  border-color: #3a4c68 !important;
+  box-shadow: 0 0 0 1px rgba(76, 97, 124, 0.55), 0 20px 44px rgba(0, 0, 0, 0.6) !important;
+}
+
+.theme-black .landing-page .landing-screenshot-slide {
+  background: #0b1526 !important;
+}
+
+/* No dedicated dark screenshots available, so transform light captures for black theme preview. */
+.theme-black .landing-page .landing-screenshot-img {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.04);
 }

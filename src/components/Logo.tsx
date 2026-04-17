@@ -59,13 +59,13 @@ export default Brand
 // Calculator image based logo (PNG) for user preference
 export function CalcLogo({ size = 28 }: { size?: number }) {
   return (
-    <span className="calc-logo-wrap inline-flex items-center justify-center rounded-md">
+    <span className="calc-logo-wrap inline-flex items-center justify-center">
       <Image
         src="/calculatorImg.png"
         alt="Expenso logo"
         width={size}
         height={size}
-        className="calc-logo-img rounded-md object-contain"
+        className="calc-logo-img object-contain"
         priority={false}
       />
     </span>

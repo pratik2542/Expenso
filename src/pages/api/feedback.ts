@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { sendEmail } from '@/lib/email'
 
-const TARGET_EMAIL = 'pratikmak2542@gmail.com'
+const TARGET_EMAIL = process.env.FEEDBACK_TO_EMAIL || 'info.expenso@gmail.com'
 
 export default async function handler(
   req: NextApiRequest,
