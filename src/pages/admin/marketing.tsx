@@ -13,8 +13,8 @@ export default function AdminMarketing() {
   if (!loading && (!user || user.email !== allowedEmail)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="bg-white dark:bg-gray-900 p-8 rounded shadow text-center">
-          <div className="text-2xl font-bold mb-2">Access Denied</div>
+        <div className="bg-white dark:bg-gray-900 p-8 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 text-center">
+          <div className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Access Denied</div>
           <div className="text-gray-600 dark:text-gray-300">You do not have permission to view this page.</div>
         </div>
       </div>
@@ -95,13 +95,13 @@ export default function AdminMarketing() {
       </Head>
       
       <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-6 border-b border-gray-200 bg-gray-50">
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
               <Send className="h-6 w-6 text-primary-600" />
               Send Marketing Emails
             </h1>
-            <p className="text-gray-500 mt-1">
+            <p className="text-gray-600 dark:text-gray-300 mt-1">
               Send a broadcast email to all users who have opted in to marketing notifications.
             </p>
           </div>
@@ -111,36 +111,36 @@ export default function AdminMarketing() {
               
               {/* Admin Secret */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Admin Secret Key
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="h-5 w-5 text-gray-400" />
+                    <Lock className="h-5 w-5 text-gray-400 dark:text-gray-500" />
                   </div>
                   <input
                     type="password"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
-                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="Enter ADMIN_SECRET"
                     required
                   />
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                   Required to authorize this action.
                 </p>
               </div>
 
-              <div className="border-t border-gray-200 pt-6"></div>
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-6"></div>
 
               {/* AI Generation Section */}
-              <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-100">
+              <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-xl p-4 border border-indigo-100 dark:border-indigo-900/60">
                 <div className="flex items-start gap-3">
                   <Sparkles className="h-5 w-5 text-indigo-600 mt-1" />
                   <div className="flex-1">
-                    <h3 className="text-sm font-medium text-indigo-900">Generate with AI</h3>
-                    <p className="text-xs text-indigo-700 mt-1 mb-3">
+                    <h3 className="text-sm font-medium text-indigo-900 dark:text-indigo-200">Generate with AI</h3>
+                    <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1 mb-3">
                       Describe the update (e.g., "Added dark mode and new charts") and let AI write the email for you.
                     </p>
                     <div className="flex gap-2">
@@ -148,7 +148,7 @@ export default function AdminMarketing() {
                         type="text"
                         value={aiContext}
                         onChange={(e) => setAiContext(e.target.value)}
-                        className="block w-full px-3 py-2 border border-indigo-200 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                        className="block w-full px-3 py-2 border border-indigo-200 dark:border-indigo-700 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                         placeholder="What's new in this update?"
                       />
                       <button
@@ -167,23 +167,23 @@ export default function AdminMarketing() {
               {/* Email Content */}
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Email Subject
                   </label>
                   <input
                     type="text"
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     placeholder="e.g., New Feature: AI Insights"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1 flex items-center gap-2">
                     Message Body
-                    <span className="ml-2 text-xs text-indigo-600 cursor-pointer select-none" onClick={() => setWhatsNewMode(v => !v)}>
+                    <span className="ml-2 text-xs text-indigo-600 dark:text-indigo-300 cursor-pointer select-none" onClick={() => setWhatsNewMode(v => !v)}>
                       {whatsNewMode ? '📝 Whats New Style' : '📄 Paragraph'}
                     </span>
                   </label>
@@ -191,11 +191,11 @@ export default function AdminMarketing() {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     rows={whatsNewMode ? 10 : 8}
-                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-mono bg-indigo-50 dark:bg-indigo-900/10"
+                    className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm font-mono bg-indigo-50 dark:bg-indigo-950/20 text-gray-900 dark:text-gray-100"
                     placeholder={whatsNewMode ? '• New dark mode UI\n• Analytics now show compact numbers\n• AI answers account-specific questions\n...' : 'Write your message here...'}
                     required
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {whatsNewMode ? 'Use bullet points or short highlights for a more attractive announcement.' : 'Plain text message.'}
                   </p>
                   {whatsNewMode && message.trim() && (
@@ -206,14 +206,14 @@ export default function AdminMarketing() {
 
               {/* Status Messages */}
               {status === 'error' && (
-                <div className="rounded-md bg-red-50 p-4">
+                <div className="rounded-md bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/50 p-4">
                   <div className="flex">
                     <div className="flex-shrink-0">
                       <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
                     </div>
                     <div className="ml-3">
-                      <h3 className="text-sm font-medium text-red-800">Error sending emails</h3>
-                      <div className="mt-2 text-sm text-red-700">
+                      <h3 className="text-sm font-medium text-red-800 dark:text-red-300">Error sending emails</h3>
+                      <div className="mt-2 text-sm text-red-700 dark:text-red-300">
                         <p>{errorMsg}</p>
                       </div>
                     </div>
@@ -222,14 +222,14 @@ export default function AdminMarketing() {
               )}
 
               {status === 'success' && result && (
-                <div className="rounded-md bg-green-50 p-4">
+                <div className="rounded-md bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/50 p-4">
                   <div className="flex">
                     <div className="flex-shrink-0">
                       <CheckCircle className="h-5 w-5 text-green-400" aria-hidden="true" />
                     </div>
                     <div className="ml-3">
-                      <h3 className="text-sm font-medium text-green-800">Emails Sent Successfully</h3>
-                      <div className="mt-2 text-sm text-green-700">
+                      <h3 className="text-sm font-medium text-green-800 dark:text-green-300">Emails Sent Successfully</h3>
+                      <div className="mt-2 text-sm text-green-700 dark:text-green-300">
                         <p>Processed: {result.processed} users</p>
                       </div>
                     </div>
@@ -312,7 +312,7 @@ function WhatsNewPreview({ message }: { message: string }) {
   // Parse features from message
   const features = message.split('\n').filter(line => line.trim()).map(line => line.replace(/^•\s*/, ''));
   return (
-    <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg border border-indigo-100 dark:border-indigo-700 p-4 shadow-sm">
+    <div className="mt-4 bg-white dark:bg-gray-900 rounded-xl border border-indigo-100 dark:border-indigo-800 p-4 shadow-sm">
       <h4 className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 mb-2">Preview</h4>
       <div className="mb-4 flex justify-center">
         <img
@@ -330,7 +330,7 @@ function WhatsNewPreview({ message }: { message: string }) {
             <li key={idx} className="mb-4 flex items-start">
               <span className="text-2xl mr-3">{emoji}</span>
               <div>
-                <span className="font-semibold text-base">{feature}</span>
+                <span className="font-semibold text-base text-gray-900 dark:text-gray-100">{feature}</span>
                 {example && (
                   <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{example}</div>
                 )}
