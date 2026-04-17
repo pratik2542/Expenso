@@ -1,6 +1,6 @@
 {
   "name": "expenso",
-  "version": "1.0.63",
+  "version": "1.0.68",
   "private": true,
   "engines": {
     "node": ">=20.9.0"

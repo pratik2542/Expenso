@@ -1,5 +1,4 @@
 import { ReactNode, useState, useEffect } from 'react'
-import { Capacitor } from '@capacitor/core'
 import Sidebar from './Sidebar'
 import OnboardingWizard from './OnboardingWizard'
 import UserGuideModal from './UserGuideModal'
@@ -11,7 +10,6 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const isNative = Capacitor.isNativePlatform()
   const { user } = useAuth()
   const { hasOnboarded, loading: prefsLoading } = usePreferences()
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -84,10 +82,6 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div
       className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors"
-      style={isNative ? {
-        paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
-        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)'
-      } : undefined}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -95,7 +89,7 @@ export default function Layout({ children }: LayoutProps) {
       <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
       <main className="lg:pl-64">
         <div 
-          className="px-4 sm:px-6 lg:px-8 py-6 lg:pb-8"
+          className="native-desktop-safe-main px-4 sm:px-6 lg:px-8 py-6 lg:pb-8"
           style={{ 
             paddingBottom: 'max(calc(8rem + env(safe-area-inset-bottom, 0px)), 8rem)',
             minHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 8rem)'

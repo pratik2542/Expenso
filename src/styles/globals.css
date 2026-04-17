@@ -20,6 +20,31 @@ a {
   box-sizing: border-box;
 }
 
+:root {
+  --native-safe-top: 0px;
+  --native-safe-right: 0px;
+  --native-safe-bottom: 0px;
+  --native-safe-left: 0px;
+}
+
+@media (min-width: 1024px) and (orientation: landscape) {
+  .native-desktop-safe-sidebar {
+    top: 0 !important;
+    bottom: 0 !important;
+  }
+
+  .native-desktop-safe-sidebar-inner {
+    padding-top: calc(0.5rem + (var(--native-safe-top, 0px) * 1.05)) !important;
+    padding-bottom: calc(0.25rem + (var(--native-safe-bottom, 0px) * 0.45)) !important;
+  }
+
+  .native-desktop-safe-main {
+    padding-top: calc(0.75rem + (var(--native-safe-top, 0px) * 0.12)) !important;
+    padding-bottom: calc(4.5rem + (var(--native-safe-bottom, 0px) * 1.35)) !important;
+    min-height: calc(100vh - (var(--native-safe-top, 0px) * 0.12) - (var(--native-safe-bottom, 0px) * 1.35)) !important;
+  }
+}
+
 /* Safe area support for mobile devices with notches/home indicators */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);

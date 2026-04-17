@@ -156,11 +156,11 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     }, [showCreateEnv, currentEnvironment.currency, prefCurrency])
 
     if (!mounted) {
-        return (
-            <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+        return ( 
+            <div className="native-desktop-safe-sidebar hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
 
                 <div className="flex min-h-0 flex-1 flex-col bg-white border-r border-gray-200">
-                    <div className="flex flex-1 flex-col overflow-y-auto pt-5 pb-4">
+                    <div className="native-desktop-safe-sidebar-inner flex flex-1 flex-col overflow-y-auto pt-5 pb-4">
                         <div className="flex flex-shrink-0 items-center px-4 mb-6">
                             <div className="text-xl font-bold text-gray-900"><CalcBrand size={28} /></div>
                         </div>
@@ -619,9 +619,9 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                     <CalcBrand size={26} />
                 </div>
             </div>
-            <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+            <div className="native-desktop-safe-sidebar hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
                 <div className="flex min-h-0 flex-1 flex-col bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-colors">
-                    <div className="flex flex-1 flex-col overflow-y-auto no-scrollbar pt-4 pb-2">
+                    <div className="native-desktop-safe-sidebar-inner flex flex-1 flex-col overflow-y-auto no-scrollbar pt-4 pb-2">
                         <div className="flex flex-shrink-0 items-center px-4 mb-4">
                             <div className="text-xl font-bold text-gray-900 dark:text-white"><CalcBrand size={26} /></div>
                         </div>
@@ -885,8 +885,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                 <option value="JPY">JPY - Japanese Yen</option>
                                             </select>
                                         </div>
-
-                                        <div className="mt-8 flex flex-col-reverse lg:grid lg:grid-cols-2 gap-3 pb-2">
+                                        <div className="flex gap-3 pt-4">
                                             <button
                                                 type="button"
                                                 className="w-full justify-center rounded-xl bg-gray-100 dark:bg-gray-700 px-4 py-3 text-sm font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
