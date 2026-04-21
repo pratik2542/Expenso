@@ -101,16 +101,19 @@ export default function CategoriesPage() {
       }
 
       const categoriesRef = getCollection('categories')
-      await addDoc(categoriesRef, {
+      addDoc(categoriesRef, {
         name: newCategory.name.trim(),
         icon: newCategory.icon,
         type: newCategory.type,
         created_at: new Date().toISOString(),
         is_default: false
-      })
-      queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
-      setNewCategory({ name: '', icon: '📦', type: 'expense' })
-      setShowAdd(false)
+      }).catch(console.error)
+      
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
+        setNewCategory({ name: '', icon: '📦', type: 'expense' })
+        setShowAdd(false)
+      }, 50)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to add'
       setError(msg)
@@ -123,8 +126,11 @@ export default function CategoriesPage() {
     if (!user) return
     try {
       const categoryDocRef = doc(getCollection('categories'), id)
-      await deleteDoc(categoryDocRef)
-      queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
+      deleteDoc(categoryDocRef).catch(console.error)
+      // Allow local cache to reflect
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
+      }, 50)
     } catch (error) {
       console.error('Failed to delete category:', error)
     }
@@ -157,47 +163,53 @@ export default function CategoriesPage() {
     try {
       const existing = categories.find(c => c.id === id)
       const oldName = existing?.name || ''
-      const newName = editingName.trim()
+        const newName = editingName.trim()
 
-      const categoryDocRef = doc(getCollection('categories'), id)
-      await updateDoc(categoryDocRef, {
-        name: newName,
-        icon: editingIcon,
-        type: editingType
-      })
+        const categoryDocRef = doc(getCollection('categories'), id)
+        updateDoc(categoryDocRef, {
+          name: newName,
+          icon: editingIcon,
+          type: editingType
+        }).catch(err => console.log('Offline category doc queued:', err))
 
-      // If category name changed, update all associated expenses to use the new name.
-      // This prevents renamed categories from appearing as "Other" in transaction lists.
-      if (oldName && oldName !== newName) {
-        const expensesRef = getCollection('expenses')
-        let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null
-        const PAGE_SIZE = 500
+        // If category name changed, update all associated expenses to use the new name.
+        // This prevents renamed categories from appearing as "Other" in transaction lists.
+        if (oldName && oldName !== newName) {
+          const expensesRef = getCollection('expenses')
+          try {
+            let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null
+            const PAGE_SIZE = 500
 
-        while (true) {
-          const constraints: any[] = [where('category', '==', oldName), limit(PAGE_SIZE)]
-          if (lastDoc) constraints.push(startAfter(lastDoc))
-          const qExp = query(expensesRef, ...constraints)
-          const snap = await getDocs(qExp)
-          if (snap.empty) break
+            while (true) {
+              const constraints: any[] = [where('category', '==', oldName), limit(PAGE_SIZE)]
+              if (lastDoc) constraints.push(startAfter(lastDoc))
+              const qExp = query(expensesRef, ...constraints)
+              const snap = await getDocs(qExp)
+              if (snap.empty) break
 
-          const batch = writeBatch(db)
-          snap.docs.forEach(d => {
-            batch.update(d.ref, { category: newName })
-          })
-          await batch.commit()
+              const batch = writeBatch(db)
+              snap.docs.forEach(d => {
+                batch.update(d.ref, { category: newName })
+              })
+              batch.commit().catch(err => console.log('Offline expenses batch queued:', err))
 
-          if (snap.docs.length < PAGE_SIZE) break
-          lastDoc = snap.docs[snap.docs.length - 1]
+              if (snap.docs.length < PAGE_SIZE) break
+              lastDoc = snap.docs[snap.docs.length - 1]
+            }
+          } catch(e) {
+            console.error('Cascading rename failed offline or online', e)
+          }
         }
-      }
 
-      queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
-      queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
-      setEditingId(null)
-      setEditingName('')
-      setEditingIcon('')
-      setEditingType('expense')
-    } catch (e: unknown) {
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ['categories', user.uid, currentEnvironment.id] })
+          queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
+          setEditingId(null)
+          setEditingName('')
+          setEditingIcon('')
+          setEditingType('expense')
+        }, 50)
+      } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to update'
       setError(msg)
     } finally {

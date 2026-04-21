@@ -15,9 +15,11 @@ import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { useAppLock } from '@/contexts/AppLockContext'
 import PinManagerModal from '@/components/PinManagerModal'
+import { useNetwork } from '@/hooks/useNetwork'
 
 export default function Settings() {
   const router = useRouter()
+  const isOnline = useNetwork()
   const { user, signOut } = useAuth()
   const { themeMode, setThemeMode, refetch: refetchPrefs } = usePreferences()
   const { currentEnvironment, environments, deleteEnvironment, getCollection, reloadCurrentEnvironment } = useEnvironment()
@@ -596,14 +598,15 @@ export default function Settings() {
                 </div>
 
                 {/* Regenerate Nickname */}
-                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs lg:text-sm font-medium text-gray-700 dark:text-gray-300">Dashboard Nickname</label>
-                      <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 mt-0.5">Regenerate your AI 4-letter code</p>
-                    </div>
-                    <button
-                      type="button"
+                {isOnline && (
+                  <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1">
+                        <label className="block text-xs lg:text-sm font-medium text-gray-700 dark:text-gray-300">Dashboard Nickname</label>
+                        <p className="text-[10px] lg:text-xs text-gray-500 dark:text-gray-400 mt-0.5">Regenerate your AI 4-letter code</p>
+                      </div>
+                      <button
+                        type="button"
                       onClick={async () => {
                         if (!user) return
                         const confirmed = confirm('Regenerate your nickname? This will create a new 4-letter code.')
@@ -637,6 +640,7 @@ export default function Settings() {
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             </div>
 
@@ -701,6 +705,7 @@ export default function Settings() {
                   </button>
                 </div>
               </div>
+
             </div>
 
             {/* Security */}
@@ -865,38 +870,40 @@ export default function Settings() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={sendingWeekly}
-                        onClick={async () => {
-                          if (!user) return;
-                          setSendingWeekly(true);
-                          try {
-                            const token = await user.getIdToken();
-                            const response = await fetch('/api/notifications/send-on-demand', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                              },
-                              body: JSON.stringify({ type: 'weekly_reports' })
-                            });
-                            const data = await response.json();
-                            if (data.success) {
-                              alert('Weekly report sent! Check your email.');
-                            } else {
-                              alert(data.message || 'Could not send report.');
+                      {isOnline && (
+                        <button
+                          type="button"
+                          disabled={sendingWeekly}
+                          onClick={async () => {
+                            if (!user) return;
+                            setSendingWeekly(true);
+                            try {
+                              const token = await user.getIdToken();
+                              const response = await fetch('/api/notifications/send-on-demand', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({ type: 'weekly_reports' })
+                              });
+                              const data = await response.json();
+                              if (data.success) {
+                                alert('Weekly report sent! Check your email.');
+                              } else {
+                                alert(data.message || 'Could not send report.');
+                              }
+                            } catch (e) {
+                              alert('Failed to send report');
+                            } finally {
+                              setSendingWeekly(false);
                             }
-                          } catch (e) {
-                            alert('Failed to send report');
-                          } finally {
-                            setSendingWeekly(false);
-                          }
-                        }}
-                        className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 font-medium whitespace-nowrap disabled:opacity-50"
-                      >
-                        {sendingWeekly ? 'Sending...' : 'Send now'}
-                      </button>
+                          }}
+                          className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 font-medium whitespace-nowrap disabled:opacity-50"
+                        >
+                          {sendingWeekly ? 'Sending...' : 'Send now'}
+                        </button>
+                      )}
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"
@@ -924,38 +931,40 @@ export default function Settings() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={sendingAnalytics}
-                        onClick={async () => {
-                          if (!user) return;
-                          setSendingAnalytics(true);
-                          try {
-                            const token = await user.getIdToken();
-                            const response = await fetch('/api/notifications/send-on-demand', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                              },
-                              body: JSON.stringify({ type: 'analytics' })
-                            });
-                            const data = await response.json();
-                            if (data.success) {
-                              alert('Analytics report sent! Check your email.');
-                            } else {
-                              alert(data.message || 'Could not send report.');
+                      {isOnline && (
+                        <button
+                          type="button"
+                          disabled={sendingAnalytics}
+                          onClick={async () => {
+                            if (!user) return;
+                            setSendingAnalytics(true);
+                            try {
+                              const token = await user.getIdToken();
+                              const response = await fetch('/api/notifications/send-on-demand', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({ type: 'analytics' })
+                              });
+                              const data = await response.json();
+                              if (data.success) {
+                                alert('Analytics report sent! Check your email.');
+                              } else {
+                                alert(data.message || 'Could not send report.');
+                              }
+                            } catch (e) {
+                              alert('Failed to send report');
+                            } finally {
+                              setSendingAnalytics(false);
                             }
-                          } catch (e) {
-                            alert('Failed to send report');
-                          } finally {
-                            setSendingAnalytics(false);
-                          }
-                        }}
-                        className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 font-medium whitespace-nowrap disabled:opacity-50"
-                      >
-                        {sendingAnalytics ? 'Sending...' : 'Send now'}
-                      </button>
+                          }}
+                          className="px-2 py-1 text-[10px] lg:text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 font-medium whitespace-nowrap disabled:opacity-50"
+                        >
+                          {sendingAnalytics ? 'Sending...' : 'Send now'}
+                        </button>
+                      )}
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input
                           type="checkbox"

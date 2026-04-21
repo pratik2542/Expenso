@@ -3,6 +3,9 @@ import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import type { AppProps } from 'next/app'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
+import { get, set, del } from 'idb-keyval'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { PreferencesProvider } from '@/contexts/PreferencesContext'
 import { EnvironmentProvider } from '@/contexts/EnvironmentContext'
@@ -17,7 +20,24 @@ import AppLockScreen from '@/components/AppLockScreen'
 import WhatsNewModal from '@/components/WhatsNewModal'
 import UserActivityTracker from '@/components/UserActivityTracker'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 30, // Data becomes stale after 30 seconds (triggers background fetches immediately on launch)
+      gcTime: 1000 * 60 * 60 * 24 * 7, // Keep cache for 7 days
+      refetchOnWindowFocus: true, // Auto-sync when app resumes
+    },
+  },
+})
+
+// Setup IndexedDB persister for offline-first boot caching
+const persister = createAsyncStoragePersister({
+  storage: typeof window !== 'undefined' ? {
+    getItem: async (key) => await get(key),
+    setItem: async (key, value) => await set(key, value),
+    removeItem: async (key) => await del(key),
+  } : undefined,
+})
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter()
@@ -104,6 +124,22 @@ export default function App({ Component, pageProps }: AppProps) {
 
   return (
     <AuthProvider>
+      {typeof window !== 'undefined' ? (
+      <PersistQueryClientProvider client={queryClient} persistOptions={{ persister }}>
+        <PreferencesProvider>
+          <EnvironmentProvider>
+            <AppLockProvider>
+              <UpdateChecker />
+              <WhatsNewModal />
+              <UserActivityTracker />
+              <Component {...pageProps} />
+              <AppLockScreen />
+              <SpeedInsights />
+            </AppLockProvider>
+          </EnvironmentProvider>
+        </PreferencesProvider>
+      </PersistQueryClientProvider>
+      ) : (
       <QueryClientProvider client={queryClient}>
         <PreferencesProvider>
           <EnvironmentProvider>
@@ -118,6 +154,7 @@ export default function App({ Component, pageProps }: AppProps) {
           </EnvironmentProvider>
         </PreferencesProvider>
       </QueryClientProvider>
+      )}
     </AuthProvider>
   )
 }

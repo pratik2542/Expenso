@@ -93,7 +93,17 @@ export default function WhatsNewModal() {
                   Updated version: {appVersion || 'latest'}
                 </p>
 
-                <div className="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-200">
+                <div className="mt-4 space-y-3 text-sm text-gray-700 dark:text-gray-200 h-64 overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="rounded-xl bg-green-50 dark:bg-green-900/20 p-3 border border-green-200 dark:border-green-800">
+                    <p className="font-medium text-green-800 dark:text-green-300">New Offline Mode 📡</p>
+                    <ul className="mt-1 list-disc pl-5 space-y-1 text-xs text-green-700 dark:text-green-200">
+                      <li>Add and manage expenses without internet</li>
+                      <li>Smart connectivity banner with auto-hide</li>
+                      <li>Auto-syncs data when connection returns</li>
+                      <li>Unavailable features are smartly hidden</li>
+                    </ul>
+                  </div>
+
                   <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3 border border-gray-200 dark:border-gray-700">
                     <p className="font-medium">We improved the new Black Theme:</p>
                     <ul className="mt-1 list-disc pl-5 space-y-1 text-xs text-gray-600 dark:text-gray-300">

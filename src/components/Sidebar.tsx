@@ -33,6 +33,7 @@ import { Keyboard } from '@capacitor/keyboard'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import EnvironmentSwitcher from './EnvironmentSwitcher'
 import FeedbackModal from './FeedbackModal'
+import { useNetwork } from '@/hooks/useNetwork'
 
 // Categorized navigation for desktop
 const navigationGroups = [
@@ -86,6 +87,7 @@ const bottomNavItems = [
 ]
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIsOpen?: (open: boolean) => void }) {
+    const isOnline = useNetwork()
     const [internalOpen, setInternalOpen] = useState(false)
     const [showDownloadModal, setShowDownloadModal] = useState(false)
     const [showMoreMenu, setShowMoreMenu] = useState(false)
@@ -94,8 +96,29 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     const router = useRouter()
     const [mounted, setMounted] = useState(false)
     const { user, signOut } = useAuth()
-    const { darkMode, toggleDarkMode, currency: prefCurrency } = usePreferences()
+    const { darkMode, toggleDarkMode, currency: prefCurrency, simpleMode } = usePreferences()
     const { currentEnvironment, createEnvironment } = useEnvironment()
+    const isNativePlatform = Capacitor.isNativePlatform()
+    const simpleModeEnabled = isNativePlatform && simpleMode
+    const moreMenuActivePaths = simpleModeEnabled ? ['/settings'] : ['/settings', '/categories']
+
+    const navigationGroupsToRender = navigationGroups
+        .map((group) => ({
+            ...group,
+            items: group.items.filter((item) => {
+                if (!simpleModeEnabled) return true
+                return item.href !== '/analytics' && item.href !== '/budget'
+            })
+        }))
+        .filter((group) => group.items.length > 0)
+
+    const bottomNavItemsToRender = simpleModeEnabled
+        ? [
+            { name: 'Home', href: '/', icon: HomeIcon },
+            { name: 'Expenses', href: '/expenses', icon: CreditCardIcon },
+            { name: 'Income', href: '/income', icon: CoinsIcon },
+        ]
+        : bottomNavItems
 
     // Create Environment Modal State
     const [showCreateEnv, setShowCreateEnv] = useState(false)
@@ -108,7 +131,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     const apkDownloadUrl = `/Expenso.apk?v=${encodeURIComponent(appVersion || 'latest')}`
 
     useEffect(() => {
-        if (Capacitor.isNativePlatform()) {
+        if (isNativePlatform) {
             Keyboard.addListener('keyboardDidShow', () => setIsKeyboardOpen(true))
             Keyboard.addListener('keyboardDidHide', () => setIsKeyboardOpen(false))
             // Clean up listener? Capacitor plugins listeners are often persistent or global, but good practice to remove if possible.
@@ -186,7 +209,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
     return (
         <>
             {/* Mobile Bottom Navigation Bar with Center Quick Actions Button */}
-            {(!isKeyboardOpen || !Capacitor.isNativePlatform()) && (
+            {(!isKeyboardOpen || !isNativePlatform) && (
             <div 
                 className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-white dark:bg-gray-800" 
                 style={{ 
@@ -213,7 +236,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-20 h-5 bg-white dark:bg-gray-800 rounded-t-full transition-colors"></div>
 
                     <nav className="flex items-center justify-around h-16 px-2 relative">
-                        {bottomNavItems.slice(0, 2).map((item) => {
+                        {bottomNavItemsToRender.slice(0, 2).map((item) => {
                             const isActive = router.pathname === item.href
                             return (
                                 <Link
@@ -238,7 +261,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                         {/* Spacer for center button */}
                         <div className="flex-1"></div>
 
-                        {bottomNavItems.slice(2).map((item) => {
+                        {bottomNavItemsToRender.slice(2).map((item) => {
                             const isActive = router.pathname === item.href
                             return (
                                 <Link
@@ -263,17 +286,17 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                         {/* More Menu Button */}
                         <button
                             onClick={() => setShowMoreMenu(true)}
-                            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors ${showMoreMenu || ['/settings', '/categories'].includes(router.pathname)
+                            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors ${showMoreMenu || moreMenuActivePaths.includes(router.pathname)
                                 ? 'text-primary-600'
                                 : 'text-gray-500 active:text-gray-700'
                                 }`}
                         >
                             <MoreHorizontalIcon
-                                className={`h-5 w-5 ${['/settings', '/categories'].includes(router.pathname) ? 'text-primary-600' : 'text-gray-400'
+                                className={`h-5 w-5 ${moreMenuActivePaths.includes(router.pathname) ? 'text-primary-600' : 'text-gray-400'
                                     }`}
-                                strokeWidth={['/settings', '/categories'].includes(router.pathname) ? 2.5 : 2}
+                                strokeWidth={moreMenuActivePaths.includes(router.pathname) ? 2.5 : 2}
                             />
-                            <span className={`text-[10px] mt-0.5 font-medium ${['/settings', '/categories'].includes(router.pathname) ? 'text-primary-600' : 'text-gray-500'
+                            <span className={`text-[10px] mt-0.5 font-medium ${moreMenuActivePaths.includes(router.pathname) ? 'text-primary-600' : 'text-gray-500'
                                 }`}>
                                 More
                             </span>
@@ -347,18 +370,20 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                 <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Expenses</span>
                                             </button>
 
-                                            <button
-                                                onClick={() => {
-                                                    setShowQuickActions(false)
-                                                    router.push('/expenses?action=import')
-                                                }}
-                                                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/10 dark:to-blue-900/20 hover:from-blue-100 hover:to-blue-200 active:scale-95 transition-all"
-                                            >
-                                                <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
-                                                    <UploadIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
-                                                </div>
-                                                <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Upload</span>
-                                            </button>
+                                            {!simpleModeEnabled && isOnline && (
+                                                <button
+                                                    onClick={() => {
+                                                        setShowQuickActions(false)
+                                                        router.push('/expenses?action=import')
+                                                    }}
+                                                    className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/10 dark:to-blue-900/20 hover:from-blue-100 hover:to-blue-200 active:scale-95 transition-all"
+                                                >
+                                                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center">
+                                                        <UploadIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
+                                                    </div>
+                                                    <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Upload</span>
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
@@ -379,18 +404,20 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                 <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Accounts</span>
                                             </button>
 
-                                            <button
-                                                onClick={() => {
-                                                    setShowQuickActions(false)
-                                                    router.push('/budget')
-                                                }}
-                                                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/10 dark:to-purple-900/20 hover:from-purple-100 hover:to-purple-200 active:scale-95 transition-all"
-                                            >
-                                                <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center">
-                                                    <SparklesIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
-                                                </div>
-                                                <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Budget</span>
-                                            </button>
+                                            {!simpleModeEnabled && (
+                                                <button
+                                                    onClick={() => {
+                                                        setShowQuickActions(false)
+                                                        router.push('/budget')
+                                                    }}
+                                                    className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/10 dark:to-purple-900/20 hover:from-purple-100 hover:to-purple-200 active:scale-95 transition-all"
+                                                >
+                                                    <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center">
+                                                        <SparklesIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
+                                                    </div>
+                                                    <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Budget</span>
+                                                </button>
+                                            )}
 
                                             <button
                                                 onClick={() => {
@@ -411,18 +438,20 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                     <div>
                                         <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 px-2">Tools</p>
                                         <div className="grid grid-cols-3 gap-2">
-                                            <button
-                                                onClick={() => {
-                                                    setShowQuickActions(false)
-                                                    router.push('/expenses?action=export')
-                                                }}
-                                                className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/10 dark:to-teal-900/20 hover:from-teal-100 hover:to-teal-200 active:scale-95 transition-all"
-                                            >
-                                                <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center">
-                                                    <DownloadIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
-                                                </div>
-                                                <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Export</span>
-                                            </button>
+                                            {!simpleModeEnabled && (
+                                                <button
+                                                    onClick={() => {
+                                                        setShowQuickActions(false)
+                                                        router.push('/expenses?action=export')
+                                                    }}
+                                                    className="flex flex-col items-center gap-2 p-3 rounded-xl bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/10 dark:to-teal-900/20 hover:from-teal-100 hover:to-teal-200 active:scale-95 transition-all"
+                                                >
+                                                    <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center">
+                                                        <DownloadIcon className="h-5 w-5 text-white" strokeWidth={2.5} />
+                                                    </div>
+                                                    <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Export</span>
+                                                </button>
+                                            )}
 
                                             <button
                                                 onClick={() => {
@@ -529,34 +558,38 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                             <span className="font-medium">Income</span>
                                         </Link>
 
-                                        <button
-                                            onClick={() => {
-                                                setShowMoreMenu(false)
-                                                router.push('/expenses?action=import')
-                                            }}
-                                            className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors"
-                                        >
-                                            <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                                                <UploadIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                                            </div>
-                                            <span className="font-medium">Upload File</span>
-                                        </button>
+                                        {!simpleModeEnabled && isOnline && (
+                                            <button
+                                                onClick={() => {
+                                                    setShowMoreMenu(false)
+                                                    router.push('/expenses?action=import')
+                                                }}
+                                                className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors"
+                                            >
+                                                <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                                    <UploadIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                                </div>
+                                                <span className="font-medium">Upload File</span>
+                                            </button>
+                                        )}
 
-                                        <Link
-                                            href="/categories"
-                                            onClick={() => setShowMoreMenu(false)}
-                                            className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${router.pathname === '/categories'
-                                                ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400'
-                                                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600'
-                                                }`}
-                                        >
-                                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${router.pathname === '/categories' ? 'bg-primary-100 dark:bg-primary-900/50' : 'bg-gray-100 dark:bg-gray-700'
-                                                }`}>
-                                                <TagIcon className={`h-5 w-5 ${router.pathname === '/categories' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-gray-400'}
-                          }`} />
-                                            </div>
-                                            <span className="font-medium">Categories</span>
-                                        </Link>
+                                        {!simpleModeEnabled && (
+                                            <Link
+                                                href="/categories"
+                                                onClick={() => setShowMoreMenu(false)}
+                                                className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-colors ${router.pathname === '/categories'
+                                                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400'
+                                                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600'
+                                                    }`}
+                                            >
+                                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${router.pathname === '/categories' ? 'bg-primary-100 dark:bg-primary-900/50' : 'bg-gray-100 dark:bg-gray-700'
+                                                    }`}>
+                                                    <TagIcon className={`h-5 w-5 ${router.pathname === '/categories' ? 'text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-gray-400'}
+                              }`} />
+                                                </div>
+                                                <span className="font-medium">Categories</span>
+                                            </Link>
+                                        )}
 
                                         <Link
                                             href="/settings"
@@ -574,7 +607,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                             <span className="font-medium">Settings</span>
                                         </Link>
 
-                                        {!Capacitor.isNativePlatform() && (
+                                        {!isNativePlatform && (
                                             <button
                                                 onClick={() => { setShowDownloadModal(true); setShowMoreMenu(false) }}
                                                 className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors"
@@ -592,6 +625,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
 
                                         <div className="h-px bg-gray-200 dark:bg-gray-700 my-2" />
 
+                                    {isOnline && (
                                         <button
                                             onClick={async () => {
                                                 await signOut();
@@ -605,6 +639,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                             </div>
                                             <span className="font-medium">Sign out</span>
                                         </button>
+                                    )}
                                     </div>
                                 </div>
                             </Dialog.Panel>
@@ -629,7 +664,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                         <EnvironmentSwitcher onNewClick={() => setShowCreateEnv(true)} />
 
                         <nav className="mt-2 flex-1 px-2 space-y-4">
-                            {navigationGroups.map((group) => (
+                            {navigationGroupsToRender.map((group) => (
                                 <div key={group.name}>
                                     <h3 className="px-3 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5">
                                         {group.name}
@@ -653,7 +688,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                         )}
                                                     </Link>
                                                     {/* Add Upload File submenu for Expenses */}
-                                                    {item.name === 'Expenses' && isActive && (
+                                                    {item.name === 'Expenses' && isActive && isOnline && (
                                                         <button
                                                             onClick={() => router.push('/expenses?action=import')}
                                                             className="group flex items-center px-3 py-2 pl-11 text-sm font-medium rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
@@ -665,7 +700,7 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                                                 </div>
                                             )
                                         })}
-                                        {group.name === 'Settings' && !Capacitor.isNativePlatform() && (
+                                        {group.name === 'Settings' && !isNativePlatform && (
                                             <button
                                                 onClick={() => setShowDownloadModal(true)}
                                                 className="w-full group flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
@@ -680,19 +715,23 @@ export default function Sidebar({ isOpen, setIsOpen }: { isOpen?: boolean, setIs
                         </nav>
                         <div className="mt-auto px-4 py-2 border-t border-gray-100 dark:border-gray-700">
 
-                            <button
-                                onClick={() => setShowFeedback(true)}
-                                className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md py-2 mb-1"
-                            >
-                                <MessageSquare className="h-4 w-4" /> Give Feedback
-                            </button>
+                            {isOnline && (
+                                <>
+                                    <button
+                                        onClick={() => setShowFeedback(true)}
+                                        className="w-full flex items-center justify-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md py-2 mb-1"
+                                    >
+                                        <MessageSquare className="h-4 w-4" /> Give Feedback
+                                    </button>
 
-                            <button
-                                onClick={async () => { await signOut(); router.replace('/auth') }}
-                                className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md py-2"
-                            >
-                                <LogOutIcon className="h-4 w-4" /> Sign out
-                            </button>
+                                    <button
+                                        onClick={async () => { await signOut(); router.replace('/auth') }}
+                                        className="w-full flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md py-2"
+                                    >
+                                        <LogOutIcon className="h-4 w-4" /> Sign out
+                                    </button>
+                                </>
+                            )}
                             {user && <p className="mt-2 text-xs text-gray-400 dark:text-gray-500 truncate">{user.email}</p>}
                             {appVersion && (
                                 <p className="mt-1 text-[10px] text-gray-300 text-center">

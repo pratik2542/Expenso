@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import path from 'path'
 import { readFile } from 'fs/promises'
+import { setCorsHeaders } from '@/lib/cors'
 
 export const config = {
   maxDuration: 60,
@@ -212,6 +213,9 @@ async function callGroqAndRenderImage(
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  setCorsHeaders(res)
+  if (req.method === 'OPTIONS') return res.status(200).end()
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }

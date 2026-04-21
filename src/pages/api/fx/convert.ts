@@ -1,10 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
+import { setCorsHeaders } from '@/lib/cors'
 
 // Simple passthrough FX conversion using exchangerate-api.com (free tier)
 // Example: /api/fx/convert?from=USD&to=INR
 // Response: { success: boolean, rate: number, from: string, to: string, fetchedAt: string }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  setCorsHeaders(res)
+  if (req.method === 'OPTIONS') return res.status(200).end()
+
   const { from, to } = req.query
   if (typeof from !== 'string' || typeof to !== 'string') {
     return res.status(400).json({ success: false, error: 'from & to required' })

@@ -94,51 +94,52 @@ export default function IncomePage() {
 
         setSaving(true)
         try {
-            const { runTransaction } = await import('firebase/firestore')
+            const { writeBatch, increment, doc } = await import('firebase/firestore')
             const currency = currentEnvironment.currency || prefCurrency || 'USD'
 
-            await runTransaction(db, async (transaction) => {
-                // If account is selected, update its balance
-                if (formData.account_id) {
-                    const accountRef = doc(getCollection('accounts'), formData.account_id)
-                    const accountDoc = await transaction.get(accountRef)
+            const batch = writeBatch(db)
 
-                    if (accountDoc.exists()) {
-                        const currentBalance = accountDoc.data().balance || 0
-                        // Income is positive, adds to balance
-                        transaction.update(accountRef, { balance: currentBalance + amt })
-                    }
-                }
+            // If account is selected, update its balance
+            if (formData.account_id) {
+                const accountRef = doc(getCollection('accounts'), formData.account_id)
+                // Income is positive, adds to balance
+                batch.update(accountRef, { balance: increment(amt) })
+            }
 
-                // Add income transaction
-                const expensesRef = getCollection('expenses')
-                const newIncomeRef = doc(expensesRef)
-                transaction.set(newIncomeRef, {
-                    amount: amt, // Store as positive for income
-                    currency: currency,
-                    merchant: formData.source,
-                    payment_method: formData.account_id ? accounts.find(a => a.id === formData.account_id)?.name : null,
-                    account_id: formData.account_id || null,
-                    note: formData.note || '',
-                    occurred_on: formData.date,
-                    category: formData.category || 'Income',
-                    type: 'income',
-                    created_at: new Date().toISOString()
+            // Add income transaction
+            const expensesRef = getCollection('expenses')
+            const newIncomeRef = doc(expensesRef)
+            batch.set(newIncomeRef, {
+                amount: amt, // Store as positive for income
+                currency: currency,
+                merchant: formData.source,
+                payment_method: formData.account_id ? accounts.find(a => a.id === formData.account_id)?.name : null,
+                account_id: formData.account_id || null,
+                note: formData.note || '',
+                occurred_on: formData.date,
+                category: formData.category || 'Income',
+                type: 'income',
+                created_at: new Date().toISOString()
+            })
+
+            // Fire and forget batch commit
+            batch.commit().catch(e => console.error('Error saving income offline:', e))
+
+            // Let local cache reflect quickly before invalidations
+            setTimeout(() => {
+                setSuccess('Income added successfully!')
+                setFormData({
+                    date: getLocalToday(),
+                    amount: '',
+                    source: '',
+                    category: 'Salary',
+                    note: '',
+                    account_id: ''
                 })
-            })
-
-            setSuccess('Income added successfully!')
-            setFormData({
-                date: getLocalToday(),
-                amount: '',
-                source: '',
-                category: 'Salary',
-                note: '',
-                account_id: ''
-            })
-            queryClient.invalidateQueries({ queryKey: ['income-transactions'] })
-            queryClient.invalidateQueries({ queryKey: ['expenses'] })
-            queryClient.invalidateQueries({ queryKey: ['accounts'] })
+                queryClient.invalidateQueries({ queryKey: ['income-transactions'] })
+                queryClient.invalidateQueries({ queryKey: ['expenses'] })
+                queryClient.invalidateQueries({ queryKey: ['accounts'] })
+            }, 50)
         } catch (err: any) {
             setError(err.message || 'Failed to save income')
         } finally {

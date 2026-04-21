@@ -381,6 +381,84 @@ a {
   }
 }
 
+/* Landing page: improve regular dark mode (not pure black mode). */
+.dark:not(.theme-black) .landing-page {
+  background: radial-gradient(circle at 10% 10%, rgba(59, 130, 246, 0.08), transparent 30%),
+    radial-gradient(circle at 86% 12%, rgba(99, 102, 241, 0.07), transparent 28%),
+    #0f172a !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="text-gray-900"] {
+  color: #e6edf9 !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="text-gray-700"] {
+  color: #c9d5e8 !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="text-gray-600"] {
+  color: #b7c4d9 !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="text-gray-500"] {
+  color: #91a2bc !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="bg-white"] {
+  background: #172235 !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="bg-gray-50"] {
+  background: #1d2a3f !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="border-gray-100"],
+.dark:not(.theme-black) .landing-page [class*="border-gray-200"] {
+  border-color: #3f5576 !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="bg-primary-50"] {
+  background: rgba(37, 99, 235, 0.18) !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="text-primary-700"] {
+  color: #c3d8ff !important;
+}
+
+.dark:not(.theme-black) .landing-page [class*="border-primary-100"] {
+  border-color: rgba(96, 165, 250, 0.4) !important;
+}
+
+.dark:not(.theme-black) .landing-page .landing-hero-gradient {
+  background-image: linear-gradient(90deg, #4f8bff 0%, #6f8fff 55%, #8a7dff 100%) !important;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark:not(.theme-black) .landing-page .landing-secondary-btn {
+  background: #233452 !important;
+  border-color: #4b6792 !important;
+  color: #dbe8ff !important;
+}
+
+.dark:not(.theme-black) .landing-page .landing-secondary-btn:hover {
+  background: #2a3f62 !important;
+}
+
+.dark:not(.theme-black) .landing-page .landing-screenshot-frame {
+  background: #1a2840 !important;
+  border-color: #4b6489 !important;
+  box-shadow: 0 0 0 1px rgba(95, 123, 163, 0.45), 0 14px 28px rgba(0, 0, 0, 0.32) !important;
+}
+
+.dark:not(.theme-black) .landing-page .landing-screenshot-slide {
+  background: #243755 !important;
+}
+
+/* No dedicated dark screenshots available, so transform light captures for dark mode preview. */
+.dark:not(.theme-black) .landing-page .landing-screenshot-img {
+  filter: invert(0.88) hue-rotate(180deg) brightness(0.9) contrast(0.96) saturate(0.9) !important;
+}
+
 /* Landing page only: black-theme refinements for cleaner visual hierarchy. */
 .theme-black .landing-page {
   background: radial-gradient(circle at 8% 10%, rgba(59, 130, 246, 0.12), transparent 34%),

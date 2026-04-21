@@ -77,30 +77,32 @@ export default function AddAccountModal({ open, onClose, onAdded, environmentCou
             if (mode === 'edit' && account?.id) {
                 // Update existing account
                 const accountDocRef = doc(accountsRef, account.id)
-                await updateDoc(accountDocRef, {
+                updateDoc(accountDocRef, {
                     name: formData.name,
                     type: formData.type,
                     balance: parseFloat(formData.balance),
                     currency: formData.currency,
                     color: formData.color,
                     updated_at: new Date().toISOString()
-                })
+                }).catch(console.error)
             } else {
                 // Add new account
-                await addDoc(accountsRef, {
+                addDoc(accountsRef, {
                     name: formData.name,
                     type: formData.type,
                     balance: parseFloat(formData.balance),
                     currency: formData.currency,
                     color: formData.color,
                     created_at: new Date().toISOString()
-                })
+                }).catch(console.error)
             }
 
-            onAdded()
-            onClose()
-            // Reset form
-            setFormData(prev => ({ ...prev, name: '', balance: '0' }))
+            setTimeout(() => {
+                onAdded()
+                onClose()
+                // Reset form
+                setFormData(prev => ({ ...prev, name: '', balance: '0' }))
+            }, 50)
         } catch (err: any) {
             setError(err.message)
         } finally {

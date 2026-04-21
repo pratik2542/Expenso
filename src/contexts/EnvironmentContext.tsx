@@ -80,6 +80,8 @@ export function EnvironmentProvider({ children }: { children: ReactNode }) {
             return
         }
 
+        const defaultEnv = { ...DEFAULT_ENV, name: defaultEnvName, currency: prefCurrency || 'USD' }
+
         try {
             const envRef = collection(db, 'users', user.uid, 'environments')
             const q = query(envRef, orderBy('created_at', 'asc'))
@@ -90,14 +92,44 @@ export function EnvironmentProvider({ children }: { children: ReactNode }) {
                 ...doc.data()
             } as Environment))
 
-            // Always include the default environment
-            // We check if "default" is in the loaded list (in case we migrated it to real doc)
-            // For now, we synthesize it.
-            const defaultEnv = { ...DEFAULT_ENV, name: defaultEnvName, currency: prefCurrency || 'USD' }
+            const fullList = [defaultEnv, ...loadedEnvs]
+            
+            if (snapshot.empty && typeof window !== 'undefined') {
+                // If it returned empty, but we're offline or they're in cache, it might be a cache miss.
+                const cached = localStorage.getItem('expenso_cached_envs')
+                if (cached && !navigator.onLine) {
+                    try {
+                        const parsed = JSON.parse(cached)
+                        if (parsed.length > 0) {
+                            setEnvironments([defaultEnv, ...parsed])
+                            return
+                        }
+                    } catch(e) {}
+                }
+            }
 
-            setEnvironments([defaultEnv, ...loadedEnvs])
+            setEnvironments(fullList)
+            
+            // Cache environments locally for offline mode fallback
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('expenso_cached_envs', JSON.stringify(loadedEnvs))
+            }
         } catch (err) {
             console.error('Failed to load environments:', err)
+            // Fallback to locally cached environments if network fails
+            if (typeof window !== 'undefined') {
+                try {
+                    const cached = localStorage.getItem('expenso_cached_envs')
+                    if (cached) {
+                        const parsed = JSON.parse(cached)
+                        setEnvironments([defaultEnv, ...parsed])
+                        setLoading(false)
+                        return
+                    }
+                } catch(e) {}
+            }
+            // If absolutely nothing is accessible, at least give them the default env
+            setEnvironments([defaultEnv])
         } finally {
             setLoading(false)
         }
@@ -123,15 +155,34 @@ export function EnvironmentProvider({ children }: { children: ReactNode }) {
     // Better: Save to localStorage.
     useEffect(() => {
         const saved = localStorage.getItem('expenso_current_env')
-        if (saved && environments.some(e => e.id === saved)) {
+        if (saved) {
             const target = environments.find(e => e.id === saved)
-            if (target) setCurrentEnvironment(target)
+            if (target) {
+                setCurrentEnvironment(target)
+            } else if (!navigator.onLine && typeof window !== 'undefined') {
+                // If offline and we couldn't load their environment list, try to mock it so expenses load
+                // from Firebase's local cache relying on just the ID.
+                try {
+                    const cachedEnvStr = localStorage.getItem('expenso_cached_envs')
+                    if (cachedEnvStr) {
+                        const parsed = JSON.parse(cachedEnvStr)
+                        const offlineTarget = parsed.find((e: Environment) => e.id === saved)
+                        if (offlineTarget) {
+                            setCurrentEnvironment(offlineTarget)
+                            return
+                        }
+                    }
+                } catch(e) {}
+                
+                // Fallback to minimal mocked environment if completely missing from list but ID known
+                setCurrentEnvironment({ ...DEFAULT_ENV, id: saved, name: 'Offline Env', currency: prefCurrency || 'USD'})
+            }
         } else {
             // If currently selected is not in list, revert to default
             const defaultEnv = environments.find(e => e.id === 'default')
             if (defaultEnv) setCurrentEnvironment(defaultEnv)
         }
-    }, [environments])
+    }, [environments, prefCurrency])
 
     const getAutoTimeZone = (country?: string) => {
         if (!country) return 'UTC'

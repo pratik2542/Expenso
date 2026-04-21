@@ -61,8 +61,10 @@ export default function AccountsPage() {
         try {
             const accountsRef = getCollection('accounts')
             const accDocRef = doc(accountsRef, account.id)
-            await deleteDoc(accDocRef)
-            queryClient.invalidateQueries({ queryKey: ['accounts'] })
+            deleteDoc(accDocRef).catch(console.error)
+            setTimeout(() => {
+                queryClient.invalidateQueries({ queryKey: ['accounts'] })
+            }, 50)
         } catch (err: any) {
             console.error('Delete error:', err)
             alert('Failed to delete account: ' + err.message)

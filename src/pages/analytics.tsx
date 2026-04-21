@@ -44,7 +44,7 @@ function getCurrencySymbol(currency: string): string {
 type DateRangePreset = 'this-month' | 'last-month' | 'this-year' | 'last-year' | 'all-time' | 'custom'
 
 export default function Analytics() {
-  const { formatCurrencyExplicit, currency: prefCurrency } = usePreferences()
+  const { formatCurrencyExplicit, currency: prefCurrency, simpleMode } = usePreferences()
   const { user } = useAuth()
   const now = new Date()
   const { getCollection, currentEnvironment } = useEnvironment()
@@ -62,6 +62,33 @@ export default function Analytics() {
     }
   }, [currentEnvironment.currency])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleOnline = () => {
+      setIsOnline(true)
+      setShowOfflinePopup(false)
+    }
+
+    const handleOffline = () => {
+      setIsOnline(false)
+      setShowOfflinePopup(true)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    if (!navigator.onLine) {
+      setIsOnline(false)
+      setShowOfflinePopup(true)
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
   // AI Insights state
   const [aiInsights, setAiInsights] = useState<string | null>(null)
   const [aiInsightsLoading, setAiInsightsLoading] = useState(false)
@@ -70,6 +97,8 @@ export default function Analytics() {
   const [chatHistory, setChatHistory] = useState<Array<{ role: 'user' | 'ai', content: string }>>([])
   const [chatLoading, setChatLoading] = useState(false)
   const [showTooltip, setShowTooltip] = useState<{ type: string; value: number } | null>(null)
+  const [isOnline, setIsOnline] = useState<boolean>(() => (typeof window === 'undefined' ? true : navigator.onLine))
+  const [showOfflinePopup, setShowOfflinePopup] = useState(false)
 
   // Compact number formatter for analytics boxes
   const formatCompactNumber = (amount: number, currencyCode: string): string => {
@@ -218,6 +247,12 @@ export default function Analytics() {
 
   // Function to generate AI insights
   const generateAIInsights = async () => {
+    if (!isOnline) {
+      setShowOfflinePopup(true)
+      setAiInsightsError('Internet is required for Analytics AI insights. Please reconnect and try again.')
+      return
+    }
+
     if (periodExpenses.length === 0) {
       setAiInsightsError('No expenses found for this period to analyze')
       return
@@ -286,6 +321,16 @@ export default function Analytics() {
 
   // Function to ask a question
   const askQuestion = async () => {
+    if (!isOnline) {
+      setShowOfflinePopup(true)
+      setChatHistory(prev => [...prev,
+      { role: 'user', content: userQuestion || 'Ask analytics question' },
+      { role: 'ai', content: 'Internet is required for Analytics AI chat. Please connect to the internet and try again.' }
+      ])
+      setUserQuestion('')
+      return
+    }
+
     if (!userQuestion.trim()) return
 
     if (periodExpenses.length === 0) {
@@ -390,6 +435,29 @@ export default function Analytics() {
 
       <Layout>
         <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 lg:py-8">
+          {!isOnline && (
+            <div className="mb-4 lg:mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              You are offline. Expense entries still work and will auto-sync when internet returns. Analytics AI features require internet.
+            </div>
+          )}
+
+          {showOfflinePopup && (
+            <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowOfflinePopup(false)}>
+              <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Internet required</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                  Analytics AI needs an internet connection. Please reconnect to continue.
+                </p>
+                <button
+                  onClick={() => setShowOfflinePopup(false)}
+                  className="w-full px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Header - Mobile Optimized */}
           <div className="mb-4 lg:mb-8">
             {/* Mobile Header */}
@@ -580,6 +648,7 @@ export default function Analytics() {
 
           {/* AI Insights Section - Combined */}
           <div className="mt-6 lg:mt-8 space-y-4 lg:space-y-6">
+            {!simpleMode && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               {/* Header */}
               <div className="bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 p-3 lg:p-4 text-white">
@@ -851,6 +920,7 @@ export default function Analytics() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Basic Stats Card */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 lg:p-6">

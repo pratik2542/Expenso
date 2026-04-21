@@ -8,10 +8,11 @@ import { logEvent } from 'firebase/analytics'
 import { compressImage, formatBytes } from '@/utils/imageCompression'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { db } from '@/lib/firebaseClient'
-import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy, runTransaction, getDoc, setDoc, serverTimestamp, increment, arrayUnion } from 'firebase/firestore'
+import { collection, query as fbQuery, getDocs, addDoc, updateDoc, doc, orderBy, writeBatch, getDoc, setDoc, serverTimestamp, increment, arrayUnion } from 'firebase/firestore'
 import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { Account } from '@/types/models'
 import { getApiUrl } from '@/lib/config'
+import { useNetwork } from '@/hooks/useNetwork'
 
 function safeLogEvent(eventName: string, params?: Record<string, any>) {
   analyticsPromise
@@ -101,10 +102,19 @@ function formatDateToISO(dateStr?: string): string {
   return localToday
 }
 
+function getLocalTodayISODate(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', expense = null, initialImportMode = false }: AddExpenseModalProps) {
   const { user } = useAuth()
   const { currentEnvironment, getCollection } = useEnvironment()
   const queryClient = useQueryClient()
+  const isOnline = useNetwork()
 
   // Load categories
   const { data: categories = [] } = useQuery({
@@ -160,11 +170,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
     payment_method: '', // Will store Account Name for legacy/display
     account_id: '',
     note: '',
-    occurred_on: (() => {
-      // For today's date, use current time. For older dates, use start of day
-      const now = new Date()
-      return now.toISOString()
-    })(),
+    occurred_on: getLocalTodayISODate(),
     category: '',
     attachment: '',
     type: 'expense' as 'expense' | 'income' | 'transfer',
@@ -255,7 +261,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           payment_method: defaultAcc ? defaultAcc.name : 'Cash',
           account_id: defaultAcc ? defaultAcc.id : '',
           note: '',
-          occurred_on: new Date().toISOString(),
+          occurred_on: getLocalTodayISODate(),
           category: '',
           attachment: '',
           type: 'expense',
@@ -368,7 +374,7 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
             amount: amount,
             currency: txn.currency || 'USD',
             merchant: txn.description || txn.merchant || 'Unknown',
-            occurred_on: txn.date ? formatDateToISO(txn.date) : new Date().toISOString().split('T')[0],
+            occurred_on: txn.date ? formatDateToISO(txn.date) : getLocalTodayISODate(),
             category: txn.category || 'Other',
             raw_category: txn.category || '',
             payment_method: 'Credit Card',
@@ -415,110 +421,86 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
           throw new Error('Source and destination accounts must be different')
         }
 
-        await runTransaction(db, async (transaction) => {
-          if (mode === 'edit' && expense) {
-            // EDITING A TRANSFER
-            const oldAmount = expense.transferAmount || 0
-            const oldFromAccountId = expense.account_id
-            const oldToAccountId = expense.toAccountId
-            const newFromAccountId = formData.account_id
-            const newToAccountId = formData.toAccountId!
+        const batch = writeBatch(db)
 
-            // Collect all unique account IDs we need to read
-            const accountIds = new Set([oldFromAccountId, oldToAccountId, newFromAccountId, newToAccountId].filter(Boolean))
+        if (mode === 'edit' && expense) {
+          // EDITING A TRANSFER
+          const oldAmount = expense.transferAmount || 0
+          const oldFromAccountId = expense.account_id
+          const oldToAccountId = expense.toAccountId
+          const newFromAccountId = formData.account_id
+          const newToAccountId = formData.toAccountId!
 
-            // Read all accounts once
-            const accountDocs = new Map()
-            for (const accId of accountIds) {
-              if (accId) {
-                const accRef = doc(getCollection('accounts'), accId)
-                const accDoc = await transaction.get(accRef)
-                if (accDoc.exists()) {
-                  accountDocs.set(accId, accDoc)
-                }
-              }
-            }
+          const balanceChanges = new Map()
 
-            // Calculate balance changes for each account
-            const balanceChanges = new Map()
-
-            // Revert old transfer
-            if (oldFromAccountId && accountDocs.has(oldFromAccountId)) {
-              balanceChanges.set(oldFromAccountId, (balanceChanges.get(oldFromAccountId) || 0) + oldAmount)
-            }
-            if (oldToAccountId && accountDocs.has(oldToAccountId)) {
-              balanceChanges.set(oldToAccountId, (balanceChanges.get(oldToAccountId) || 0) - oldAmount)
-            }
-
-            // Apply new transfer
-            if (newFromAccountId && accountDocs.has(newFromAccountId)) {
-              balanceChanges.set(newFromAccountId, (balanceChanges.get(newFromAccountId) || 0) - amountVal)
-            }
-            if (newToAccountId && accountDocs.has(newToAccountId)) {
-              balanceChanges.set(newToAccountId, (balanceChanges.get(newToAccountId) || 0) + amountVal)
-            }
-
-            // Apply all balance changes
-            for (const [accId, change] of balanceChanges.entries()) {
-              if (change !== 0) {
-                const accDoc = accountDocs.get(accId)
-                const currentBal = accDoc.data().balance || 0
-                const accRef = doc(getCollection('accounts'), accId)
-                transaction.update(accRef, { balance: currentBal + change })
-              }
-            }
-
-            // Update transfer record
-            const expenseRef = doc(getCollection('expenses'), expense.id)
-            transaction.update(expenseRef, {
-              amount: 0,
-              currency: formData.currency,
-              merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
-              payment_method: formData.payment_method || accounts.find(a => a.id === formData.account_id)?.name || null,
-              account_id: formData.account_id,
-              note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
-              occurred_on: formData.occurred_on,
-              category: formData.category || 'Transfer',
-              type: 'transfer',
-              toAccountId: formData.toAccountId,
-              transferAmount: amountVal
-            })
-          } else {
-            // ADDING NEW TRANSFER
-            const fromAccRef = doc(getCollection('accounts'), formData.account_id)
-            const toAccRef = doc(getCollection('accounts'), formData.toAccountId!)
-            const fromAccDoc = await transaction.get(fromAccRef)
-            const toAccDoc = await transaction.get(toAccRef)
-
-            if (!fromAccDoc.exists() || !toAccDoc.exists()) {
-              throw new Error('One or both accounts not found')
-            }
-
-            const fromBalance = fromAccDoc.data().balance || 0
-            const toBalance = toAccDoc.data().balance || 0
-
-            transaction.update(fromAccRef, { balance: fromBalance - amountVal })
-            transaction.update(toAccRef, { balance: toBalance + amountVal })
-
-            // Create transfer record
-            const expensesRef = getCollection('expenses')
-            const transferRef = doc(expensesRef)
-            transaction.set(transferRef, {
-              amount: 0, // Transfers don't affect net worth
-              currency: formData.currency,
-              merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
-              payment_method: formData.payment_method || accounts.find(a => a.id === formData.account_id)?.name || null,
-              account_id: formData.account_id,
-              note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
-              occurred_on: formData.occurred_on,
-              category: formData.category || 'Transfer',
-              type: 'transfer',
-              toAccountId: formData.toAccountId,
-              transferAmount: amountVal,
-              created_at: new Date().toISOString()
-            })
+          // Revert old transfer
+          if (oldFromAccountId) {
+            balanceChanges.set(oldFromAccountId, (balanceChanges.get(oldFromAccountId) || 0) + oldAmount)
           }
-        })
+          if (oldToAccountId) {
+            balanceChanges.set(oldToAccountId, (balanceChanges.get(oldToAccountId) || 0) - oldAmount)
+          }
+
+          // Apply new transfer
+          if (newFromAccountId) {
+            balanceChanges.set(newFromAccountId, (balanceChanges.get(newFromAccountId) || 0) - amountVal)
+          }
+          if (newToAccountId) {
+            balanceChanges.set(newToAccountId, (balanceChanges.get(newToAccountId) || 0) + amountVal)
+          }
+
+          // Apply all balance changes
+          for (const [accId, change] of balanceChanges.entries()) {
+            if (change !== 0) {
+              const accRef = doc(getCollection('accounts'), accId)
+              batch.update(accRef, { balance: increment(change) })
+            }
+          }
+
+          // Update transfer record
+          const expenseRef = doc(getCollection('expenses'), expense.id)
+          batch.update(expenseRef, {
+            amount: 0,
+            currency: formData.currency,
+            merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+            payment_method: formData.payment_method || accounts.find(a => a.id === formData.account_id)?.name || null,
+            account_id: formData.account_id,
+            note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+            occurred_on: formData.occurred_on,
+            category: formData.category || 'Transfer',
+            type: 'transfer',
+            toAccountId: formData.toAccountId,
+            transferAmount: amountVal
+          })
+        } else {
+          // ADDING NEW TRANSFER
+          const fromAccRef = doc(getCollection('accounts'), formData.account_id)
+          const toAccRef = doc(getCollection('accounts'), formData.toAccountId!)
+
+          batch.update(fromAccRef, { balance: increment(-amountVal) })
+          batch.update(toAccRef, { balance: increment(amountVal) })
+
+          // Create transfer record
+          const expensesRef = getCollection('expenses')
+          const transferRef = doc(expensesRef)
+          batch.set(transferRef, {
+            amount: 0, // Transfers don't affect net worth
+            currency: formData.currency,
+            merchant: `Transfer to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+            payment_method: formData.payment_method || accounts.find(a => a.id === formData.account_id)?.name || null,
+            account_id: formData.account_id,
+            note: formData.note || `Transferred ${formData.currency} ${amountVal} to ${accounts.find(a => a.id === formData.toAccountId)?.name}`,
+            occurred_on: formData.occurred_on,
+            category: formData.category || 'Transfer',
+            type: 'transfer',
+            toAccountId: formData.toAccountId,
+            transferAmount: amountVal,
+            created_at: new Date().toISOString()
+          })
+        }
+
+        // Fire and forget allowing offline syncing
+        batch.commit().catch(err => console.error("Batch commit failed", err))
 
         setLoading(false)
         onAdded()
@@ -542,75 +524,54 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         type: formData.type
       }
 
-      await runTransaction(db, async (transaction) => {
-        // ===== READS FIRST (Required by Firestore) =====
+      const batch = writeBatch(db)
 
-        // Read old account if editing
-        let oldAccDoc = null
-        if (mode === 'edit' && expense && expense.account_id) {
-          const oldAccRef = doc(getCollection('accounts'), expense.account_id)
-          oldAccDoc = await transaction.get(oldAccRef)
+      if (mode === 'edit' && expense && expense.id) {
+        // EDITING: Handle account balance updates
+        const oldAmount = expense.amount
+        const newAmount = storedAmount
+        const oldAccountId = expense.account_id
+        const newAccountId = formData.account_id
+
+        if (oldAccountId === newAccountId && oldAccountId) {
+          // Same account: calculate net change and apply once
+          const netChange = newAmount - oldAmount
+          if (netChange !== 0) {
+            const oldAccRef = doc(getCollection('accounts'), oldAccountId)
+            batch.update(oldAccRef, { balance: increment(netChange) })
+          }
+        } else {
+          // Different accounts: revert from old, apply to new
+          if (oldAccountId) {
+            const oldAccRef = doc(getCollection('accounts'), oldAccountId)
+            batch.update(oldAccRef, { balance: increment(-oldAmount) })
+          }
+          if (newAccountId) {
+            const newAccRef = doc(getCollection('accounts'), newAccountId)
+            batch.update(newAccRef, { balance: increment(newAmount) })
+          }
         }
 
-        // Read new account
-        let newAccDoc = null
+        // Write Expense Document
+        const expenseRef = doc(getCollection('expenses'), expense.id)
+        batch.update(expenseRef, expenseData)
+      } else {
+        // ADDING: Simply apply the new transaction
         if (formData.account_id) {
           const accRef = doc(getCollection('accounts'), formData.account_id)
-          newAccDoc = await transaction.get(accRef)
+          batch.update(accRef, { balance: increment(storedAmount) })
         }
 
-        // ===== WRITES SECOND =====
+        // Write Expense Document
+        const expensesRef = getCollection('expenses')
+        const newExpenseRef = doc(expensesRef) // Auto-gen ID
+        batch.set(newExpenseRef, {
+          ...expenseData,
+          created_at: new Date().toISOString()
+        })
+      }
 
-        if (mode === 'edit' && expense && expense.id) {
-          // EDITING: Handle account balance updates
-          const oldAmount = expense.amount
-          const newAmount = storedAmount
-          const oldAccountId = expense.account_id
-          const newAccountId = formData.account_id
-
-          if (oldAccountId === newAccountId && oldAccountId) {
-            // Same account: calculate net change and apply once
-            const netChange = newAmount - oldAmount
-            if (oldAccDoc && oldAccDoc.exists() && netChange !== 0) {
-              const oldAccRef = doc(getCollection('accounts'), oldAccountId)
-              const currentBal = oldAccDoc.data().balance || 0
-              transaction.update(oldAccRef, { balance: currentBal + netChange })
-            }
-          } else {
-            // Different accounts: revert from old, apply to new
-            if (oldAccountId && oldAccDoc && oldAccDoc.exists()) {
-              const oldAccRef = doc(getCollection('accounts'), oldAccountId)
-              const currentBal = oldAccDoc.data().balance || 0
-              transaction.update(oldAccRef, { balance: currentBal - oldAmount })
-            }
-            if (newAccountId && newAccDoc && newAccDoc.exists()) {
-              const newAccRef = doc(getCollection('accounts'), newAccountId)
-              const currentBal = newAccDoc.data().balance || 0
-              transaction.update(newAccRef, { balance: currentBal + newAmount })
-            }
-          }
-        } else {
-          // ADDING: Simply apply the new transaction
-          if (formData.account_id && newAccDoc && newAccDoc.exists()) {
-            const accRef = doc(getCollection('accounts'), formData.account_id)
-            const currentBal = newAccDoc.data().balance || 0
-            transaction.update(accRef, { balance: currentBal + storedAmount })
-          }
-        }
-
-        // 3. Write Expense Document
-        if (mode === 'edit' && expense?.id) {
-          const expenseRef = doc(getCollection('expenses'), expense.id)
-          transaction.update(expenseRef, expenseData)
-        } else {
-          const expensesRef = getCollection('expenses')
-          const newExpenseRef = doc(expensesRef) // Auto-gen ID
-          transaction.set(newExpenseRef, {
-            ...expenseData,
-            created_at: new Date().toISOString()
-          })
-        }
-      })
+      batch.commit().catch(err => console.error("Batch commit failed", err))
 
     } catch (error: any) {
       setLoading(false)
@@ -668,48 +629,45 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
       const selected = parsedExpenses.filter((_, i) => selectedImportIndices.includes(i))
       if (selected.length === 0) return
 
-      await runTransaction(db, async (transaction) => {
-        const accRef = doc(getCollection('accounts'), importAccount)
-        const accDoc = await transaction.get(accRef)
-        if (!accDoc.exists()) throw new Error('Account not found')
+      const batch = writeBatch(db)
+      let netChange = 0
 
-        const currentBal = accDoc.data().balance || 0
-        let netChange = 0
+      selected.forEach(exp => {
+        // Standardize: income as positive, expense as negative
+        let storedAmount = 0;
+        let type = 'expense';
+        if (exp.amount < 0) {
+          // Income: store as positive
+          storedAmount = Math.abs(exp.amount);
+          type = 'income';
+          netChange += storedAmount; // Add income to balance
+        } else {
+          // Expense: store as negative
+          storedAmount = -Math.abs(exp.amount);
+          type = 'expense';
+          netChange -= Math.abs(exp.amount); // Subtract expense from balance
+        }
 
-        selected.forEach(exp => {
-          // Standardize: income as positive, expense as negative
-          let storedAmount = 0;
-          let type = 'expense';
-          if (exp.amount < 0) {
-            // Income: store as positive
-            storedAmount = Math.abs(exp.amount);
-            type = 'income';
-            netChange += storedAmount; // Add income to balance
-          } else {
-            // Expense: store as negative
-            storedAmount = -Math.abs(exp.amount);
-            type = 'expense';
-            netChange -= Math.abs(exp.amount); // Subtract expense from balance
-          }
-
-          const newRef = doc(getCollection('expenses'));
-          transaction.set(newRef, {
-            amount: storedAmount, // Store: positive for income, negative for expense
-            currency: exp.currency || 'USD',
-            merchant: exp.merchant || 'Unknown',
-            payment_method: exp.payment_method || 'Imported',
-            account_id: importAccount,
-            note: exp.note || '',
-            occurred_on: exp.occurred_on,
-            category: exp.category || 'Uncategorized',
-            attachment: null,
-            type,
-            created_at: new Date().toISOString()
-          });
+        const newRef = doc(getCollection('expenses'));
+        batch.set(newRef, {
+          amount: storedAmount, // Store: positive for income, negative for expense
+          currency: exp.currency || 'USD',
+          merchant: exp.merchant || 'Unknown',
+          payment_method: exp.payment_method || 'Imported',
+          account_id: importAccount,
+          note: exp.note || '',
+          occurred_on: exp.occurred_on,
+          category: exp.category || 'Uncategorized',
+          attachment: null,
+          type,
+          created_at: new Date().toISOString()
         });
-
-        transaction.update(accRef, { balance: currentBal + netChange });
       });
+
+      const accRef = doc(getCollection('accounts'), importAccount)
+      batch.update(accRef, { balance: increment(netChange) });
+
+      batch.commit().catch(err => console.error("Batch commit failed", err))
 
       onAdded()
       onClose()
@@ -754,13 +712,13 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
         <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex min-h-full items-end justify-center p-4 pb-safe text-center sm:items-center sm:p-0" style={{ paddingBottom: 'max(calc(5rem + env(safe-area-inset-bottom, 0px)), 5rem)' }}>
+          <div className="flex min-h-full items-center justify-center p-4 text-center sm:p-0">
             <Dialog.Panel className={`relative transform overflow-hidden rounded-lg bg-white dark:bg-gray-800 px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full ${isImportMode && parsedExpenses.length > 0
               ? 'sm:max-w-7xl' // Large for import table
               : isImportMode
                 ? 'sm:max-w-2xl' // Medium for import options
                 : 'sm:max-w-lg' // Small for manual entry
-              } sm:p-6`} style={{ marginBottom: 'max(env(safe-area-inset-bottom, 0px), 0px)' }}>
+              } sm:p-6`}>
               <div className="absolute right-0 top-0 hidden pr-4 pt-4 sm:block">
                 <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
                   <X className="h-6 w-6" />
@@ -834,20 +792,22 @@ export default function AddExpenseModal({ open, onClose, onAdded, mode = 'add', 
                   </Dialog>
                 </Transition.Root>
                 <Dialog.Title as="h3" className="text-lg font-semibold leading-6 text-gray-900 dark:text-white mb-4 text-center">
-                  <div className="flex justify-center items-center gap-2 mb-4">
-                    <button
-                      onClick={() => { setIsImportMode(false); setImportMediaType('none') }}
-                      className={`px-3 py-1 rounded-full text-sm ${!isImportMode ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                    >
-                      Manual Entry
-                    </button>
-                    <button
-                      onClick={() => { setIsImportMode(true); setImportMediaType('none') }}
-                      className={`px-3 py-1 rounded-full text-sm ${isImportMode ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                    >
-                      Import File
-                    </button>
-                  </div>
+                  {isOnline && (
+                    <div className="flex justify-center items-center gap-2 mb-4">
+                      <button
+                        onClick={() => { setIsImportMode(false); setImportMediaType('none') }}
+                        className={`px-3 py-1 rounded-full text-sm ${!isImportMode ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                      >
+                        Manual Entry
+                      </button>
+                      <button
+                        onClick={() => { setIsImportMode(true); setImportMediaType('none') }}
+                        className={`px-3 py-1 rounded-full text-sm ${isImportMode ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                      >
+                        Import File
+                      </button>
+                    </div>
+                  )}
                   {isImportMode ? 'Import Transactions' : (mode === 'edit' ? 'Edit Transaction' : (formData.type === 'income' ? 'Add Income' : 'Add Expense'))}
                 </Dialog.Title>
 

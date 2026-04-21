@@ -6,7 +6,7 @@ import { PlusIcon, SearchIcon, FilterIcon, MoreVerticalIcon, ArrowUpIcon, Downlo
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState as useReactState } from 'react';
 import { db } from '@/lib/firebaseClient'
-import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, orderBy, limit, startAfter, type QueryDocumentSnapshot, type DocumentData, getAggregateFromServer, sum } from 'firebase/firestore'
+import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, orderBy, limit, startAfter, type QueryDocumentSnapshot, type DocumentData, getAggregateFromServer, sum, writeBatch, increment } from 'firebase/firestore'
 import { useAuth } from '@/contexts/AuthContext'
 import { RequireAuth } from '@/components/RequireAuth'
 import { compressImage, formatBytes } from '@/utils/imageCompression'
@@ -17,6 +17,7 @@ import { useEnvironment } from '@/contexts/EnvironmentContext'
 import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
+import { useNetwork } from '@/hooks/useNetwork'
 
 interface Expense {
   id: string
@@ -132,13 +133,14 @@ function ConvertedAmount({ amount, currency, formatCurrencyExplicit, type, trans
 }
 
 export default function Expenses() {
+  const isOnline = useNetwork()
   const router = useRouter()
   const queryClient = useQueryClient()
   const [showAdd, setShowAdd] = useState(false)
   const [shouldOpenInImportMode, setShouldOpenInImportMode] = useState(false)
   const { user } = useAuth()
   const { getCollection, currentEnvironment } = useEnvironment()
-  const { formatCurrency, formatCurrencyExplicit, currency: prefCurrency, formatDate } = usePreferences()
+  const { formatCurrency, formatCurrencyExplicit, currency: prefCurrency, formatDate, simpleMode } = usePreferences()
   const [actionOpenId, setActionOpenId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -668,66 +670,41 @@ export default function Expenses() {
   }
 
   // Helper function to delete a single expense with account balance updates
-  const deleteExpenseWithBalanceUpdate = async (expenseToDelete: Expense) => {
+  const deleteExpenseWithBalanceUpdate = (expenseToDelete: Expense) => {
     const expenseDocRef = doc(getCollection('expenses'), expenseToDelete.id)
-    const { runTransaction } = await import('firebase/firestore')
+    const batch = writeBatch(db)
 
     // Handle different transaction types
     if (expenseToDelete.type === 'transfer') {
-      // TRANSFER: Revert both accounts
-      await runTransaction(db, async (transaction) => {
-        // ===== READS FIRST =====
-        const transferAmount = expenseToDelete.transferAmount || 0
+      const transferAmount = expenseToDelete.transferAmount || 0
 
-        let fromAccountDoc = null
-        let fromAccountRef = null
-        if (expenseToDelete.account_id) {
-          fromAccountRef = doc(getCollection('accounts'), expenseToDelete.account_id)
-          fromAccountDoc = await transaction.get(fromAccountRef)
-        }
+      if (expenseToDelete.account_id) {
+        const fromAccountRef = doc(getCollection('accounts'), expenseToDelete.account_id)
+        batch.update(fromAccountRef, { balance: increment(transferAmount) }) // Add back to source
+      }
 
-        let toAccountDoc = null
-        let toAccountRef = null
-        if (expenseToDelete.toAccountId) {
-          toAccountRef = doc(getCollection('accounts'), expenseToDelete.toAccountId)
-          toAccountDoc = await transaction.get(toAccountRef)
-        }
+      if (expenseToDelete.toAccountId) {
+        const toAccountRef = doc(getCollection('accounts'), expenseToDelete.toAccountId)
+        batch.update(toAccountRef, { balance: increment(-transferAmount) }) // Remove from destination
+      }
 
-        // ===== WRITES SECOND =====
-        if (fromAccountDoc && fromAccountDoc.exists() && fromAccountRef) {
-          const currentBalance = fromAccountDoc.data().balance || 0
-          transaction.update(fromAccountRef, { balance: currentBalance + transferAmount }) // Add back to source
-        }
-
-        if (toAccountDoc && toAccountDoc.exists() && toAccountRef) {
-          const currentBalance = toAccountDoc.data().balance || 0
-          transaction.update(toAccountRef, { balance: currentBalance - transferAmount }) // Remove from destination
-        }
-
-        // Delete the transfer record
-        transaction.delete(expenseDocRef)
-      })
+      // Delete the transfer record
+      batch.delete(expenseDocRef)
     } else if (expenseToDelete.account_id) {
       // INCOME/EXPENSE: Revert single account
-      await runTransaction(db, async (transaction) => {
-        // Read the account
-        const accountRef = doc(getCollection('accounts'), expenseToDelete.account_id!)
-        const accountDoc = await transaction.get(accountRef)
-
-        if (accountDoc.exists()) {
-          // Revert the transaction: subtract the amount (income is positive, expense is negative)
-          const currentBalance = accountDoc.data().balance || 0
-          const revertAmount = -expenseToDelete.amount
-          transaction.update(accountRef, { balance: currentBalance + revertAmount })
-        }
-
-        // Delete the expense
-        transaction.delete(expenseDocRef)
-      })
+      const accountRef = doc(getCollection('accounts'), expenseToDelete.account_id)
+      const revertAmount = -expenseToDelete.amount
+      batch.update(accountRef, { balance: increment(revertAmount) })
+      
+      // Delete the expense
+      batch.delete(expenseDocRef)
     } else {
       // No account associated, just delete the expense
-      await deleteDoc(expenseDocRef)
+      batch.delete(expenseDocRef)
     }
+
+    // Fire and forget to prevent hanging in offline mode
+    batch.commit().catch(console.error)
   }
 
   const deleteExpense = async (id: string) => {
@@ -744,14 +721,18 @@ export default function Expenses() {
         throw new Error('Expense not found')
       }
 
-      await deleteExpenseWithBalanceUpdate(expenseToDelete)
+      deleteExpenseWithBalanceUpdate(expenseToDelete)
 
-      queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
-      queryClient.invalidateQueries({ queryKey: ['accounts', user.uid, currentEnvironment.id] })
-      setActionOpenId(null)
+      // Allow a tiny delay for local cache to reflect
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
+        queryClient.invalidateQueries({ queryKey: ['accounts', user.uid, currentEnvironment.id] })
+        setActionOpenId(null)
+        setSelectedExpense(null)
+        setDeletingId(null)
+      }, 50)
     } catch (error: any) {
       setActionError(error.message)
-    } finally {
       setDeletingId(null)
     }
   }
@@ -861,14 +842,16 @@ export default function Expenses() {
                     <PlusIcon className="w-5 h-5 mb-0.5" />
                     <span className="text-[10px] font-bold">Add</span>
                   </button>
-                  <button
-                    onClick={() => router.push('/expenses?action=import')}
-                    className="flex flex-col items-center justify-center py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl transition-all shadow-sm shadow-blue-200"
-                    title="Upload File"
-                  >
-                    <UploadIcon className="w-5 h-5 mb-0.5" />
-                    <span className="text-[10px] font-bold">Upload</span>
-                  </button>
+                  {isOnline && (
+                    <button
+                      onClick={() => router.push('/expenses?action=import')}
+                      className="flex flex-col items-center justify-center py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl transition-all shadow-sm shadow-blue-200"
+                      title="Upload File"
+                    >
+                      <UploadIcon className="w-5 h-5 mb-0.5" />
+                      <span className="text-[10px] font-bold">Upload</span>
+                    </button>
+                  )}
                   <button
                     className="flex flex-col items-center justify-center py-2 text-xs font-medium rounded-xl bg-green-100 text-green-800 border border-green-300 hover:bg-green-200 transition-all shadow-sm"
                     onClick={exportToCSV}
@@ -910,6 +893,7 @@ export default function Expenses() {
                     <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                     <span className="text-[10px] font-bold">Similar</span>
                   </button>
+                  {!simpleMode && (
                   <button
                     className="flex flex-col items-center justify-center py-2 text-xs font-medium rounded-xl bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-all"
                     onClick={async () => {
@@ -969,6 +953,7 @@ export default function Expenses() {
                     <svg className="w-4 h-4 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
                     <span className="text-[10px] font-bold">AI Dup</span>
                   </button>
+                  )}
                 </div>
 
                 {/* Month Selector with Filter */}
@@ -1155,6 +1140,7 @@ export default function Expenses() {
                       <span className="hidden sm:inline">Find Similar</span>
                       <span className="sm:hidden">Similar</span>
                     </button>
+                    {!simpleMode && (
                     <button
                       className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl bg-gradient-to-r from-violet-50 to-purple-50 text-violet-700 border border-violet-200 hover:from-violet-100 hover:to-purple-100 transition-all w-full sm:w-auto justify-center"
                       onClick={async () => {
@@ -1220,6 +1206,7 @@ export default function Expenses() {
                       <span className="hidden sm:inline">AI Duplicates</span>
                       <span className="sm:hidden">AI Dup</span>
                     </button>
+                    )}
                     <button onClick={() => setShowAdd(true)} className="btn-primary inline-flex items-center justify-center w-full sm:w-auto">
                       <PlusIcon className="w-4 h-4 mr-2" />
                       Add Expense
@@ -2058,10 +2045,12 @@ export default function Expenses() {
                       setDuplicatesError(null)
                       try {
                         const ids = Array.from(selectedDuplicateIds)
-                        await Promise.all(ids.map(id => {
-                          const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
-                          return deleteDoc(expenseDocRef)
-                        }))
+                        const batch = writeBatch(db)
+                          ids.forEach(id => {
+                            const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
+                            batch.delete(expenseDocRef)
+                          })
+                          batch.commit().catch(console.error)
                         setShowDuplicatesModal(false)
                         setDetectedDuplicates([])
                         setDuplicateGroups([])
@@ -2235,10 +2224,12 @@ export default function Expenses() {
                       if (!window.confirm(`Delete ${selectedSimilarIds.size} expense(s)? This cannot be undone.`)) return
                       try {
                         const ids = Array.from(selectedSimilarIds)
-                        await Promise.all(ids.map(id => {
-                          const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
-                          return deleteDoc(expenseDocRef)
-                        }))
+                        const batch = writeBatch(db)
+                          ids.forEach(id => {
+                            const expenseDocRef = doc(db, 'expenses', user.uid, 'items', id)
+                            batch.delete(expenseDocRef)
+                          })
+                          batch.commit().catch(console.error)
                         setShowSimilarModal(false)
                         setSimilarGroups([])
                         setSelectedSimilarIds(new Set())
@@ -2445,26 +2436,12 @@ export default function Expenses() {
                     Edit
                   </button>
                   <button
-                    onClick={async () => {
-                      if (window.confirm('Are you sure you want to delete this expense?')) {
-                        if (!user) return
-                        setDeletingId(selectedExpense.id)
-                        try {
-                          const expenseDocRef = doc(getCollection('expenses'), selectedExpense.id)
-                          await deleteDoc(expenseDocRef)
-                          queryClient.invalidateQueries({ queryKey: ['expenses', user.uid, currentEnvironment.id] })
-                          setSelectedExpense(null)
-                        } catch (error: any) {
-                          setActionError(error.message)
-                        } finally {
-                          setDeletingId(null)
-                        }
-                      }
-                    }}
-                    className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-medium"
-                  >
-                    Delete
-                  </button>
+                      onClick={() => deleteExpense(selectedExpense.id)}
+                      className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-medium"
+                      disabled={deletingId === selectedExpense.id}
+                    >
+                      {deletingId === selectedExpense.id ? 'Deleting...' : 'Delete'}
+                    </button>
                 </div>
               </div>
             </div>

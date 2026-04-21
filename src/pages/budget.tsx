@@ -291,8 +291,10 @@ export default function BudgetPage() {
     if (!user) return
     if (!window.confirm('Delete this budget?')) return
     try {
-      await deleteDoc(doc(getCollection('budgets'), id))
-      queryClient.invalidateQueries({ queryKey: ['budgets', user.uid, currentEnvironment.id] })
+      deleteDoc(doc(getCollection('budgets'), id)).catch(console.error)
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['budgets', user.uid, currentEnvironment.id] })
+      }, 50)
     } catch (error) {
       console.error(error)
     }
@@ -331,9 +333,11 @@ export default function BudgetPage() {
         period: editBudget.period,
         updated_at: new Date().toISOString(),
       }
-      await updateDoc(doc(getCollection('budgets'), editing.id), payload)
-      queryClient.invalidateQueries({ queryKey: ['budgets', user.uid, currentEnvironment.id] })
-      setShowEditForm(false)
+      updateDoc(doc(getCollection('budgets'), editing.id), payload).catch(console.error)
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['budgets', user.uid, currentEnvironment.id] })
+        setShowEditForm(false)
+      }, 50)
     } catch (error: any) {
       setEditError(error.message)
     } finally {

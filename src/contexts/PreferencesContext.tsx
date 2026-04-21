@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { db } from '@/lib/firebaseClient'
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore'
+import { Capacitor } from '@capacitor/core'
+import { doc, getDoc, collection, query, where, getDocs, disableNetwork, enableNetwork } from 'firebase/firestore'
 
 type Prefs = {
   currency: string
@@ -18,10 +19,14 @@ type Prefs = {
   themeMode: 'light' | 'dark' | 'black'
   setThemeMode: (mode: 'light' | 'dark' | 'black') => void
   toggleDarkMode: () => void
+  isOnline: boolean
+  simpleMode: boolean
   paymentMethods: string[]
   setPaymentMethods: (methods: string[]) => void
 }
 
+
+import { Network } from '@capacitor/network'
 
 const PreferencesContext = createContext<Prefs | undefined>(undefined)
 
@@ -57,8 +62,15 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   const [currency, setCurrency] = useState(initialCurrency)
   const [timeZone, setTimeZone] = useState(initialTimeZone)
   const [defaultEnvName, setDefaultEnvName] = useState('Personal')
-  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(null)
+  const [hasOnboarded, setHasOnboarded] = useState<boolean | null>(() => {
+    if (typeof window === 'undefined') return null
+    const cached = localStorage.getItem('hasOnboarded')
+    if (cached === 'true') return true
+    if (cached === 'false') return false
+    return null
+  })
   const [loading, setLoading] = useState(true)
+  const [isOnline, setIsOnline] = useState<boolean>(() => (typeof window === 'undefined' ? true : navigator.onLine))
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => {
     if (typeof window !== 'undefined') {
       const savedThemeMode = localStorage.getItem('themeMode')
@@ -74,10 +86,62 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     }
     return 'light'
   })
-
   const [paymentMethods, setPaymentMethods] = useState<string[]>([
     'Credit Card', 'Debit Card', 'Cash', 'Bank Transfer', 'UPI', 'NEFT', 'Check', 'Other'
   ])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+
+    // Initial check
+    if (!navigator.onLine) {
+      setIsOnline(false)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    // Capacitor Network listener
+    let networkListener: any
+    if (Capacitor.isNativePlatform()) {
+      const setupNetwork = async () => {
+        const initialStatus = await Network.getStatus()
+        setIsOnline(initialStatus.connected)
+        
+        networkListener = await Network.addListener('networkStatusChange', status => {
+          setIsOnline(status.connected)
+        })
+      }
+      setupNetwork()
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      if (networkListener) {
+        networkListener.remove()
+      }
+    }
+  }, [])
+  useEffect(() => {
+    // Explicitly toggle Firebase Network based on online status.
+    const manageFirebaseNetwork = async () => {
+      try {
+        if (isOnline) {
+          await enableNetwork(db)
+        } else {
+          await disableNetwork(db)
+        }
+      } catch (e) {
+        console.error('Failed to toggle Firebase network state', e)
+      }
+    }
+    manageFirebaseNetwork()
+  }, [isOnline])
+
   const fetchPrefs = useCallback(async () => {
     if (!user?.uid) {
       setLoading(false)
@@ -90,7 +154,32 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       const querySnapshot = await getDocs(q)
 
       if (querySnapshot.empty) {
-        setHasOnboarded(false)
+        const cachedOnboarded = typeof window !== 'undefined' ? localStorage.getItem('hasOnboarded') : null
+        if (cachedOnboarded === 'true') {
+          // Trust the cache if they were onboarded, don't revert to false
+          setHasOnboarded(true)
+          
+          // Also try to load cached detailed settings if available
+          try {
+            const cachedPrefs = localStorage.getItem('expenso_cached_prefs')
+            if (cachedPrefs) {
+              const data = JSON.parse(cachedPrefs)
+              if (data.currency) setCurrency(data.currency)
+              if (data.time_zone) setTimeZone(data.time_zone)
+              if (data.default_env_name) setDefaultEnvName(data.default_env_name)
+              if (data.payment_methods) setPaymentMethods(data.payment_methods)
+            }
+          } catch(e) {}
+        } else {
+          // If not cached, then maybe they truly aren't onboarded
+          const isOffline = typeof window !== 'undefined' && !navigator.onLine
+          if (!isOffline) {
+            setHasOnboarded(false)
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('hasOnboarded', 'false')
+            }
+          }
+        }
         setLoading(false)
         return
       }
@@ -98,7 +187,17 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
       const docSnap = querySnapshot.docs[0]
       const data = docSnap.data()
 
-      setHasOnboarded(data?.onboarded === true)
+      const onboarded = data?.onboarded === true
+      setHasOnboarded(onboarded)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('hasOnboarded', onboarded ? 'true' : 'false')
+        localStorage.setItem('expenso_cached_prefs', JSON.stringify({
+          currency: data?.preferred_currency || data?.current_currency || data?.currency,
+          time_zone: data?.time_zone,
+          default_env_name: data?.default_env_name,
+          payment_methods: data?.payment_methods
+        }))
+      }
       const currencyValue = data?.preferred_currency || data?.current_currency || data?.currency || initialCurrency
 
       if (currencyValue) setCurrency(currencyValue)
@@ -107,12 +206,40 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
 
       const envName = data?.default_env_name || 'Personal'
       setDefaultEnvName(envName)
+
       // Load payment methods from user_settings if available
       if (Array.isArray(data?.payment_methods) && data.payment_methods.length > 0) {
         setPaymentMethods(data.payment_methods)
       }
-    } catch (e) {
+
+      // If we got here successfully, it might mean we are actually online
+      // or retrieving perfectly from cache.
+    } catch (e: any) {
       console.error('PreferencesContext: fetch exception', e)
+      
+      // If Firebase specifically throws a network/offline error, trust it over navigator.onLine
+      if (e?.code === 'unavailable' || String(e).toLowerCase().includes('offline')) {
+        setIsOnline(false)
+      }
+
+      // Load fallback from cache if error
+      if (typeof window !== 'undefined') {
+        const cachedOnboarded = localStorage.getItem('hasOnboarded')
+        if (cachedOnboarded === 'true') {
+          setHasOnboarded(true)
+          try {
+            const cachedPrefs = localStorage.getItem('expenso_cached_prefs')
+            if (cachedPrefs) {
+              const data = JSON.parse(cachedPrefs)
+              if (data.currency) setCurrency(data.currency)
+              if (data.time_zone) setTimeZone(data.time_zone)
+              if (data.default_env_name) setDefaultEnvName(data.default_env_name)
+              if (data.payment_methods) setPaymentMethods(data.payment_methods)
+            }
+          } catch(err) {}
+        }
+      }
+      
     } finally {
       setLoading(false)
     }
@@ -202,6 +329,12 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, [])
 
   const darkMode = themeMode !== 'light'
+  
+  // We consider it simple mode if it's the native app and there's no internet, OR if they've manually forced it (useful for testing)
+  const simpleMode = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    return Capacitor.isNativePlatform() && !isOnline
+  }, [isOnline])
 
   const toggleDarkMode = useCallback(() => {
     setThemeMode(themeMode === 'light' ? 'dark' : 'light')
@@ -230,6 +363,8 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     themeMode,
     setThemeMode,
     toggleDarkMode,
+    isOnline,
+    simpleMode,
     paymentMethods,
     setPaymentMethods,
   }

@@ -8,7 +8,10 @@ interface FeedbackModalProps {
   onClose: () => void
 }
 
+import { getApiUrl } from '@/lib/config'
+
 export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
+
   const { user } = useAuth()
   const [message, setMessage] = useState('')
   const [type, setType] = useState('Suggestion')
@@ -21,7 +24,7 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
 
     setLoading(true)
     try {
-      const res = await fetch('/api/feedback', {
+      const res = await fetch(getApiUrl('api/feedback'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

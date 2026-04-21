@@ -71,7 +71,7 @@ function ConvertedAmount({ amount, currency, formatCurrencyExplicit, type, trans
 function DashboardContent() {
   const { user } = useAuth()
   const { getCollection, currentEnvironment } = useEnvironment()
-  const { formatCurrency, formatCurrencyExplicit, formatDate, currency: prefCurrency, loading: prefsLoading } = usePreferences()
+  const { formatCurrency, formatCurrencyExplicit, formatDate, currency: prefCurrency, loading: prefsLoading, simpleMode } = usePreferences()
   const [viewCurrency, setViewCurrency] = useState(currentEnvironment.currency || prefCurrency || 'USD')
 
   // Sync viewCurrency with environment currency when it changes
@@ -229,7 +229,7 @@ function DashboardContent() {
   // Fetch or generate nickname (cached in Firestore to avoid repeated API calls)
   useQuery({
     queryKey: ['user-nickname', user?.uid, userFullName],
-    enabled: !!user?.uid && !nickname && !!userFullName,
+    enabled: !!user?.uid && !simpleMode && !nickname && !!userFullName,
     staleTime: Infinity, // Never refetch - nickname is permanent
     gcTime: Infinity, // Keep in cache forever (renamed from cacheTime in v5)
     queryFn: async () => {
@@ -333,7 +333,10 @@ function DashboardContent() {
                         onMouseEnter={() => setShowRealName(true)}
                         onMouseLeave={() => setShowRealName(false)}
                       >
-                        {showRealName ? userFullName || 'User' : (loadingNickname ? '...' : (nickname || userFullName?.split(' ')[0] || 'User'))}
+                        {simpleMode
+                          ? (userFullName?.split(' ')[0] || 'User')
+                          : (showRealName ? userFullName || 'User' : (loadingNickname ? '...' : (nickname || userFullName?.split(' ')[0] || 'User')))
+                        }
                       </h1>
                     </div>
                   </div>
@@ -367,18 +370,20 @@ function DashboardContent() {
                   <div className="w-full lg:w-auto px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[80px] text-center">
                     {viewCurrency}
                   </div>
-                  <button
-                    onClick={() => {
-                      const aiSection = document.getElementById('ai-insights-section')
-                      if (aiSection) {
-                        aiSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                      }
-                    }}
-                    className="w-full lg:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md active:scale-95"
-                  >
-                    <SparklesIcon className="w-3.5 h-3.5" />
-                    AI Pulse
-                  </button>
+                  {!simpleMode && (
+                    <button
+                      onClick={() => {
+                        const aiSection = document.getElementById('ai-insights-section')
+                        if (aiSection) {
+                          aiSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }
+                      }}
+                      className="w-full lg:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all shadow-sm hover:shadow-md active:scale-95"
+                    >
+                      <SparklesIcon className="w-3.5 h-3.5" />
+                      AI Pulse
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -415,7 +420,7 @@ function DashboardContent() {
                         </span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{e.note || 'No note'}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{e.note || e.merchant || 'No note'}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{e.category} · {formatDate(e.occurred_on, { month: 'short', day: 'numeric' })}</p>
                       </div>
                     </div>
@@ -461,7 +466,7 @@ function DashboardContent() {
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700">
                     {recentExpenses.map(e => (
                       <tr key={e.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white">{e.note || 'No note'}</td>
+                        <td className="px-6 py-3 text-sm font-medium text-gray-900 dark:text-white">{e.note || e.merchant || 'No note'}</td>
                         <td className="px-6 py-3 text-sm text-gray-600 dark:text-gray-400">{e.category}</td>
                         <td className="px-6 py-3 text-sm font-medium text-right">
                           <ConvertedAmount
@@ -638,13 +643,15 @@ function DashboardContent() {
             </div>
 
             {/* AI Insights Widget */}
-            <div id="ai-insights-section">
-              <AIInsightsWidget
-                month={selectedMonth}
-                year={selectedYear}
-                currency={viewCurrency}
-              />
-            </div>
+            {!simpleMode && (
+              <div id="ai-insights-section">
+                <AIInsightsWidget
+                  month={selectedMonth}
+                  year={selectedYear}
+                  currency={viewCurrency}
+                />
+              </div>
+            )}
           </div>
         </Layout>
       </RequireAuth>

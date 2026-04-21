@@ -1,6 +1,12 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
+  type Firestore,
+} from 'firebase/firestore'
 import { getAnalytics, isSupported } from 'firebase/analytics'
 
 const firebaseConfig = {
@@ -15,7 +21,24 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
+
+let firestoreDb: Firestore
+
+if (typeof window === 'undefined') {
+  firestoreDb = getFirestore(app)
+} else {
+  try {
+    firestoreDb = initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({ forceOwnership: true }) }),
+    })
+  } catch (error) {
+    console.error('Firebase persistence failed to initialize:', error)
+    // Fallback when persistence is unavailable (rare browser/webview edge cases).
+    firestoreDb = getFirestore(app)
+  }
+}
+
+export const db = firestoreDb
 
 // Initialize Firebase Analytics (client-side only).
 // Expose a promise so callers don't race the async support check.
