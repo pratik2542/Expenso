@@ -56,19 +56,61 @@ export default function CategoriesPage() {
       if (!user?.uid) return []
       const categoriesRef = getCollection('categories')
       const q = query(categoriesRef, orderBy('name', 'asc'))
-      const snapshot = await getDocs(q)
-      return snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          user_id: user.uid,
-          name: data.name,
-          icon: data.icon || getCategoryIcon(data.name),
-          type: data.type || 'expense', // default to expense for backward compatibility
-          created_at: data.created_at,
-          is_default: data.is_default
+      let fetchedCategories: Category[] = []
+      try {
+        const snapshot = await getDocs(q)
+        fetchedCategories = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            user_id: user.uid,
+            name: data.name,
+            icon: data.icon || getCategoryIcon(data.name),
+            type: data.type || 'expense', 
+            created_at: data.created_at,
+            is_default: data.is_default
+          }
+        }) as Category[]
+      } catch (error) {
+        console.error('Initial categories fetch failed:', error)
+        const fallbackSnapshot = await getDocs(categoriesRef)
+        const mapped = fallbackSnapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            user_id: user.uid,
+            name: data.name,
+            icon: data.icon || getCategoryIcon(data.name),
+            type: data.type || 'expense',
+            created_at: data.created_at,
+            is_default: data.is_default
+          }
+        }) as Category[]
+        fetchedCategories = mapped.sort((a, b) => a.name.localeCompare(b.name))
+      }
+
+      // Automatically deduplicate on the client side so the UI is clean
+      const seen = new Set<string>()
+      const uniqueCategories: Category[] = []
+      
+      for (const cat of fetchedCategories) {
+        const key = `${cat.name.toLowerCase().trim()}_${cat.type}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          uniqueCategories.push(cat)
+        } else {
+          // If we are online, optionally do a silent delete here for the duplicates
+          // to slowly clean up the user's database.
+          if (navigator.onLine) {
+            try {
+              const dupRef = doc(getCollection('categories'), cat.id)
+              deleteDoc(dupRef).catch(() => {})
+            } catch (e) {}
+          }
         }
-      }) as Category[]
+      }
+
+      return uniqueCategories
     }
   })
 

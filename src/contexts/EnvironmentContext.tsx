@@ -248,8 +248,23 @@ export function EnvironmentProvider({ children }: { children: ReactNode }) {
 
         const catPromises = [...expenseCatPromises, ...incomeCatPromises]
 
-        // Add default accounts
-        const accPromises = DEFAULT_ACCOUNTS.map(acc => addDoc(accountRef, {
+        // Get existing accounts to check for duplicates
+        const existingAccountsQuery = query(accountRef)
+        const existingAccountsSnapshot = await getDocs(existingAccountsQuery)
+        const existingAccountNames = new Set(
+            existingAccountsSnapshot.docs.map(doc => {
+                const data = doc.data()
+                return (data.name || '').toLowerCase().trim()
+            })
+        )
+
+        // Filter out accounts that already exist
+        const accountsToAdd = DEFAULT_ACCOUNTS.filter(acc => {
+            return !existingAccountNames.has(acc.name.toLowerCase().trim())
+        })
+
+        // Add default accounts (only new ones)
+        const accPromises = accountsToAdd.map(acc => addDoc(accountRef, {
             ...acc,
             currency,
             created_at: new Date().toISOString()

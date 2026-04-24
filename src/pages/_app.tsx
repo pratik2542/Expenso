@@ -26,7 +26,11 @@ const queryClient = new QueryClient({
       staleTime: 1000 * 30, // Data becomes stale after 30 seconds (triggers background fetches immediately on launch)
       gcTime: 1000 * 60 * 60 * 24 * 7, // Keep cache for 7 days
       refetchOnWindowFocus: true, // Auto-sync when app resumes
+      networkMode: 'offlineFirst', // Allow Firebase to serve from cache when offline
     },
+    mutations: {
+      networkMode: 'offlineFirst',
+    }
   },
 })
 

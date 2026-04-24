@@ -704,7 +704,7 @@ export default function Expenses() {
     }
 
     // Fire and forget to prevent hanging in offline mode
-    batch.commit().catch(console.error)
+    batch.commit().catch(err => console.log('Offline delete queued', err))
   }
 
   const deleteExpense = async (id: string) => {

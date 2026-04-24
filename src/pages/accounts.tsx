@@ -41,10 +41,32 @@ export default function AccountsPage() {
             const accountsRef = getCollection('accounts')
             const q = query(accountsRef, orderBy('name', 'asc'))
             const snapshot = await getDocs(q)
-            return snapshot.docs.map(doc => ({
+            const fetchedAccounts = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             })) as Account[]
+
+            // Automatically deduplicate on the client side to clean up offline glitches
+            const seen = new Set<string>()
+            const uniqueAccounts: Account[] = []
+            
+            for (const acc of fetchedAccounts) {
+                const key = acc.name.toLowerCase().trim()
+                if (!seen.has(key)) {
+                    seen.add(key)
+                    uniqueAccounts.push(acc)
+                } else {
+                    // It's a duplicate. If it has 0 balance and we're online, silently delete it.
+                    if (navigator.onLine && (!acc.balance || acc.balance === 0)) {
+                        try {
+                            const dupRef = doc(getCollection('accounts'), acc.id)
+                            deleteDoc(dupRef).catch(() => {})
+                        } catch (e) {}
+                    }
+                }
+            }
+
+            return uniqueAccounts
         }
     })
 
